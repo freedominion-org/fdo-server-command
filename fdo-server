@@ -501,6 +501,72 @@ compare_file_tree ()
 
 }
 
+init_git_config ()
+{
+
+  CWD=`pwd`
+  cd /${REPO_NAME}
+
+  echo -e "\n\n${YELL}Initialising git config...${NRML}\n"
+
+  git config user.name > /dev/null 2>&1
+  if [ ${?} -ne 0 ]
+  then
+    while [ "${GIT_USER_NAME}" = "" ]
+    do
+      echo -e "\n${LCYN}Enter the git user name: ${NRML}\c"
+      read GIT_USER_NAME_TEMP
+      # Check that the git user name only contains letters numbers and spaces. 
+      TEST=`echo "${GIT_USER_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9]*[a-zA-Z0-9\ ]*[a-zA-Z0-9]+//" | wc -w`
+      if [ ${TEST} -ne 0 ] || [ "${GIT_USER_NAME_TEMP}" = "" ]
+      then
+        echo -e "\n${LRED}ERROR:${NRML} The name can not be '${GIT_USER_NAME}'."
+        echo -e "       It must contain only letters, numbers and spaces.\n"
+      else
+        question_yes_no "\nYou have entered '${GIT_USER_NAME_TEMP}' as the git user name.\nIs this correct?"
+        if [ "${ANSWER}" = "yes" ]
+        then
+          GIT_USER_NAME=${GIT_USER_NAME_TEMP}
+        fi
+      fi
+    done
+    git config user.name "${GIT_USER_NAME}"
+  fi
+
+  git config user.email > /dev/null 2>&1
+  if [ ${?} -ne 0 ]
+  then
+    while [ "${GIT_USER_EMAIL}" = "" ]
+    do
+      echo -e "\n${LCYN}Enter the git user email address: ${NRML}\c"
+      read GIT_USER_EMAIL_TEMP
+      # Check that the git user email only contains letters, numbers, periods, pluses, hyphens, underscores and one @.
+      TEST=`echo "${GIT_USER_EMAIL_TEMP}" | sed -r "s/^[a-zA-Z0-9\.\_\+\-]+\@[a-zA-Z0-9\.\_\-]+[a-zA-Z0-9]+//" | wc -w`
+      if [ ${TEST} -ne 0 ] || [ "${GIT_USER_EMAIL_TEMP}" = "" ]
+      then
+        echo -e "\n${LRED}ERROR:${NRML} The email address can not be '${GIT_USER_EMAIL}'."
+        echo -e "       It must be a valid email address.\n"
+      else
+        question_yes_no "\nYou have entered '${GIT_USER_EMAIL_TEMP}' as the git user email.\nIs this correct?"
+        if [ "${ANSWER}" = "yes" ]
+        then
+          GIT_USER_EMAIL=${GIT_USER_EMAIL_TEMP}
+        fi
+      fi
+    done
+    git config user.email "${GIT_USER_EMAIL}"
+  fi
+
+  git config push.default > /dev/null 2>&1
+  if [ ${?} -ne 0 ]
+  then
+    git config push.default "simple"
+  fi
+
+  cd ${CWD}
+
+}
+
 init_local_repo ()
 {
 
@@ -1847,9 +1913,8 @@ new_host ()
     ln -s /etc/resolv.conf.static /etc/resolv.conf
   fi
 
-  echo -e "\n\n${YELL}We are now ready to push the new host config up to the remote repo.${NRML}\n" 
-
-  ## TODO: add local ~/.gitconfig management
+  # Initialise the git config, so we can commit and push without warnings.
+  init_git_config
 
   # Remove the .gitignore from the local repo configs directory (if it exists)
   git rm configs/.gitignore 2> /dev/null
@@ -1861,7 +1926,7 @@ new_host ()
 
   if [ "${REPO_URI}" != "local" ]
   then
-    echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+    echo -e "\nPushing changes to the private remote repo...\n"
     git push
     if [ $? -ne 0 ]
     then
