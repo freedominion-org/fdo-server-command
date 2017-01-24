@@ -62,6 +62,7 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
+
 ####################################################
 
 usage ()
@@ -188,6 +189,50 @@ get_class_c_subnet ()
   CLASS_C_SUBNET="${CLASS_C_SUBNET_FIRST}.${CLASS_C_SUBNET_SECOND}.${CLASS_C_SUBNET_THIRD}"
 }
 
+test_valid_person_name ()
+{
+
+  TEST_CASE="${1}"
+
+  VALID_PERSON_NAME="yes"
+
+  if [ "${TEST_CASE}" = "" ]
+  then
+    VALID_PERSON_NAME="no"
+    return 1
+  fi
+
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^[a-zA-Z0-9]*[a-zA-Z0-9\ ]*[a-zA-Z0-9]+//" | wc -L`
+  if [ ${IS_SYNTAX_OK}  -ne 0 ]
+  then
+    VALID_PERSON_NAME="no"
+    return 2
+  fi
+
+}
+
+test_valid_email_address ()
+{
+
+  TEST_CASE="${1}"
+
+  VALID_EMAIL_ADDRESS="yes"
+
+  if [ "${TEST_CASE}" = "" ]
+  then
+    VALID_EMAIL_ADDRESS="no"
+    return 1
+  fi
+
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^([a-zA-Z0-9]+([\.\_\-]?[a-zA-Z0-9]+)*)+([\+]([a-zA-Z0-9]+([\.\_\/\-]?[a-zA-Z0-9]+)*)+)?\@((([a-zA-Z0-9]+[\-])*[a-zA-Z0-9]+)+\.)+[a-zA-Z0-9]+//" | wc -L`
+  if [ ${IS_SYNTAX_OK}  -ne 0 ]
+  then
+    VALID_EMAIL_ADDRESS="no"
+    return 2
+  fi
+
+}
+
 test_valid_inet_address ()
 {
 
@@ -201,7 +246,7 @@ test_valid_inet_address ()
     return 1
   fi
 
-  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed "s/^[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}$//" | wc -w`
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed "s/^[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}$//" | wc -L`
   if [ ${IS_SYNTAX_OK}  -ne 0 ]
   then
     VALID_INET_ADDRESS="no"
@@ -241,10 +286,32 @@ test_valid_host_name ()
     return 1
   fi
 
-  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^[a-zA-Z0-9]+([\-]*[a-zA-Z0-9]+)*(\.[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*)*//" | wc -w`
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^([a-zA-Z0-9]+[\-])*[a-zA-Z0-9]+//" | wc -L`
   if [ ${IS_SYNTAX_OK}  -ne 0 ]
   then
     VALID_HOST_NAME="no"
+    return 2
+  fi
+
+}
+
+test_valid_fqhn ()
+{
+
+  TEST_CASE="${1}"
+
+  VALID_FQHN="yes"
+
+  if [ "${TEST_CASE}" = "" ]
+  then
+    VALID_FQHN="no"
+    return 1
+  fi
+
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^((([a-zA-Z0-9]+[\-])*[a-zA-Z0-9]+)+\.)+[a-zA-Z0-9]+//" | wc -L`
+  if [ ${IS_SYNTAX_OK}  -ne 0 ]
+  then
+    VALID_FQHN="no"
     return 2
   fi
 
@@ -279,7 +346,7 @@ test_valid_simple_url ()
     return 1
   fi
 
-  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^http[s]?\:\/\/[a-zA-Z0-9]+([\-]*[a-zA-Z0-9]+)*(\.[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*)*(:[0-9]+)?(\/[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*(\.[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*)*)*[\/]*//" | wc -w`
+  IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^http[s]?\:\/\/[a-zA-Z0-9]+([\-]*[a-zA-Z0-9]+)*(\.[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*)*(:[0-9]+)?(\/[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*(\.[a-zA-Z0-9]+([\_\-]*[a-zA-Z0-9]+)*)*)*[\/]*//" | wc -L`
   if [ ${IS_SYNTAX_OK}  -ne 0 ]
   then
     VALID_URL="no"
@@ -380,7 +447,7 @@ check_repo_config ()
         fi
         # Test the input to see if it is a valid URI (URL)
         test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
-        if [ "${VALID_URL=}" = "yes" ]
+        if [ "${VALID_URL}" = "yes" ]
         then
           question_yes_no "\nYou have entered '${REMOTE_REPO_URI_TEMP}'\nas the remote git repo URI.\nIs this correct?"
           if [ "${ANSWER}" = "yes" ]
@@ -517,17 +584,17 @@ init_git_config ()
       echo -e "\n${LCYN}Enter the git user name: ${NRML}\c"
       read GIT_USER_NAME_TEMP
       # Check that the git user name only contains letters numbers and spaces. 
-      TEST=`echo "${GIT_USER_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9]*[a-zA-Z0-9\ ]*[a-zA-Z0-9]+//" | wc -w`
-      if [ ${TEST} -ne 0 ] || [ "${GIT_USER_NAME_TEMP}" = "" ]
+      test_valid_person_name "${GIT_USER_NAME_TEMP}"
+      if [ "${VALID_PERSON_NAME}" = "yes" ]
       then
-        echo -e "\n${LRED}ERROR:${NRML} The name can not be '${GIT_USER_NAME}'."
-        echo -e "       It must contain only letters, numbers and spaces.\n"
-      else
         question_yes_no "\nYou have entered '${GIT_USER_NAME_TEMP}' as the git user name.\nIs this correct?"
         if [ "${ANSWER}" = "yes" ]
         then
           GIT_USER_NAME=${GIT_USER_NAME_TEMP}
         fi
+      else
+        echo -e "\n${LRED}ERROR:${NRML} The name can not be '${GIT_USER_NAME}'."
+        echo -e "       It must contain only letters, numbers and spaces.\n"
       fi
     done
     git config user.name "${GIT_USER_NAME}"
@@ -541,17 +608,17 @@ init_git_config ()
       echo -e "\n${LCYN}Enter the git user email address: ${NRML}\c"
       read GIT_USER_EMAIL_TEMP
       # Check that the git user email only contains letters, numbers, periods, pluses, hyphens, underscores and one @.
-      TEST=`echo "${GIT_USER_EMAIL_TEMP}" | sed -r "s/^[a-zA-Z0-9\.\_\+\-]+\@[a-zA-Z0-9\.\_\-]+[a-zA-Z0-9]+//" | wc -w`
-      if [ ${TEST} -ne 0 ] || [ "${GIT_USER_EMAIL_TEMP}" = "" ]
+      test_valid_email_address "${GIT_USER_EMAIL_TEMP}"
+      if [ "${VALID_EMAIL_ADDRESS}" = "yes" ]
       then
-        echo -e "\n${LRED}ERROR:${NRML} The email address can not be '${GIT_USER_EMAIL}'."
-        echo -e "       It must be a valid email address.\n"
-      else
         question_yes_no "\nYou have entered '${GIT_USER_EMAIL_TEMP}' as the git user email.\nIs this correct?"
         if [ "${ANSWER}" = "yes" ]
         then
           GIT_USER_EMAIL=${GIT_USER_EMAIL_TEMP}
         fi
+      else
+        echo -e "\n${LRED}ERROR:${NRML} The email address can not be '${GIT_USER_EMAIL}'."
+        echo -e "       It must be a valid email address.\n"
       fi
     done
     git config user.email "${GIT_USER_EMAIL}"
@@ -1075,7 +1142,7 @@ connect_internet ()
         echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
         read VLAN_ID_TEMP
         # Check that the VLAN ID only contains numbers with a minimum of 1 characters.
-        TEST=`echo "${VLAN_ID_TEMP}" | sed "s/^[0-9]\{1,\}$//" | wc -w`
+        TEST=`echo "${VLAN_ID_TEMP}" | sed -r "s/^[0-9]+//" | wc -L`
         if [ ${TEST} -ne 0 ] || [ "${VLAN_ID_TEMP}" = "" ]
         then
           echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
@@ -1143,8 +1210,8 @@ connect_internet ()
     do
       echo -e "\n${LCYN}Enter static IP for WAN interface: ${NRML}\c"
       read WAN_IFACE_IP_TEMP
-      test_valid_inet_address ${WAN_IFACE_IP_TEMP}
-      if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+      test_valid_inet_address "${WAN_IFACE_IP_TEMP}"
+      if [ "${VALID_INET_ADDRESS}" = "yes" ]
       then
         question_yes_no "\nYou have entered '${WAN_IFACE_IP_TEMP}' as the WAN interface IP address.\nIs this correct?"
         if [ "${ANSWER}" = "yes" ]
@@ -1160,8 +1227,8 @@ connect_internet ()
     do
       echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
       read WAN_IFACE_NETMASK_TEMP
-      test_valid_inet_address ${WAN_IFACE_NETMASK_TEMP}
-      if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+      test_valid_inet_address "${WAN_IFACE_NETMASK_TEMP}"
+      if [ "${VALID_INET_ADDRESS}" = "yes" ]
       then
         question_yes_no "\nYou have entered '${WAN_IFACE_NETMASK_TEMP}' as the WAN interface netmask.\nIs this correct?"
         if [ "${ANSWER}" = "yes" ]
@@ -1178,8 +1245,8 @@ connect_internet ()
     do
       echo -e "\n${LCYN}Enter the default router IP address for this host: ${NRML}\c"
       read WAN_ROUTER_IP_TEMP
-      test_valid_inet_address ${WAN_ROUTER_IP_TEMP}
-      if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+      test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
+      if [ "${VALID_INET_ADDRESS}" = "yes" ]
       then
         question_yes_no "\nYou have entered '${WAN_ROUTER_IP_TEMP}' as the default router.\nIs this correct?"
         if [ "${ANSWER}" = "yes" ]
@@ -1360,23 +1427,22 @@ new_host ()
     exit 51
   fi
 
-  TEST=`echo ${HOST_NAME} | sed "s/^[a-z0-9]\{3,\}$//" | wc -w`
-  if [ ${TEST} -ne 0 ]
+  test_valid_host_name "${HOST_NAME}"
+  if [ "${VALID_HOST_NAME}" = "no" ]
   then
     echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${HOST_NAME}'."
-    echo -e "       It must be at least three characters and only contain lower case letters"
-    echo -e "       and numbers.\n"
+    echo -e "       It must only contain letters, numbers and hyphens."
+    echo -e "       It must not begin or end with a hyphen.\n"
     exit 53
   fi
 
-  # Check that the domain name only contains letters, 
-  # numbers, hyphens and periods with a minimum of 3 characters.
-  TEST=`echo ${DOMAIN_NAME} | sed "s/^[a-z0-9\.\-]\{3,\}$//" | wc -w`
-  if [ ${TEST} -ne 0 ]
+  # Check that the domain name is valid.
+  test_valid_fqhn  "${DOMAIN_NAME}"
+  if [ "${VALID_FQHN}" = "no" ]
   then
     echo -e "\n${LRED}ERROR:${NRML} The domain name can not be '${DOMAIN_NAME}'."
-    echo -e "       It must be at least three characters and only contain lower case letters,"
-    echo -e "       numbers, hyphens and periods.\n"
+    echo -e "       It must only contain letters, numbers, periods and hyphens."
+    echo -e "       It must not begin or end with a hyphen or a period.\n"
     exit 54
   fi
 
@@ -1521,7 +1587,7 @@ new_host ()
           echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
           read VLAN_ID_TEMP
           # Check that the VLAN ID only contains numbers with a minimum of 1 characters.
-          TEST=`echo "${VLAN_ID_TEMP}" | sed "s/^[0-9]\{1,\}$//" | wc -w`
+          TEST=`echo "${VLAN_ID_TEMP}" | sed -r "s/^[0-9]+//" | wc -L`
           if [ ${TEST} -ne 0 ] || [ "${VLAN_ID_TEMP}" = "" ]
           then
             echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
@@ -1603,8 +1669,8 @@ new_host ()
       do
         echo -e "\n${LCYN}Enter static IP for WAN interface: ${NRML}\c"
         read WAN_IFACE_IP_TEMP
-        test_valid_inet_address ${WAN_IFACE_IP_TEMP}
-        if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+        test_valid_inet_address "${WAN_IFACE_IP_TEMP}"
+        if [ "${VALID_INET_ADDRESS}" = "yes" ]
         then
           get_class_c_subnet ${WAN_IFACE_IP_TEMP}
           get_class_b_subnet ${WAN_IFACE_IP_TEMP}
@@ -1630,8 +1696,8 @@ new_host ()
       do
         echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
         read WAN_IFACE_NETMASK_TEMP
-        test_valid_inet_address ${WAN_IFACE_NETMASK_TEMP}
-        if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+        test_valid_inet_address "${WAN_IFACE_NETMASK_TEMP}"
+        if [ "${VALID_INET_ADDRESS}" = "yes" ]
         then
           question_yes_no "\nYou have entered '${WAN_IFACE_NETMASK_TEMP}' as the WAN interface netmask.\nIs this correct?"
           if [ "${ANSWER}" = "yes" ]
@@ -1648,8 +1714,8 @@ new_host ()
       do
         echo -e "\n${LCYN}Enter the default router IP address for this host: ${NRML}\c"
         read WAN_ROUTER_IP_TEMP
-        test_valid_inet_address ${WAN_ROUTER_IP_TEMP}
-        if [ "${VALID_INET_ADDRESS=}" = "yes" ]
+        test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
+        if [ "${VALID_INET_ADDRESS}" = "yes" ]
         then
           question_yes_no "\nYou have entered '${WAN_ROUTER_IP_TEMP}' as the default router.\nIs this correct?"
           if [ "${ANSWER}" = "yes" ]
@@ -1824,12 +1890,12 @@ new_host ()
     echo -e "\n${LCYN}Enter login account username: ${NRML}\c"
     read FDO_USERNAME_TEMP
     # Check that the username only contains letters, numbers, periods and underscores with a minimum of 3 characters.
-    TEST=`echo "${FDO_USERNAME_TEMP}" | sed "s/^[a-z0-9\.\_]\{3,\}$//" | wc -w`
+    TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\-]+[a-z0-9]//" | wc -L`
     if [ ${TEST} -ne 0 ] || [ "${FDO_USERNAME_TEMP}" = "" ]
     then 
       echo -e "\n${LRED}ERROR:${NRML} The username can not be '${FDO_USERNAME_TEMP}'."
-      echo -e "       It must be at least three characters and only contain lower case "
-      echo -e "       letters, numbers, periods and underscores.\n"
+      echo -e "       It must be at least three characters and only contain lower case"
+      echo -e "       letters, numbers, periods and hyphens.\n"
     else
       question_yes_no "\nYou have entered '${FDO_USERNAME_TEMP}' as the login account username.\nIs this correct?"
       if [ "${ANSWER}" = "yes" ]
@@ -2171,19 +2237,19 @@ init_hotdesking ()
   do
     echo -e "\n${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}\c"
     read NIS_DOMAIN_NAME_TEMP
-    # Check that the nisdomainname only contains letters, numbers, periods and hyphens with a minimum of 3 characters.
-    TEST=`echo "${NIS_DOMAIN_NAME_TEMP}" | sed "s/^[a-zA-Z0-9\.\-]\{3,\}$//" | wc -w`
-    if [ ${TEST} -ne 0 ] || [ "${NIS_DOMAIN_NAME_TEMP}" = "" ]
+    # Check that the nisdomainname is a valid domain name.
+    test_valid_fqhn "${NIS_DOMAIN_NAME_TEMP}"
+    if [ "${VALID_FQHN}" = "yes" ]
     then
-      echo -e "\n${LRED}ERROR:${NRML} The domain name can not be '${NIS_DOMAIN_NAME_TEMP}'."
-      echo -e "       It must be at least three characters and only contain letters, numbers,"
-      echo -e "       periods and hyphens.\n"
-    else
-      question_yes_no "\nYou have entered '${NIS_DOMAIN_NAME_TEMP}' as the NIS domainname.\nIs this correct?"
+      question_yes_no "\nYou have entered '${NIS_DOMAIN_NAME_TEMP}' as the NIS domain name.\nIs this correct?"
       if [ "${ANSWER}" = "yes" ]
       then
         NIS_DOMAIN_NAME=${NIS_DOMAIN_NAME_TEMP}
       fi
+    else
+      echo -e "\n${LRED}ERROR:${NRML} The NIS domain name can not be '${NIS_DOMAIN_NAME_TEMP}'."
+      echo -e "       It must only contain letters, numbers, periods and hyphens."
+      echo -e "       It must not begin or end with a hyphen or a period.\n"
     fi
   done
 
@@ -3450,7 +3516,7 @@ create_jail_from_recipe ()
   then
     git add configs/${HOST_NAME}
     git add configs/${JAIL_NAME}@${HOST_NAME}
-    git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME=}'; ${HOST_NAME}."
+    git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
 
     if [ "${REPO_URI}" != "local" ]
     then
@@ -3606,7 +3672,7 @@ init_clonezilla_images ()
 }
 
 
-##### MAIN EXECUTION THREAD ###############################
+##### MAIN EXECUTION THREAD ####################################################
 
 SUB_CMD=${1}
 SUB_ARG1=${2}
@@ -3793,4 +3859,4 @@ case ${SUB_CMD} in
 
 esac
 
-###########################################################
+################################################################################
