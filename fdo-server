@@ -829,7 +829,7 @@ add_script ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -881,7 +881,7 @@ update_script ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo.${NRML}"
@@ -1018,7 +1018,7 @@ add_config ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -1091,7 +1091,7 @@ update_config ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2014,7 +2014,7 @@ new_host ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to the private remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2175,7 +2175,7 @@ setup_vnc_desktop()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2366,7 +2366,7 @@ init_hotdesking ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2623,7 +2623,7 @@ init_jails ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2789,7 +2789,7 @@ init_remote_desktops ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3164,7 +3164,7 @@ create_remote_desktop_instance ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3332,7 +3332,7 @@ create_jail ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3542,7 +3542,7 @@ create_jail_from_recipe ()
     if [ "${REPO_URI}" != "local" ]
     then
       echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-      git push
+      git push origin master
       if [ $? -ne 0 ]
       then
         echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3674,7 +3674,7 @@ init_clonezilla_images ()
   if [ "${REPO_URI}" != "local" ]
   then
     echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
-    git push
+    git push origin master
     if [ $? -ne 0 ]
     then
       echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
