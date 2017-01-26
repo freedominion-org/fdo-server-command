@@ -3748,7 +3748,7 @@ merge_local_repo_to_remote ()
     rm -rf "${REPO_NAME}"
     echo -e "\n${LRED}ERROR:${NRML} This host already exists in the remote repo!"
 	echo -e "       Consider removing or renaming the stale host config directory in the"
-    echo -e "   	remote repo."
+    echo -e "       remote repo."
     echo -e "       Aborting."
     exit 182
   else
@@ -3759,7 +3759,23 @@ merge_local_repo_to_remote ()
   # Move into the local repo.
   cd "/${REPO_NAME}"
 
-  ## TODO: check for existing remote in the local repo; warn and ask to proceed
+  # Record last local commit, so that we can rewind if needed.
+  LAST_LOCAL_COMMIT=`git log -1 | head -1 | awk '{print $2}'`
+
+  # Check for an existing (stale) remote repo, and if user agrees, proceed and delete it.
+  EXISTING_REMOTE=`git remote -v | egrep "^origin" | grep '(push)$' | awk '{print $2}'`
+  if [ "${EXISTING_REMOTE}" != "" ]
+  then
+    echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote origin in the local repo!"
+	echo -e "         Git URI of origin: ${EXISTING_REMOTE}\n"
+	question_yes_no "Would you like to proceed?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+      git remote remove origin
+	else
+      exit 183
+	fi
+  fi
 
   # Add the remote repo URI as this local repos' remote.
   git remote add origin "${REMOTE_REPO_URI}" > /dev/null 2>&1
@@ -3767,7 +3783,7 @@ merge_local_repo_to_remote ()
   then
     echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!"
     echo -e "       Aborting."
-    exit 183
+    exit 184
   fi
 
   # Fetch the remote repo.
@@ -3779,7 +3795,7 @@ merge_local_repo_to_remote ()
     echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!"
     echo -e "       Aborting."
 	git remote remove origin
-    exit 184
+    exit 185
   fi
 
   # Align the master branch on both local and remote repo.
@@ -3791,18 +3807,31 @@ merge_local_repo_to_remote ()
     echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
     git pull
   else
-    # Perform a merge of the local and remote master branch
+    # Perform a merge of the local and remote master branch.
     echo -e "\n${YELL}Next we need to merge the remote repo and our local repo...${NRML}\n"
 	pause_prompt 8
 	git merge -m "Merging local repo from host '${HOST_NAME}'."
-	## TODO: test for failure and clean up, inform user and exit
+	if [ ${?} -ne 0 ]
+    then
+      echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!"
+      echo -e "       Aborting."
+	  git remote remove origin
+	  exit 186
+    fi
   fi
 
   # Lastly, push the local repo deltas to the remote repo.
   echo -e "\n${YELL}Now we need to push the local repo changes to the remote repo.${NRML}"
   echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-  git push
-  ## TODO: test for failure and clean up, inform user and exit
+  git push origin master
+  if [ ${?} -ne 0 ]
+  then
+    echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!"
+    echo -e "       Aborting."
+    git remote remove origin
+	git reset --soft "${LAST_LOCAL_COMMIT}"
+    exit 187
+  fi
 
   REPO_URI="${REMOTE_REPO_URI}"
   echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
