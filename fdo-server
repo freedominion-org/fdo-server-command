@@ -2100,7 +2100,7 @@ setup_vnc_desktop()
 	fi
 
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
@@ -2208,7 +2208,7 @@ init_hotdesking ()
 	fi
 
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
@@ -2237,7 +2237,7 @@ init_hotdesking ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the hotdesk users' home folders.\nIs this correct?"
+			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the hotdesk users home folders.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2400,7 +2400,7 @@ init_jails ()
 	fi
  
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
@@ -2655,7 +2655,7 @@ init_remote_desktops ()
 	fi
  
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
@@ -3104,7 +3104,7 @@ create_remote_desktop_instance ()
 	IFS=${PREVIOUS_IFS}
 
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
@@ -3583,7 +3583,7 @@ init_clonezilla_images ()
 	fi
 
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts' registered${NRML}"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
