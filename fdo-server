@@ -3742,7 +3742,7 @@ merge_local_repo_to_remote ()
 	if [ ! -d "${REPO_NAME}/configs/" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The remote repo does not contain a config directory."
-	echo -e "         This usually means that it is a newly created, empty repo.\n"
+		echo -e "         This usually means that it is a newly created, empty repo.\n"
 	elif [ -d  "${REPO_NAME}/configs/${HOST_NAME}" ]
 	then
 		rm -rf "${REPO_NAME}"
@@ -3767,14 +3767,14 @@ merge_local_repo_to_remote ()
 	if [ "${EXISTING_REMOTE}" != "" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote origin in the local repo!"
-	echo -e "         Git URI of origin: ${EXISTING_REMOTE}\n"
-	question_yes_no "Would you like to proceed?"
-	if [ "${ANSWER}" = "yes" ]
-	then
+		echo -e "         Git URI of origin: ${EXISTING_REMOTE}\n"
+		question_yes_no "Would you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
 			git remote remove origin
-	else
+		else
 			exit 183
-	fi
+		fi
 	fi
 
 	# Add the remote repo URI as this local repos' remote.
@@ -3794,24 +3794,19 @@ merge_local_repo_to_remote ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!"
 		echo -e "       Aborting."
-	git remote remove origin
+		git remote remove origin
 		exit 185
 	fi
 
 	# Align the master branch on both local and remote repo.
 	git branch --set-upstream-to=origin/master master > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
+	if [ ${?} -eq 0 ]
 	then
-	# The remote repo must be new / empty and so no master branch exists yet. So let's just push.
-		echo -e "\n${YELL}Next we need to pull the remote repo into our local repo.${NRML}"
-		echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-		git pull
-	else
-		# Perform a merge of the local and remote master branch.
+		# Remote is non-empty. Perform a merge of the local and remote master branch.
 		echo -e "\n${YELL}Next we need to merge the remote repo and our local repo...${NRML}\n"
-	pause_prompt 8
-	git merge -m "Merging local repo from host '${HOST_NAME}'."
-	if [ ${?} -ne 0 ]
+		pause_prompt 8
+		git merge -m "Merging local repo from host '${HOST_NAME}'."
+		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!"
 			echo -e "       Aborting."
@@ -3829,7 +3824,7 @@ merge_local_repo_to_remote ()
 		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!"
 		echo -e "       Aborting."
 		git remote remove origin
-	git reset --soft "${LAST_LOCAL_COMMIT}"
+		git reset --soft "${LAST_LOCAL_COMMIT}"
 		exit 187
 	fi
 
