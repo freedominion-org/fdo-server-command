@@ -51,6 +51,7 @@ HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.30"
 MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
 DYNAMIC_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.50"
 
+TERM="xterm"
 LRED="\033[1;31m"
 LGRN="\033[1;32m"
 LBLU="\033[1;34m"
@@ -65,6 +66,9 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
+## TODO: make robust git_push and git_pull functions
+## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
+## TODO: add rdscreensized setup to init-remote-desktops
 
 ####################################################
 
@@ -90,6 +94,10 @@ usage ()
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-hotdesking${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-clonezilla-images${NRML}"
+	echo -e ""
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} upgrade-repo-from-upstream${NRML}"
+	echo -e ""
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} merge-local-repo-to-remote${NRML}"
 	echo -e ""
 	echo -e ""
 	echo -e "${LCYN}    ---- SCRIPT MANAGEMENT ----${NRML}"
@@ -655,6 +663,71 @@ init_git_config ()
 
 }
 
+upgrade_repo_from_upstream ()
+{
+	## NOTE: this function will NOT push the upgraded local repo to the private remote repo.
+
+	if [ "${1}" = "--push" ]
+	then
+		DO_GIT_PUSH="yes"
+	else
+		DO_GIT_PUSH="no"
+	fi
+
+	CWD=`pwd`
+
+	# Move into local repo directory.
+	cd "/${REPO_NAME}"
+	if [ ${?} -ne 0 ]
+	then
+		return 1
+	fi
+
+	# Add the public upstream skeleton repo as a remote called 'upstream'.
+	git remote add upstream "${FDO_SERVER_SKELETON_REPO}"
+	if [ ${?} -ne 0 ]
+	then
+		return 2
+	fi
+
+	# Fetch the upstream changes.
+	git fetch upstream
+	if [ ${?} -ne 0 ]
+	then
+		return 3
+	fi
+
+	# Merge the upstream changes to the local repo.
+	git merge upstream/master -m "Upgrading private repo from upstream skeleton repo."
+	if [ ${?} -ne 0 ]
+	then
+		return 4
+	fi
+
+	# Detach the upstream remote from the local repo
+	git remote remove upstream
+	if [ ${?} -ne 0 ]
+	then
+		return 5
+	fi
+
+	if [ "${REPO_URI}" != "local" ] && [ "${DO_GIT_PUSH}" = "yes" ]
+	then
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
+		git push origin master
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
+			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+		fi
+	fi
+	echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n" 
+
+	cd "${CWD}"
+
+	return 0
+}
+
 init_local_repo ()
 {
 
@@ -666,15 +739,16 @@ init_local_repo ()
 	cd /
 
 	# Clone or update the git repository
-	if [ -d "/${REPO_NAME}" ]
+	if [ -d "/${REPO_NAME}/.git" ]
 	then
 
 		# The local repo already exists.
 
-		cd /${REPO_NAME}
+		cd "/${REPO_NAME}"
 
 		if [ "${REPO_URI}" = "local" ]
 		then
+			# Re-initialise a local only repo.
 			echo -e "${YELL}The local git repo already exists.${NRML}"
 			echo -e "${YELL}Updating from the upstream skeleton repo...${NRML}\n"
 			# Temporarily reattach to public upstream skeleton repo, to pull latest changes.
@@ -685,19 +759,28 @@ init_local_repo ()
 			# Detach from the remote repo
 			git remote remove origin
 		else
+			# Re-initialise a local repo and attach it to its remote repo.
 			echo -e "${YELL}The local git repo already exists.${NRML}"
 			echo -e "${YELL}Updating from the private remote repo...${NRML}\n"
 			# Attach the local repo to the private remote repo.
+			git remote remove origin
 			git remote add origin "${REPO_URI}"
 			git fetch
 			git branch --set-upstream-to=origin/master master
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The remote repo is not valid!"
+				echo -e "       Check that the remote repo URI is correct."
+				echo -e "       Consider using the subcommand 'merge-local-repo-to-remote'.\n"
+				exit 170
+			fi
 			# Update (pull) the latest changes from the private remote repo.
 			git pull
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo."
 				echo -e "       ${LRED}Aborting.${NRML}\n"
-				exit 170
+				exit 171
 			fi
 		fi
 
@@ -707,6 +790,7 @@ init_local_repo ()
 
 		if [ "${REPO_URI}" = "local" ]
 		then
+			# Initialise a new local only repo.
 			# Clone the upstream skeleton repo from github.
 			echo -e "${YELL}Cloning the upstream skeleton git repo...${NRML}\n"
 			git clone "${FDO_SERVER_SKELETON_REPO}"
@@ -714,12 +798,13 @@ init_local_repo ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo."
 				echo -e "       ${LRED}Aborting.${NRML}\n"
-				exit 171
+				exit 172
 			fi
 			# After we get the skeleton, detach from the upstream skeleton repo.
-			cd /${REPO_NAME}
+			cd "/${REPO_NAME}"
 			git remote remove origin
 		else
+			# Initialise a new local repo and attach to its remote repo.
 			# Clone our private remote git repo
 			echo -e "${YELL}Cloning our private remote git repo...${NRML}\n"
 			git clone ${REPO_URI}
@@ -727,7 +812,7 @@ init_local_repo ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo."
 				echo -e "       ${LRED}Aborting.${NRML}\n"
-				exit 172
+				exit 173
 			fi
 		fi
 
@@ -828,7 +913,7 @@ add_script ()
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
-			echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git push origin master
 			if [ $? -ne 0 ]
 			then
@@ -1017,7 +1102,7 @@ add_config ()
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
-			echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git push origin master
 			if [ $? -ne 0 ]
 			then
@@ -1090,7 +1175,7 @@ update_config ()
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
-			echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git push origin master
 			if [ $? -ne 0 ]
 			then
@@ -1489,6 +1574,22 @@ new_host ()
 	fi
 
 	init_local_repo
+
+	# Check that the local repo is not empty, otherwise pull a fresh skeleton.
+	if [ ! -d "/${REPO_NAME}/configs" ]
+	then
+		# Get a skeleton from the public upstream skeleton repo.
+		echo -e "${ORNG}WARNING:${NRML} Repo is invalid! It is missing the configs directory."
+	    echo -e "         we will attempt to fetch the upstream skeleton git repo...${NRML}\n"
+		pause_prompt 8
+		upgrade_repo_from_upstream
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo."
+			echo -e "       ${LRED}Aborting.${NRML}\n"
+			exit 57
+		fi
+	fi
 
 	cd /${REPO_NAME}
 
@@ -2013,7 +2114,7 @@ new_host ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to the private remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to the private remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -2169,12 +2270,15 @@ setup_vnc_desktop()
 	sh /etc/rc.local
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n" 
+	pause_prompt 8
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'setup-vnc-desktop'; ${HOST_NAME}."
 
+	pause_prompt 8
+
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -2237,7 +2341,7 @@ init_hotdesking ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the hotdesk users home folders.\nIs this correct?"
+			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the hotdesk users home folders.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2365,7 +2469,7 @@ init_hotdesking ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -2378,10 +2482,10 @@ init_hotdesking ()
 	echo -e "\n${LGRN}To register hotdesk users on this server; use the command:${NRML}"
 	echo -e "${LBLU}fdo-hotdesk-add-user${NRML}\n"
 
-	echo -e "${YELL}Hotdesk user home folder pool name: ${POOL_NAME}${NRML}"
-	echo -e "${YELL}Hotdesk user home folder dataset: ${POOL_NAME}/fdo-hotdesk-home${NRML}"
-	echo -e "${YELL}NIS domain name: ${NIS_DOMAIN_NAME}${NRML}"
-	echo -e "${YELL}NIS server IP address: ${NIS_SERVER_IP}${NRML}\n"
+	echo -e "${YELL}Hotdesk user home folder pool name:${NRML} ${POOL_NAME}"
+	echo -e "${YELL}Hotdesk user home folder dataset:${NRML} ${POOL_NAME}/fdo-hotdesk-home"
+	echo -e "${YELL}NIS domain name:${NRML} ${NIS_DOMAIN_NAME}"
+	echo -e "${YELL}NIS server IP address:${NRML} ${NIS_SERVER_IP}\n"
 
 	cd -
 
@@ -2449,7 +2553,7 @@ init_jails ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for jails datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the service jails.\nIs this correct?"
+			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the service jails.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2622,7 +2726,7 @@ init_jails ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -2718,7 +2822,7 @@ init_remote_desktops ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for remote desktop datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
+			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2788,7 +2892,7 @@ init_remote_desktops ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -2893,6 +2997,8 @@ create_remote_desktop_template ()
 	question_yes_no "Is this template for a 64bit OS?"
 	IS_64BIT="${ANSWER}"
 
+	## TODO: ask user for size  (in MBs) of VM HDD
+	## TODO: option to skip installing from ISO and use existing vdi file.
 
 	# Get the installer ISO path
 	LOOP=1
@@ -2933,7 +3039,7 @@ create_remote_desktop_template ()
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory 2048 --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --cableconnected1 on"
 	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_SERVER_IP} --vrdeproperty VNCPassword=vncpassword"
-	su - RemoteDesktop -c "VBoxManage createhd --filename /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi --size 10000"
+	su - RemoteDesktop -c "VBoxManage createhd --filename /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi --size 50000"
 
 	question_yes_no "\n\nAre you installing a Windows XP (or older) guest OS?"
 	if [ "${ANSWER}" = "yes" ]
@@ -3163,7 +3269,7 @@ create_remote_desktop_instance ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -3331,7 +3437,7 @@ create_jail ()
 
 		if [ "${REPO_URI}" != "local" ]
 		then
-			echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git push origin master
 			if [ $? -ne 0 ]
 			then
@@ -3352,6 +3458,8 @@ create_jail ()
 	else
 		service jail start ${JAIL_NAME}
 	fi
+
+	echo -e ""
 
 	cd -
 
@@ -3541,7 +3649,7 @@ create_jail_from_recipe ()
 
 		if [ "${REPO_URI}" != "local" ]
 		then
-			echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git push origin master
 			if [ $? -ne 0 ]
 			then
@@ -3612,7 +3720,7 @@ init_clonezilla_images ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool for Clonezilla images:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${POOL_NAME_TEMP}' to store the Clonezilla images.\nIs this correct?"
+			question_yes_no "\n\nYou have selected '${POOL_NAME_TEMP}' to store the Clonezilla images.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -3673,7 +3781,7 @@ init_clonezilla_images ()
 
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\nPushing changes to ${REPO_NAME} remote repo...\n"
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 		git push origin master
 		if [ $? -ne 0 ]
 		then
@@ -3697,9 +3805,12 @@ merge_local_repo_to_remote ()
 	# Test that we are actually using a local repo
 	if [ "${REPO_URI}" != "local" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears you are already using a remote repo!"
-		echo -e "       Aborting."
-		exit 180
+		echo -e "\n${LRED}ERROR:${NRML} It appears you are already using a remote repo!\n"
+		question_yes_no "Would you like to proceed regardless?"
+		if [ "${ANSWER}" = "no" ]
+		then
+			exit 180
+		fi
 	fi
 
 	# Ask for the URI of the remote repo.
@@ -3813,6 +3924,8 @@ merge_local_repo_to_remote ()
 		git remote remove origin
 		exit 186
 		fi
+	else
+		NEEDS_UPSTREAM_BRANCH_SET="yes"
 	fi
 
 	# Lastly, push the local repo deltas to the remote repo.
@@ -3828,6 +3941,12 @@ merge_local_repo_to_remote ()
 		exit 187
 	fi
 
+	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" ="yes" ]
+	then
+		# Align the master branch on both local and remote repo.
+		git branch --set-upstream-to=origin/master master > /dev/null 2>&1
+	fi
+
 	REPO_URI="${REMOTE_REPO_URI}"
 	echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
 	
@@ -3836,6 +3955,8 @@ merge_local_repo_to_remote ()
 }
 
 ##### MAIN EXECUTION THREAD ####################################################
+
+TERM=${TERM}
 
 SUB_CMD=${1}
 SUB_ARG1=${2}
@@ -3972,9 +4093,17 @@ case ${SUB_CMD} in
 		;;
 
 	merge-local-repo-to-remote)
-		# Move and merge a local repo to a private remote repo
-		update_local_repo
+		# Move and merge a local repo to a private remote repo.
 		merge_local_repo_to_remote
+		;;
+
+	upgrade-repo-from-upstream)
+		# Upgrade the private repo to include changes from the public upstream skeleton repo.
+		upgrade_repo_from_upstream --push
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to upgrade from the public upstream skeleton git repo.\n"
+		fi
 		;;
 
 	init-jails)
