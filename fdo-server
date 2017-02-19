@@ -157,7 +157,7 @@ pause_prompt ()
 	then
 		PAUSE_DURATION=250
 	fi
-	echo -e "\n${GREY}Press any key to continue...${NRML}\c"  
+	echo -e "\n${GREY}Press any key to continue...${NRML}\c"
 	CURRENT_TTY_SETTINGS=$(stty -g)
 	stty raw -echo min 0 time ${PAUSE_DURATION}
 	printf '%s' $(dd bs=1 count=1 2>/dev/null) > /dev/null
@@ -240,6 +240,42 @@ test_valid_person_name ()
 
 }
 
+test_valid_integer ()
+{
+
+	TEST_CASE="${1}"
+	TEST_MIN_VALUE=${2}
+	TEST_MAX_VALUE=${3}
+
+	VALID_INTEGER="yes"
+
+	if [ "${TEST_CASE}" = "" ]
+	then
+		VALID_INTEGER="no"
+		return 1
+	fi
+
+	IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^[0-9]+//" | wc -L`
+	if [ ${IS_SYNTAX_OK}  -ne 0 ]
+	then
+		VALID_INTEGER="no"
+		return 2
+	fi
+
+	if [ ${TEST_CASE} -lt ${TEST_MIN_VALUE} ]
+	then
+		VALID_INTEGER="no"
+		return 3
+	fi
+
+	if [ ${TEST_CASE} -gt ${TEST_MAX_VALUE} ]
+	then
+		VALID_INTEGER="no"
+		return 4
+	fi
+
+}
+
 test_valid_email_address ()
 {
 
@@ -270,7 +306,7 @@ test_valid_inet_address ()
 	VALID_INET_ADDRESS="yes"
 
 	if [ "${TEST_CASE}" = "" ]
-	then 
+	then
 		VALID_INET_ADDRESS="no"
 		return 1
 	fi
@@ -451,7 +487,7 @@ check_repo_config ()
 			then
 				REPO_TYPE="${REPO_TYPE_TEMP}"
 			fi
-		done 
+		done
 
 		# If it does not exist, create the root path for FDo config files
 		if [ ! -f ${FDO_CONFIG_ROOT} ]
@@ -612,7 +648,7 @@ init_git_config ()
 		do
 			echo -e "\n${LCYN}Enter the git user name: ${NRML}\c"
 			read GIT_USER_NAME_TEMP
-			# Check that the git user name only contains letters numbers and spaces. 
+			# Check that the git user name only contains letters numbers and spaces.
 			test_valid_person_name "${GIT_USER_NAME_TEMP}"
 			if [ "${VALID_PERSON_NAME}" = "yes" ]
 			then
@@ -721,7 +757,7 @@ upgrade_repo_from_upstream ()
 			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 		fi
 	fi
-	echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n" 
+	echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n"
 
 	cd "${CWD}"
 
@@ -921,7 +957,7 @@ add_script ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
-		echo -e "\nOK, it seems we've successfully added the new script!\n" 
+		echo -e "\nOK, it seems we've successfully added the new script!\n"
 	fi
 
 	cd -
@@ -973,7 +1009,7 @@ update_script ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
-		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n" 
+		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n"
 	fi
 
 	cd -
@@ -994,14 +1030,14 @@ install_configs ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!"
 		echo -e "       ${LRED}Aborting.${NRML}\n"
 		exit 26
-	fi 
+	fi
 
 	if [ ! -d ${INSTALL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!"
 		echo -e "       ${LRED}Aborting.${NRML}\n"
 		exit 27
-	fi 
+	fi
 
 	install_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH}
 
@@ -1030,14 +1066,14 @@ check_configs ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!"
 		echo -e "       ${LRED}Check aborted.${NRML}\n"
 		return 1
-	fi 
+	fi
 
 	if [ ! -d ${INSTALL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!"
 		echo -e "       ${LRED}Check aborted.${NRML}\n"
 		return 2
-	fi 
+	fi
 
 	compare_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH} ${3}
 
@@ -1083,7 +1119,7 @@ add_config ()
 	else
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
-		then  
+		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
 			exit 32
 		fi
@@ -1156,7 +1192,7 @@ update_config ()
 		read CHANGE_MESSAGE
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
-		then  
+		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
 			exit 42
 		fi
@@ -1247,12 +1283,12 @@ connect_internet ()
 			do
 				echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
 				read VLAN_ID_TEMP
-				# Check that the VLAN ID only contains numbers with a minimum of 1 characters.
-				TEST=`echo "${VLAN_ID_TEMP}" | sed -r "s/^[0-9]+//" | wc -L`
-				if [ ${TEST} -ne 0 ] || [ "${VLAN_ID_TEMP}" = "" ]
+				# Check that the VLAN ID only contains numbers being a minimum of 1 and maximum of 4096.
+				test_valid_integer "${VLAN_ID_TEMP}" 1 4096
+				if [ "${VALID_INTEGER}" = "no" ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
-					echo -e "       It must be at least one character and only contain numbers.\n"
+					echo -e "       It must be a number between 1 and 4096.\n"
 				else
 					question_yes_no "\nYou have entered '${VLAN_ID_TEMP}' as the VLAN ID.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
@@ -1567,7 +1603,7 @@ new_host ()
 	pause_prompt 8
 	pkg install ${ESSENTIAL_PACKAGES}
 	if [ $? -ne 0 ]
-	then   
+	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages."
 		echo -e "       ${LRED}Aborting.${NRML}\n"
 		exit 56
@@ -1708,12 +1744,12 @@ new_host ()
 				do
 					echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
 					read VLAN_ID_TEMP
-					# Check that the VLAN ID only contains numbers with a minimum of 1 characters.
-					TEST=`echo "${VLAN_ID_TEMP}" | sed -r "s/^[0-9]+//" | wc -L`
-					if [ ${TEST} -ne 0 ] || [ "${VLAN_ID_TEMP}" = "" ]
+					# Check that the VLAN ID only contains numbers being a minimum of 1 and maximum of 4096.
+					test_valid_integer "${VLAN_ID_TEMP}" 1 4096
+					if [ "${VALID_INTEGER}" = "no" ]
 					then
 						echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
-						echo -e "       It must be at least one character and only contain numbers.\n"
+						echo -e "       It must be a number between 1 and 4096.\n"
 					else
 						question_yes_no "\nYou have entered '${VLAN_ID_TEMP}' as the VLAN ID.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
@@ -2008,13 +2044,13 @@ new_host ()
 	# Get valid login name
 	FDO_USERNAME=""
 	while [ "${FDO_USERNAME}" = "" ]
-	do  
+	do
 		echo -e "\n${LCYN}Enter login account username: ${NRML}\c"
 		read FDO_USERNAME_TEMP
 		# Check that the username only contains letters, numbers, periods and underscores with a minimum of 3 characters.
 		TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\-]+[a-z0-9]//" | wc -L`
 		if [ ${TEST} -ne 0 ] || [ "${FDO_USERNAME_TEMP}" = "" ]
-		then 
+		then
 			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${FDO_USERNAME_TEMP}'."
 			echo -e "       It must be at least three characters and only contain lower case"
 			echo -e "       letters, numbers, periods and hyphens.\n"
@@ -2107,7 +2143,7 @@ new_host ()
 	# Remove the .gitignore from the local repo configs directory (if it exists)
 	git rm configs/.gitignore 2> /dev/null
 
-	# Commit this hosts config to the local repo 
+	# Commit this hosts config to the local repo
 	echo -e "\n${YELL}Committing this hosts config to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	git commit -m "Adding new host; ${HOST_NAME}."
@@ -2124,7 +2160,7 @@ new_host ()
 	fi
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up the new host:${NRML}"
-	echo -e "${LGRN}'${HOST_NAME}'.${NRML}\n\n" 
+	echo -e "${LGRN}'${HOST_NAME}'.${NRML}\n\n"
 	question_yes_no "Would you like to reboot now for new settings to take full effect?\n[RECOMMENDED]"
 	if [ "${ANSWER}" = "yes" ]
 	then
@@ -2228,7 +2264,7 @@ setup_vnc_desktop()
 	pause_prompt 8
 	pkg install ${VNC_DESKTOP_PACKAGES}
 	if [ $? -ne 0 ]
-	then   
+	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install required packages."
 		echo -e "       ${LRED}Aborting.${NRML}\n"
 		exit 73
@@ -2266,10 +2302,13 @@ setup_vnc_desktop()
 	# Start dbus
 	service dbus start
 
+	echo -e "\n${YELL}The next prompt will ask for the VNC session password...${NRML}\n"
+	pause_prompt 8
+
 	# Run vncserver for the first time, will prompt for vnc passwords
 	sh /etc/rc.local
 
-	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n" 
+	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	pause_prompt 8
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'setup-vnc-desktop'; ${HOST_NAME}."
@@ -2418,7 +2457,7 @@ init_hotdesking ()
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
-	question_yes "\nNow we need to restart the network to register the NIS domain name.\nCan we proceed?" 
+	question_yes "\nNow we need to restart the network to register the NIS domain name.\nCan we proceed?"
 
 	/etc/netstart
 
@@ -2588,9 +2627,9 @@ init_jails ()
 
 	# Get version strings
 	FREEBSD_VERSION_STRING=`freebsd-version`
-	FREEBSD_VERSION=`freebsd-version | cut -d- -f1` 
+	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
-	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2` 
+	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 
 	SUM_EXIT_CODE=0
@@ -2655,7 +2694,7 @@ init_jails ()
 	# Only run sshd on LAN host (not jail) IPs
 	for IP_ADDRESS in ${HOST_IP_ADDRESSES}
 	do
-		## TODO: decide which of these IP addresses (if more than one) to use in port forwarding rule. 
+		## TODO: decide which of these IP addresses (if more than one) to use in port forwarding rule.
 		##       Currently it will use the first in the list.
 		sed -i "" "s/HOST_LAN_IP/${IP_ADDRESS}/" configs/${HOST_NAME}/etc/pf.conf
 		sed -i "" "s/#\(rdr on .*host_sshd.*\)/\1/" configs/${HOST_NAME}/etc/pf.conf
@@ -2924,7 +2963,7 @@ create_remote_desktop_template ()
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
-	then  
+	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the 'new-host' subcommand first.\n"
 		exit 111
@@ -2994,37 +3033,138 @@ create_remote_desktop_template ()
 		done
 	fi
 
-	question_yes_no "Is this template for a 64bit OS?"
-	IS_64BIT="${ANSWER}"
+	question_yes_no "\nIs this template for a 64bit OS?"
+	IS_GUEST_OS_64BIT="${ANSWER}"
 
-	## TODO: ask user for size  (in MBs) of VM HDD
-	## TODO: option to skip installing from ISO and use existing vdi file.
+	question_yes_no "\nIs this a Windows XP (or older) guest OS?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		IS_GUEST_OS_WINXP_OR_OLDER="yes"
+		STORAGE_CTL_NAME="IDE"
+		STORAGE_CTL_TYPE="ide"
+		STORAGE_CTL_CHIPSET="PIIX4"
+		STORAGE_CTL_HOST_IOCACHE="on"
+		VBOX_NIC_TYPE="Am79C973"
+	else
+		IS_GUEST_OS_WINXP_OR_OLDER="no"
+		STORAGE_CTL_NAME="SATA"
+		STORAGE_CTL_TYPE="sata"
+		STORAGE_CTL_CHIPSET="IntelAHCI"
+		STORAGE_CTL_HOST_IOCACHE="off"
+		VBOX_NIC_TYPE="82540EM"
+	fi
 
-	# Get the installer ISO path
-	LOOP=1
-	while [ ${LOOP} -eq 1 ]
+	VM_MEM_SIZE_MB=""
+	while [ "${VM_MEM_SIZE_MB}" = "" ]
 	do
-		# Ask for installer ISO file
-		dialog --title "Select OS installer ISO" --no-cancel --fselect / 20 80 2> ${DIALOG_OUT_FILE}
-		OS_INSTALLER_ISO=`cat ${DIALOG_OUT_FILE}`
-		if [ -f "${OS_INSTALLER_ISO}" ]
+		echo -e "\n${LCYN}Enter the memory size in MB of the VM template: ${NRML}\c"
+		read VM_MEM_SIZE_MB_TEMP
+		# Check that the VM memory size contains only numbers.
+		test_valid_integer "${VM_MEM_SIZE_MB_TEMP}" 100 1000000
+		if [ "${VALID_INTEGER}" = "yes" ]
 		then
-			file ${OS_INSTALLER_ISO} | grep "ISO 9660" > /dev/null
-			if [ ${?} -eq 0 ]
+			question_yes_no "\nYou have entered '${VM_MEM_SIZE_MB_TEMP}' as the VM memory size.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
 			then
-				LOOP=0
-			else
-				echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
-				pause_prompt 5
+				VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB_TEMP}
 			fi
 		else
-			echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
-			pause_prompt 5
+			echo -e "\n${LRED}ERROR:${NRML} The VM memory size can not be '${VM_MEM_SIZE_MB}'."
+			echo -e "       It must contain only numbers, greater than 100 and less than 1000000.\n"
 		fi
 	done
 
+	# Prompt for the method; install or copy from existing VDI image.
+	INSTALL_OR_COPY_VDI=""
+	while [ "${INSTALL_OR_COPY_VDI}" = "" ]
+	do
+		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing VDI image?\n(install|copy): \c"
+		read INSTALL_OR_COPY_VDI_TEMP
+		# Check input validation.
+		if [ "${INSTALL_OR_COPY_VDI_TEMP}" = "install" ] || [ "${INSTALL_OR_COPY_VDI_TEMP}" = "copy" ]
+		then
+			INSTALL_OR_COPY_VDI="${INSTALL_OR_COPY_VDI_TEMP}"
+		fi
+	done
+
+	echo -e ""
+
+	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
+	then
+		# Get the VMs' HDD size (in MB).
+		VM_HDD_SIZE_MB=""
+		while [ "${VM_HDD_SIZE_MB}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the maximum size in MB of the VDI (VBox HDD): ${NRML}\c"
+			read VM_HDD_SIZE_MB_TEMP
+			# Check that the VM HDD size contains only numbers.
+			test_valid_integer "${VM_HDD_SIZE_MB_TEMP}" 100 1000000
+			if [ "${VALID_INTEGER}" = "yes" ]
+			then
+				question_yes_no "\nYou have entered '${VM_HDD_SIZE_MB_TEMP}' as the max VDI size.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_HDD_SIZE_MB=${VM_HDD_SIZE_MB_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The max VDI size can not be '${VM_HDD_SIZE_MB}'."
+				echo -e "       It must contain only numbers, greater than 100 and less than 1000000.\n"
+			fi
+		done
+
+		# Get the installer ISO path
+		OS_INSTALLER_ISO=""
+		while [ "${OS_INSTALLER_ISO}" = "" ]
+		do
+			# Ask for installer ISO file
+			dialog --title "Select OS installer ISO" --no-cancel --fselect / 20 80 2> ${DIALOG_OUT_FILE}
+			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -f "${OS_INSTALLER_ISO_TEMP}" ]
+			then
+				file "${OS_INSTALLER_ISO_TEMP}" | grep "ISO 9660" > /dev/null
+				if [ ${?} -eq 0 ]
+				then
+					OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
+					pause_prompt 5
+				fi
+			else
+				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+				pause_prompt 5
+			fi
+		done
+	fi
+
+	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
+	then
+		# Get the existing VDI file path
+		EXISTING_VDI_PATH=""
+		while [ "${EXISTING_VDI_PATH}" = "" ]
+		do
+			# Ask for existing VDI image path
+			dialog --title "Select existing VDI image" --no-cancel --fselect / 20 80 2> ${DIALOG_OUT_FILE}
+			EXISTING_VDI_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -f "${EXISTING_VDI_PATH_TEMP}" ]
+			then
+				file "${EXISTING_VDI_PATH_TEMP}" | grep "VirtualBox Disk Image" > /dev/null
+				if [ ${?} -eq 0 ]
+				then
+					EXISTING_VDI_PATH="${EXISTING_VDI_PATH_TEMP}"
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not a VDI image!\n"
+					pause_prompt 5
+				fi
+			else
+				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+				pause_prompt 5
+			fi
+		done
+	fi
+
 	echo -e "\n"
 
+	# Stop and unregister any existing template VM.
 	su - RemoteDesktop -c "VBoxManage list vms" | grep RemoteDesktop > /dev/null
 	if [ ${?} -eq 0 ]
 	then
@@ -3033,34 +3173,64 @@ create_remote_desktop_template ()
 		then
 			service RemoteDesktop onestop
 		fi
+		echo -e "\n${YELL}Destroying existing template VM...${NRML}\n"
 		su - RemoteDesktop -c "VBoxManage unregistervm RemoteDesktop --delete"
+		if [ ${?} -ne 0 ]
+		then
+			sleep 3
+			su - RemoteDesktop -c "VBoxManage startvm RemoteDesktop --type emergencystop"
+			sleep 15
+			echo -e "\n${YELL}Forcibly destroying existing template VM...${NRML}\n"
+			su - RemoteDesktop -c "VBoxManage unregistervm RemoteDesktop --delete"
+		fi
 	fi
+
+	# Create the VM.
+	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
 	su - RemoteDesktop -c "VBoxManage createvm --name 'RemoteDesktop' --register"
-	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory 2048 --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
-	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --cableconnected1 on"
+	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory ${VM_MEM_SIZE_MB} --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
+	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --nictype1 ${VBOX_NIC_TYPE} --cableconnected1 on"
 	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_SERVER_IP} --vrdeproperty VNCPassword=vncpassword"
-	su - RemoteDesktop -c "VBoxManage createhd --filename /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi --size 50000"
 
-	question_yes_no "\n\nAre you installing a Windows XP (or older) guest OS?"
-	if [ "${ANSWER}" = "yes" ]
+	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
 	then
-		su - RemoteDesktop -c "VBoxManage storagectl 'RemoteDesktop' --name 'IDE Controller' --add ide"
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'IDE Controller' --port 0 --device 0 --type hdd --medium /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi"
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'IDE Controller' --port 1 --device 0 --type dvddrive --medium ${OS_INSTALLER_ISO}"
-	else
-		su - RemoteDesktop -c "VBoxManage storagectl 'RemoteDesktop' --name 'SATA Controller' --add sata"
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'SATA Controller' --port 0 --device 0 --type hdd --medium /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi"
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'SATA Controller' --port 1 --device 0 --type dvddrive --medium ${OS_INSTALLER_ISO}"
+		# Create the VMs' HDD.
+		su - RemoteDesktop -c "VBoxManage createhd --filename /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi --size ${VM_HDD_SIZE_MB}"
 	fi
 
-	if [ "${IS_64BIT}" = "yes" ]
+	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
+	then
+		# Copy the existing VDI to the correct path and chown (change UID/GID ownership).
+		echo -e "\n${YELL}Copying existing VDI to template VM path...${NRML}\n"
+		cp "${EXISTING_VDI_PATH}" /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi
+		chown RemoteDesktop:RemoteDesktop /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi
+	fi
+
+	su - RemoteDesktop -c "VBoxManage storagectl 'RemoteDesktop' --name '${STORAGE_CTL_NAME} Controller' --add ${STORAGE_CTL_TYPE} --controller ${STORAGE_CTL_CHIPSET} --hostiocache ${STORAGE_CTL_HOST_IOCACHE} --portcount 2"
+	su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 0 --device 0 --type hdd --medium /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi"
+
+	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
+	then
+		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium '${OS_INSTALLER_ISO}'"
+	else
+		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium emptydrive"
+	fi
+
+	if [ "${IS_GUEST_OS_64BIT}" = "yes" ]
 	then
 		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --longmode on"
 	else
 		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --longmode off"
 	fi
 
-	# Start template for first time
+	if [ "${IS_GUEST_OS_WINXP_OR_OLDER}" = "yes" ]
+	then
+		# Do nothing yet.
+	else
+		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --audiocontroller hda"
+	fi
+
+	# Start template for first time.
 	touch /var/log/RemoteDesktop.log
 	chown RemoteDesktop:RemoteDesktop /var/log/RemoteDesktop.log
 	service RemoteDesktop onestart
@@ -3075,11 +3245,20 @@ create_remote_desktop_template ()
 	echo -e "${LGRN}VNC URI:      ${VNC_SERVER_IP}:6000${NRML}"
 	echo -e "${LGRN}VNC Password: vncpassword\n\n"
 	
-	# Pause for user to finish configuring template
-	question_yes "\n\nAre you finished installing the guest OS for this remote desktop template?" 
+	# Pause for user to finish configuring template.
+	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
+	then
+		question_yes "\nAre you finished installing the guest OS for this remote desktop template?"
+	fi
 
-	# Optionally install guest additions
-	question_yes_no "\n\nWould you like to install guest additions into the remote desktop template? [RECOMMENDED]" 
+	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
+	then
+		question_yes "\nAre you finished setting up the guest OS for this remote desktop template?"
+		question_yes "\nHave you considered uninstalling any previous VirtualBox guest additions\nfrom this guest before proceeding?"
+	fi
+
+	# Optionally install guest additions.
+	question_yes_no "\nWould you like to install guest additions into the remote desktop template? [RECOMMENDED]"
 	if [ "${ANSWER}" = "yes" ]
 	then
 		VBOX_VERSION=`pkg info virtualbox-ose | head -1 | cut -d_ -f 1 | cut -d- -f3`
@@ -3087,11 +3266,12 @@ create_remote_desktop_template ()
 
 		echo -e "\n${YELL}Downloading guest additions DVD ISO...${NRML}\n"
 		fetch -o /vboxguests/${GUEST_ADDITIONS_ISO} http://download.virtualbox.org/virtualbox/${VBOX_VERSION}/${GUEST_ADDITIONS_ISO}
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'IDE Controller' --port 1 --device 0 --type dvddrive --medium /vboxguests/${GUEST_ADDITIONS_ISO}"
+
+		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium /vboxguests/${GUEST_ADDITIONS_ISO}"
 
 		echo -e "\n${YELL}The guest additions DVD ISO should now be available in the guest OS.${NRML}"
 		echo -e "${YELL}Please install the guest additions and reboot the guest OS.${NRML}\n\n"
-		question_yes "Finished installing guest additions and rebooted the guest OS?" 
+		question_yes "Finished installing guest additions and rebooted the guest OS?"
 		su - RemoteDesktop -c "VBoxManage controlvm 'RemoteDesktop' setvideomodehint 1272 700 32"
 	fi
 
@@ -3376,9 +3556,9 @@ create_jail ()
 
 	# Get version strings
 	FREEBSD_VERSION_STRING=`freebsd-version`
-	FREEBSD_VERSION=`freebsd-version | cut -d- -f1` 
+	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
-	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2` 
+	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 
 	TEMPLATE_SNAPSHOT=`zfs list -t all | awk '{print $1}' | cut -d@ -f2| egrep "${FREEBSD_VERSION}" | sort | tail -1`
@@ -3475,13 +3655,13 @@ revert_create_jail ()
 
 	# Stop the jail
 	service jail stop ${JAIL_TO_REVERT}
-	sleep 10 
+	sleep 10
 	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
 		JAIL_ID=`cat ${JAIL_ID_FILE}`
-		jail -r ${JAIL_ID} 
+		jail -r ${JAIL_ID}
 		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs
 	fi
 
@@ -3517,9 +3697,9 @@ edit_recipe_configs ()
 	echo -e "\n"
 
 	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
-	do 
+	do
 		FILE_NAME=`basename ${CONFIG_FILE}`
-		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] 
+		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ]
 		then
 			continue
 		fi
@@ -3838,7 +4018,7 @@ merge_local_repo_to_remote ()
 		fi
 	done
 
-	# Check that the remote repo is valid and that this hostname does not already exist. 
+	# Check that the remote repo is valid and that this hostname does not already exist.
 	cd /tmp
 	rm -rf "${REPO_NAME}"
 	echo -e "\n${YELL}We need to check that this host does not already exist in the remote repo.${NRML}"
