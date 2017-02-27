@@ -3236,10 +3236,13 @@ create_remote_desktop_template ()
 	service RemoteDesktop onestart
 
 	# Inform user that next step is to login via VNC to the template and perfrom the installation / configuration.
-	echo -e "\n${YELL}The guest OS should now be running in the remote desktop template.${NRML}"
-	echo -e "${YELL}The OS installer ISO should also be attached and booted into ${NRML}"
-	echo -e "${YELL}the installation environment.${NRML}"
-	echo -e "${YELL}You should now install the guest OS and reboot it when finished.${NRML}\n"
+	echo -e "\n${YELL}The remote desktop template VM should now be running.${NRML}"
+	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
+	then
+		echo -e "${YELL}The OS installer ISO should also be attached and booted into ${NRML}"
+		echo -e "${YELL}the installation environment.${NRML}"
+		echo -e "${YELL}You should now install the guest OS and reboot it when finished.${NRML}\n"
+	fi
 	echo -e "${YELL}Connect to the remote desktop template using a VNC viewer ${NRML}"
 	echo -e "${YELL}(e.g. SSVNC) using the following:${NRML}\n"
 	echo -e "${LGRN}VNC URI:      ${VNC_SERVER_IP}:6000${NRML}"
