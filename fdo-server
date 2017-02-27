@@ -1562,9 +1562,9 @@ new_host ()
 	DOMAIN_NAME=${2}
 
 	# Check that user has supplied a hostname and domain name.
-	if [ $# -lt 2 ]
+	if [ ${#} -ne 2 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Not enough arguments supplied.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting.\n"
 		usage
 		exit 51
 	fi
@@ -3336,8 +3336,7 @@ create_remote_desktop_instance ()
 
 	if [ ${#} -ne 3 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments supplied."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting."
 		usage
 		exit 120
 	fi
@@ -3515,8 +3514,7 @@ create_jail ()
 	then
 		if [ ${#} -ne 3 ] || [ "${IS_INTERACTIVE}" = "yes" ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments supplied."
-			echo -e "       ${LRED}Aborting.${NRML}\n"
+			echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting."
 			usage
 			exit 130
 		fi
@@ -3726,8 +3724,7 @@ create_jail_from_recipe ()
 
 	if [ ${#} -ne 3 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments supplied."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting"
 		usage
 		exit 140
 	fi
@@ -4153,7 +4150,7 @@ fi
 
 check_repo_config
 
-if [ $# -lt 1 ]
+if [ ${#} -lt 1 ]
 then
 	usage
 	exit 1
