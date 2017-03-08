@@ -550,10 +550,10 @@ backup_file ()
 install_file_tree ()
 {
 
-	## TODO: allow chown flags ( e.g. "user:group") to be passed and set on installed files.
-
 	SOURCE_FILES_ROOT="${1}"
 	DEST_FILES_ROOT="${2}"
+	CHOWN_USER="${3}"
+	CHOWN_GROUP="${4}"
 
 	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort`
 	do
@@ -572,6 +572,24 @@ install_file_tree ()
 			chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
 		else
 			cp "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}"
+		fi
+		if [ $? -ne 0 ]
+		then
+			ERROR_COUNT=$((ERROR_COUNT + 1))
+		fi
+
+		if [ -n ${CHOWN_USER} ]
+		then
+			chown ${CHOWN_USER} "${DEST_FILE_PATH}"
+		fi
+		if [ $? -ne 0 ]
+		then
+			ERROR_COUNT=$((ERROR_COUNT + 1))
+		fi
+
+		if [ -n ${CHOWN_GROUP} ]
+		then
+			chown :${CHOWN_GROUP} "${DEST_FILE_PATH}"
 		fi
 		if [ $? -ne 0 ]
 		then
@@ -913,8 +931,6 @@ install_scripts ()
 
 add_script ()
 {
-
-	## TODO: test arguments
 
 	SCRIPT_PATH="${1}"
 	cd /${REPO_NAME}
@@ -2273,17 +2289,19 @@ setup_vnc_desktop()
 	FDO_USERNAME=`cat configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf`
 
 	# Copy setup-vnc-desktop template configs to this hosts' repo profile
-	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/
+	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/ ${FDO_USERNAME} ${FDO_USERNAME}
 
 	# Rename FDO_USERNAME home folder in host config profile
 	if [ -d configs/${HOST_NAME}/home/${FDO_USERNAME} ]
 	then
-		rm -rf configs/${HOST_NAME}/home/${FDO_USERNAME}
+		mv configs/${HOST_NAME}/home/FDO_USERNAME/* configs/${HOST_NAME}/home/FDO_USERNAME/.[!.]* configs/${HOST_NAME}/home/${FDO_USERNAME}/
+	else
+		mv configs/${HOST_NAME}/home/FDO_USERNAME configs/${HOST_NAME}/home/${FDO_USERNAME}
 	fi
-	mv configs/${HOST_NAME}/home/FDO_USERNAME configs/${HOST_NAME}/home/${FDO_USERNAME}
 
+	# DELETE ME: no longer needed now that install_file_tree takes chown args
 	# Correctively change ownership of FDo users' profile config files
-	chown -R ${FDO_USERNAME}:${FDO_USERNAME} configs/${HOST_NAME}/home/${FDO_USERNAME}
+	#chown -R ${FDO_USERNAME}:${FDO_USERNAME} configs/${HOST_NAME}/home/${FDO_USERNAME}
 
 	# Enable DBUS in rc.conf
 	sed -i "" "s/dbus_enable=\"NO\"/dbus_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -3191,6 +3209,7 @@ create_remote_desktop_template ()
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory ${VM_MEM_SIZE_MB} --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --nictype1 ${VBOX_NIC_TYPE} --cableconnected1 on"
 	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_SERVER_IP} --vrdeproperty VNCPassword=vncpassword"
+	su - RemoteDesktop -c "VBoxManage sharedfolder add RemoteDesktop --name SharedTemp --hostpath /remote-desktops/RemoteDesktop"
 
 	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
 	then
@@ -3403,9 +3422,6 @@ create_remote_desktop_instance ()
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
-
-	## TODO: check what SUM_EXIT_CODE (below here) is for
-	SUM_EXIT_CODE=0
 
 	zfs clone ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} ${POOL_NAME}/vboxguests/${RD_NAME}
 
