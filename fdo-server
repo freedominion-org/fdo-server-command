@@ -968,35 +968,44 @@ add_script ()
 {
 
 	SCRIPT_PATH="${1}"
+
+	# Check that user has supplied a script path.
+	if [ ${#} -ne 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 14
+	fi
+
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f ${SCRIPT_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n"
-		exit 14
+		exit 15
 	elif [ -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' already exists."
 		echo -e "       Please consider using '${SCRIPT_NAME} update-script' instead.\n"
-		exit 15
+		exit 16
 	else
 		cp ${SCRIPT_PATH} scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n"
-			exit 16
+			exit 17
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${SCRIPT_PATH}' to local git repo.\n"
-			exit 17
+			exit 18
 		fi
 		git commit -m "Added new script; '${SCRIPT_PATH}'."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${SCRIPT_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
-			exit 18
+			exit 19
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1019,15 +1028,24 @@ update_script ()
 {
 
 	SCRIPT_PATH="${1}"
+
+	# Check that user has supplied a script path.
+	if [ ${#} -ne 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 20
+	fi
+
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f "${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n"
-		exit 20
+		exit 21
 	elif [ ! -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' does not exist.\n"
-		exit 21
+		exit 22
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
 		read CHANGE_MESSAGE
@@ -1035,20 +1053,20 @@ update_script ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n"
-			exit 22
+			exit 23
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${SCRIPT_PATH}' to local git repo.\n"
-			exit 23
+			exit 24
 		fi
 		git commit -m "Updated script; '${SCRIPT_PATH}': ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${SCRIPT_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
-			exit 24
+			exit 25
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1137,6 +1155,14 @@ add_config ()
 
 	CONFIG_FULL_PATH="${1}"
 
+	# Check that user has supplied a config file path.
+	if [ ${#} -ne 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 30
+	fi
+
 	cd /${REPO_NAME}
 
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
@@ -1161,31 +1187,31 @@ add_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n"
-		exit 30
+		exit 31
 	elif [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' already exists."
 		echo -e "       Please consider using '${SCRIPT_NAME} update-config' instead.\n"
-		exit 31
+		exit 32
 	else
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
-			exit 32
+			exit 33
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_REALTIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${CONFIG_FULL_PATH}' to local git repo.\n"
-			exit 33
+			exit 34
 		fi
 		git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
-			exit 34
+			exit 35
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1208,6 +1234,14 @@ update_config ()
 {
 
 	CONFIG_FULL_PATH="${1}"
+
+	# Check that user has supplied a config file path.
+	if [ ${#} -ne 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 40
+	fi
 
 	cd /${REPO_NAME}
 
@@ -1233,11 +1267,11 @@ update_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n"
-		exit 40
+		exit 41
 	elif [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n"
-		exit 41
+		exit 42
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
 		read CHANGE_MESSAGE
@@ -1245,20 +1279,20 @@ update_config ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
-			exit 42
+			exit 43
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${CONFIG_FULL_PATH}' to local git repo.\n"
-			exit 43
+			exit 44
 		fi
 		git commit -m "Updated config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}: ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
-			exit 44
+			exit 45
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1615,7 +1649,7 @@ new_host ()
 	# Check that user has supplied a hostname and domain name.
 	if [ ${#} -ne 2 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
 		usage
 		exit 51
 	fi
@@ -3005,11 +3039,20 @@ create_remote_desktop_template ()
 {
 
 	RD_TEMPLATE_NAME=${1}
+
+	if [ ${#} -ne 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 110
+	fi
+
+	# Source the recipe
 	if [ "${RD_TEMPLATE_NAME}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No template name provided."
 		echo -e "       ${LRED}Aborting.${NRML}\n"
-		exit 110
+		exit 111
 	fi
 
 	cd /${REPO_NAME}
@@ -3019,7 +3062,7 @@ create_remote_desktop_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the 'new-host' subcommand first.\n"
-		exit 111
+		exit 112
 	fi
 
 	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/remote_desktops_pool.conf 2> /dev/null`
@@ -3028,7 +3071,7 @@ create_remote_desktop_template ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsytem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n"
-		exit 112
+		exit 113
 	fi
 
 	zfs list ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} > /dev/null 2>&1
@@ -3038,7 +3081,7 @@ create_remote_desktop_template ()
 		echo -e "       To delete it use the command:"
 		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}"
 		echo -e "       ${LRED}Aborting.${NRML}\n"
-		exit 113
+		exit 114
 	fi
 
 	# Get the LAN interface that the virtualbox guest will use for bridged networking
@@ -3058,7 +3101,7 @@ create_remote_desktop_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found."
 		echo -e "       ${LRED}Aborting.${NRML}\n"
-		exit 114
+		exit 115
 	fi
 
 	# Get IP to use for VNC.
@@ -3068,7 +3111,7 @@ create_remote_desktop_template ()
 	if [ ${NUM_SERVICE_IP} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n"
-		exit 115
+		exit 116
 	fi
 	if [ ${NUM_SERVICE_IP} -lt 2 ]
 	then
@@ -3390,17 +3433,17 @@ create_remote_desktop_template ()
 create_remote_desktop_instance ()
 {
 
-	if [ ${#} -ne 3 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting."
-		usage
-		exit 120
-	fi
-
 	RD_TEMPLATE_NAME=$1
 	VNC_OFFSET=$2
 	VNC_PASSWORD=$3
 	RD_NAME=${RD_TEMPLATE_NAME}${VNC_OFFSET}
+
+	if [ ${#} -ne 3 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
+		usage
+		exit 120
+	fi
 
 	cd /${REPO_NAME}
 
@@ -3567,7 +3610,7 @@ create_jail ()
 	then
 		if [ ${#} -ne 3 ] || [ "${IS_INTERACTIVE}" = "yes" ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting."
+			echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
 			usage
 			exit 130
 		fi
@@ -3772,21 +3815,26 @@ edit_recipe_configs ()
 create_jail_from_recipe ()
 {
 
-	## TODO: more checks like whether jail name already exists and if recipe name is valid
+	JAIL_NAME="${1}"
+	JAIL_HOST_NAME="${2}"
+	JAIL_RECIPE_NAME="${3}"
 
 	if [ ${#} -ne 3 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\nAborting"
+		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
 		usage
 		exit 140
 	fi
 
-	JAIL_NAME=${1}
-	JAIL_HOST_NAME=${2}
-	JAIL_RECIPE_NAME=${3}
-
 	# Source the recipe
-	. /${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
+	if [ -f "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
+	then
+		. "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+	else
+		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
+		echo -e "       Check that the recipe '${JAIL_RECIPE_NAME}' exists.\n       Aborting.\n"
+		exit 141
+	fi
 
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${JAIL_IP}'...${NRML}\n"
 
@@ -3794,8 +3842,7 @@ create_jail_from_recipe ()
 	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n       Aborting.\n"
 		revert_create_jail ${JAIL_NAME}
 	fi
 
@@ -4187,10 +4234,10 @@ merge_local_repo_to_remote ()
 
 TERM=${TERM}
 
-SUB_CMD=${1}
-SUB_ARG1=${2}
-SUB_ARG2=${3}
-SUB_ARG3=${4}
+SUB_CMD="${1}"
+SUB_ARG1="${2}"
+SUB_ARG2="${3}"
+SUB_ARG3="${4}"
 HOST_NAME=`hostname -s`
 FQHN=`hostname -f`
 DOMAIN_NAME=`echo ${FQHN} | sed "s/${HOST_NAME}\.//"`
@@ -4209,7 +4256,7 @@ then
 fi
 
 
-case ${SUB_CMD} in
+case "${SUB_CMD}" in
 
 	install-scripts)
 		update_local_repo
@@ -4227,13 +4274,13 @@ case ${SUB_CMD} in
 	add-script)
 		# Add new script to local and remote git repo
 		update_local_repo
-		add_script ${SUB_ARG1}
+		add_script "${SUB_ARG1}"
 		;;
 
 	update-script)
 		# Update a script to local and remote git repo
 		update_local_repo
-		update_script ${SUB_ARG1}
+		update_script "${SUB_ARG1}"
 		;;
 
 	install-configs)
@@ -4264,14 +4311,14 @@ case ${SUB_CMD} in
 
 		# Check configs for the host.
 		echo -e "\nChecking configs for the host...\n"
-		check_configs configs/${HOST_NAME} / ${SUB_ARG1}
+		check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
 
 		# Check configs for the jails.
 		cd /${REPO_NAME}
 		for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
 		do
 			echo -e "\nChecking configs for the '${JAIL_NAME}' jail...\n"
-			check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ ${SUB_ARG1}
+			check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
 		done
 		cd -
 		;;
@@ -4279,13 +4326,13 @@ case ${SUB_CMD} in
 	add-config)
 		# Add a config file from the system to local and remote git repo.
 		update_local_repo
-		add_config ${SUB_ARG1}
+		add_config "${SUB_ARG1}"
 		;;
 
 	update-config)
 		# Update a config file from the system to local and remote git repo.
 		update_local_repo
-		update_config ${SUB_ARG1}
+		update_config "${SUB_ARG1}"
 		;;
 
 	connect-internet)
@@ -4295,7 +4342,7 @@ case ${SUB_CMD} in
 
 	new-host)
 		# Register a new host in the repo, install essential packages and initial configuration from templates.
-		new_host ${SUB_ARG1} ${SUB_ARG2}
+		new_host "${SUB_ARG1}" "${SUB_ARG2}"
 		;;
 
 	patch-host)
@@ -4345,19 +4392,19 @@ case ${SUB_CMD} in
 		# Create a vanilla jail.
 		update_local_repo
 		JAIL_IP=""
-		create_jail ${SUB_ARG1} ${SUB_ARG2}
+		create_jail "${SUB_ARG1}" "${SUB_ARG2}"
 		;;
 
 	create-jail-from-recipe)
 		# Create a jail from a jail recipe.
 		update_local_repo
 		JAIL_IP=""
-		create_jail_from_recipe ${SUB_ARG1} ${SUB_ARG2} ${SUB_ARG3}
+		create_jail_from_recipe "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
 		;;
 
 	revert-create-jail)
 		# Revert back to before last jail creation (developers).
-		revert_create_jail ${SUB_ARG1}
+		revert_create_jail "${SUB_ARG1}"
 		;;
 
 	init-remote-desktops)
@@ -4368,13 +4415,13 @@ case ${SUB_CMD} in
 
 	create-remote-desktop-template)
 		# Create a template (uses ZFS snapshots) for a particular type of remote desktop.
-		create_remote_desktop_template ${SUB_ARG1}
+		create_remote_desktop_template "${SUB_ARG1}"
 		;;
 
 	create-remote-desktop-instance)
 		# Create a VM instance from a remote desktop template (uses ZFS snapshots).
 		update_local_repo
-		create_remote_desktop_instance ${SUB_ARG1} ${SUB_ARG2} ${SUB_ARG3}
+		create_remote_desktop_instance "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
 		;;
 
 	*)
