@@ -66,7 +66,6 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
-## TODO: make robust git_push and git_pull functions
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
 ## TODO: add rdscreensized setup to init-remote-desktops
 
@@ -167,38 +166,30 @@ pause_prompt ()
 
 question_yes_no ()
 {
-
-	LOOP=1
-
-	while [ ${LOOP} = 1 ]
+	while true
 		do
 		echo -e "${LCYN}${1} (yes/no): ${NRML}\c"
 		read ANSWER
 		if [ "${ANSWER}" = "yes" ] || [ "${ANSWER}" = "no" ]
 		then
-			LOOP=0
+			break
 		fi
 		echo ""
 	done
-
 }
 
 question_yes ()
 {
-
-	LOOP=1
-
-	while [ ${LOOP} = 1 ]
+	while true
 		do
 		echo -e "${LCYN}${1} (yes): ${NRML}\c"
 		read ANSWER
 		if [ "${ANSWER}" = "yes" ]
 		then
-			LOOP=0
+			break
 		fi
 		echo ""
 	done
-
 }
 
 get_class_b_subnet ()
@@ -455,6 +446,50 @@ fetch_latest_self ()
 
 }
 
+git_pull ()
+{
+	REPOSITORY="${1}"
+	BRANCH="${2}"
+	while true
+	do
+		git pull ${REPOSITORY} ${BRANCH}
+		if [ ${?} -ne 0 ]
+		then
+			question_yes_no "\nThe git pull operation failed! Would you like to try again?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				echo -e ""
+			else
+				return 1
+			fi
+		else
+			return 0
+		fi
+	done
+}
+
+git_push ()
+{
+	REPOSITORY="${1}"
+	BRANCH="${2}"
+	while true
+	do
+		git push ${REPOSITORY} ${BRANCH}
+		if [ ${?} -ne 0 ]
+		then
+			question_yes_no "\nThe git push operation failed! Would you like to try again?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				echo -e ""
+			else
+				return 1
+			fi
+		else
+			return 0
+		fi
+	done
+}
+
 check_repo_config ()
 {
 
@@ -578,7 +613,7 @@ install_file_tree ()
 			ERROR_COUNT=$((ERROR_COUNT + 1))
 		fi
 
-		if [ -n ${CHOWN_USER} ]
+		if [ "${CHOWN_USER}" != "" ]
 		then
 			chown ${CHOWN_USER} "${DEST_FILE_PATH}"
 		fi
@@ -587,7 +622,7 @@ install_file_tree ()
 			ERROR_COUNT=$((ERROR_COUNT + 1))
 		fi
 
-		if [ -n ${CHOWN_GROUP} ]
+		if [ "${CHOWN_GROUP}" != "" ]
 		then
 			chown :${CHOWN_GROUP} "${DEST_FILE_PATH}"
 		fi
@@ -768,7 +803,7 @@ upgrade_repo_from_upstream ()
 	if [ "${REPO_URI}" != "local" ] && [ "${DO_GIT_PUSH}" = "yes" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -809,7 +844,7 @@ init_local_repo ()
 			git remote add origin "${FDO_SERVER_SKELETON_REPO}"
 			git fetch
 			git branch --set-upstream-to=origin/master master
-			git pull
+			git_pull
 			# Detach from the remote repo
 			git remote remove origin
 		else
@@ -829,7 +864,7 @@ init_local_repo ()
 				exit 170
 			fi
 			# Update (pull) the latest changes from the private remote repo.
-			git pull
+			git_pull
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo."
@@ -894,7 +929,7 @@ update_local_repo ()
 	else
 		cd /${REPO_NAME}
 		echo -e "\n${YELL}First, let's update the local git repo...${NRML}\n"
-		git pull
+		git_pull
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update the local git repo."
@@ -966,7 +1001,7 @@ add_script ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -1018,7 +1053,7 @@ update_script ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo.${NRML}"
@@ -1155,7 +1190,7 @@ add_config ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -1228,7 +1263,7 @@ update_config ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2167,7 +2202,7 @@ new_host ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the private remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2336,7 +2371,7 @@ setup_vnc_desktop()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2527,7 +2562,7 @@ init_hotdesking ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2784,7 +2819,7 @@ init_jails ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -2950,7 +2985,7 @@ init_remote_desktops ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3303,15 +3338,14 @@ create_remote_desktop_template ()
 	STILL_CONFIGURING="yes"
 	while [ "${STILL_CONFIGURING}" = "yes" ]
 	do
-		LOOP=1
-		while [ ${LOOP} = 1 ]
+		while true
 			do
 			echo -e "${LCYN}Would you like to insert a DVD ISO into the remote desktop template ${NRML}"
 			echo -e "${LCYN}or have you finished setting up the template (insert/finish): ${NRML}\c"
 			read ANSWER
 			if [ "${ANSWER}" = "insert" ] || [ "${ANSWER}" = "finish" ]
 			then
-				LOOP=0
+				break
 			fi
 			echo -e ""
 		done
@@ -3468,7 +3502,7 @@ create_remote_desktop_instance ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3585,13 +3619,12 @@ create_jail ()
 	if [ "${JAIL_IP}" = "" ]
 	then
 		FIRST_AVAILABLE_IP=12
-		LOOP="true"
-		while [ "${LOOP}" = "true" ]
+		while true
 		do
 			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${SERVICES_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
-				LOOP=0
+				break
 			else
 				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} +1 ))
 			fi
@@ -3635,7 +3668,7 @@ create_jail ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3846,7 +3879,7 @@ create_jail_from_recipe ()
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-			git push origin master
+			git_push origin master
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -3978,7 +4011,7 @@ init_clonezilla_images ()
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git push origin master
+		git_push origin master
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
@@ -4127,7 +4160,7 @@ merge_local_repo_to_remote ()
 	# Lastly, push the local repo deltas to the remote repo.
 	echo -e "\n${YELL}Now we need to push the local repo changes to the remote repo.${NRML}"
 	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-	git push origin master
+	git_push origin master
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!"
