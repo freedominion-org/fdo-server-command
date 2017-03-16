@@ -66,6 +66,7 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
+## TODO: consolidate ERROR: and WARNING: message formatting (and recipes, scripts)
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
 ## TODO: add rdscreensized setup to init-remote-desktops
 
@@ -860,15 +861,15 @@ init_local_repo ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} The remote repo is not valid!"
 				echo -e "       Check that the remote repo URI is correct."
-				echo -e "       Consider using the subcommand 'merge-local-repo-to-remote'.\n"
+				echo -e "       Consider using the subcommand 'merge-local-repo-to-remote'."
+				echo -e "       Aborting.\n"
 				exit 170
 			fi
 			# Update (pull) the latest changes from the private remote repo.
 			git_pull
 			if [ $? -ne 0 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo."
-				echo -e "       ${LRED}Aborting.${NRML}\n"
+				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo.\n       Aborting.\n"
 				exit 171
 			fi
 		fi
@@ -885,8 +886,7 @@ init_local_repo ()
 			git clone "${FDO_SERVER_SKELETON_REPO}"
 			if [ $? -ne 0 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo."
-				echo -e "       ${LRED}Aborting.${NRML}\n"
+				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo.\n       Aborting.\n"
 				exit 172
 			fi
 			# After we get the skeleton, detach from the upstream skeleton repo.
@@ -899,8 +899,7 @@ init_local_repo ()
 			git clone ${REPO_URI}
 			if [ $? -ne 0 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo."
-				echo -e "       ${LRED}Aborting.${NRML}\n"
+				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo.\n       Aborting.\n"
 				exit 173
 			fi
 		fi
@@ -918,8 +917,7 @@ update_local_repo ()
 
 	if [ ! -d "/${REPO_NAME}" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the local git repo ('/${REPO_NAME}') does not exist!"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} It appears the local git repo ('/${REPO_NAME}') does not exist!\n       Aborting.\n"
 		exit 12
 	fi
 
@@ -933,7 +931,7 @@ update_local_repo ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update the local git repo."
-			echo -e "       Please use 'git status' to find the cause.\n"
+			echo -e "       Please use 'git status' to find the cause.\n       Aborting.\n"
 			exit 13
 		fi
 		cd -
@@ -980,31 +978,32 @@ add_script ()
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f ${SCRIPT_PATH} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
 		exit 15
 	elif [ -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' already exists."
-		echo -e "       Please consider using '${SCRIPT_NAME} update-script' instead.\n"
+		echo -e "       Please consider using '${SCRIPT_NAME} update-script' instead.\n       Aborting.\n"
 		exit 16
 	else
 		cp ${SCRIPT_PATH} scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
 			exit 17
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${SCRIPT_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
 			exit 18
 		fi
 		git commit -m "Added new script; '${SCRIPT_PATH}'."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${SCRIPT_PATH}' to local git repo."
-			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
+			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
+			echo -e "       Aborting.\n"
 			exit 19
 		fi
 		if [ "${REPO_URI}" != "local" ]
@@ -1040,11 +1039,11 @@ update_script ()
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f "${SCRIPT_PATH}" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
 		exit 21
 	elif [ ! -f "scripts${SCRIPT_PATH}" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
 		exit 22
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
@@ -1052,20 +1051,21 @@ update_script ()
 		cp ${SCRIPT_PATH} scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
 			exit 23
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${SCRIPT_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
 			exit 24
 		fi
 		git commit -m "Updated script; '${SCRIPT_PATH}': ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${SCRIPT_PATH}' to local git repo."
-			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
+			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
+			echo -e "       Aborting.\n"
 			exit 25
 		fi
 		if [ "${REPO_URI}" != "local" ]
@@ -1075,7 +1075,8 @@ update_script ()
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo.${NRML}"
-				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}."
+				echo -e "       Aborting.\n"
 			fi
 		fi
 		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n"
@@ -1096,15 +1097,13 @@ install_configs ()
 
 	if [ ! -d ${CONFIG_REPO_ROOT} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!\n       Aborting.\n"
 		exit 26
 	fi
 
 	if [ ! -d ${INSTALL_PATH} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!\n       Aborting.\n"
 		exit 27
 	fi
 
@@ -1113,11 +1112,13 @@ install_configs ()
 	if [ ${ERROR_COUNT} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to target location. (${CONFIG_REPO_ROOT})\n"
+		cd -
+		return 1
 	else
 		echo -e "\nInstalled all config files successfully! (${CONFIG_REPO_ROOT})\n"
+		cd -
+		return 0
 	fi
-
-	cd -
 
 }
 
@@ -1132,15 +1133,15 @@ check_configs ()
 
 	if [ ! -d ${CONFIG_REPO_ROOT} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!"
-		echo -e "       ${LRED}Check aborted.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory ('${CONFIG_REPO_ROOT}') does not exist!\n"
+		cd -
 		return 1
 	fi
 
 	if [ ! -d ${INSTALL_PATH} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!"
-		echo -e "       ${LRED}Check aborted.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory ('${INSTALL_PATH}') does not exist!\n"
+		cd -
 		return 2
 	fi
 
@@ -1186,31 +1187,33 @@ add_config ()
 
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n       Aborting.\n"
 		exit 31
 	elif [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' already exists."
-		echo -e "       Please consider using '${SCRIPT_NAME} update-config' instead.\n"
+		echo -e "       Please consider using '${SCRIPT_NAME} update-config' instead."
+		echo -e "       Aborting.\n"
 		exit 32
 	else
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
 			exit 33
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_REALTIVE_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${CONFIG_FULL_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
 			exit 34
 		fi
 		git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
-			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
+			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
+			echo -e "       Aborting.\n"
 			exit 35
 		fi
 		if [ "${REPO_URI}" != "local" ]
@@ -1266,11 +1269,11 @@ update_config ()
 
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n       Aborting.\n"
 		exit 41
 	elif [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n       Aborting.\n"
 		exit 42
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
@@ -1278,20 +1281,20 @@ update_config ()
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
 			exit 43
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${CONFIG_FULL_PATH}' to local git repo.\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
 			exit 44
 		fi
 		git commit -m "Updated config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}: ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
-			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n"
+			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n       Aborting.\n"
 			exit 45
 		fi
 		if [ "${REPO_URI}" != "local" ]
@@ -1319,8 +1322,7 @@ connect_internet ()
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found.       Aborting.\n"
 		exit 150
 	fi
 
@@ -1561,7 +1563,7 @@ connect_internet ()
 			dhclient ${WAN_NET_IFACE}
 			if [ ${?} -ne 0 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} DHCP failed on ${WAN_NET_IFACE}!\n"
+				echo -e "\n${LRED}ERROR:${NRML} DHCP failed on ${WAN_NET_IFACE}!\n       Aborting.\n"
 				exit 152
 			fi
 		else
@@ -1591,7 +1593,7 @@ connect_internet ()
 
 	if [ "${IS_IP_WORKING}" = "no" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} IP connection failed! Unable to ping 8.8.8.8.\n"
+		echo -e "\n${LRED}ERROR:${NRML} IP connection failed! Unable to ping 8.8.8.8.\n       Aborting.\n"
 		exit 153
 	fi
 
@@ -1620,7 +1622,7 @@ connect_internet ()
 			
 	if [ "${IS_DNS_WORKING}" = "no" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} internet DNS failed! Unable to lookup google.com.\n"
+		echo -e "\n${LRED}ERROR:${NRML} internet DNS failed! Unable to lookup google.com.\n       Aborting.\n"
 		exit 154
 	fi
 
@@ -1659,7 +1661,8 @@ new_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${HOST_NAME}'."
 		echo -e "       It must only contain letters, numbers and hyphens."
-		echo -e "       It must not begin or end with a hyphen.\n"
+		echo -e "       It must not begin or end with a hyphen."
+		echo -e "       Aborting.\n"
 		exit 53
 	fi
 
@@ -1669,7 +1672,8 @@ new_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The domain name can not be '${DOMAIN_NAME}'."
 		echo -e "       It must only contain letters, numbers, periods and hyphens."
-		echo -e "       It must not begin or end with a hyphen or a period.\n"
+		echo -e "       It must not begin or end with a hyphen or a period."
+		echo -e "       Aborting.\n"
 		exit 54
 	fi
 
@@ -1678,8 +1682,7 @@ new_host ()
 	pkg update
 	if [ $? -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories.\n       Aborting.\n"
 		exit 55
 	fi
 
@@ -1689,8 +1692,7 @@ new_host ()
 	pkg install ${ESSENTIAL_PACKAGES}
 	if [ $? -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages.\n       Aborting.\n"
 		exit 56
 	fi
 
@@ -1706,8 +1708,7 @@ new_host ()
 		upgrade_repo_from_upstream
 		if [ $? -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo."
-			echo -e "       ${LRED}Aborting.${NRML}\n"
+			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo.\n       Aborting.\n"
 			exit 57
 		fi
 	fi
@@ -1718,7 +1719,8 @@ new_host ()
 	if [ -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${HOST_NAME}'!"
-		echo -e "       It is already registered as a host in the repo.\n"
+		echo -e "       It is already registered as a host in the repo."
+		echo -e "       Aborting.\n"
 		exit 59
 	fi
 
@@ -1735,8 +1737,7 @@ new_host ()
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
 		new_host_cleanup
 		exit 60
 	fi
@@ -1781,8 +1782,7 @@ new_host ()
 		primary_local)
 			if [ ${NUM_NET_IFACES} -lt 2 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!"
-				echo -e "       ${LRED}Aborting.${NRML}\n"
+				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!\n       Aborting.\n"
 				new_host_cleanup
 				exit 61
 			fi
@@ -2268,8 +2268,7 @@ patch_host()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update fetch' operation failed!"
-		echo -e "       Check for network related issues."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "       Check for network related issues.\n       Aborting.\n"
 		rm /tmp/fdo-freebsd-update.output
 		return 1
 	fi
@@ -2288,8 +2287,7 @@ patch_host()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update install' operation failed!"
-		echo -e "       Check FDo documentation for help."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "       Check FDo documentation for help.\n       Aborting.\n"
 		rm /tmp/fdo-freebsd-update.output
 		return 2
 	fi
@@ -2317,7 +2315,7 @@ setup_vnc_desktop()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 70
 	fi
 
@@ -2328,7 +2326,7 @@ setup_vnc_desktop()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n"
+		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n       Aborting.\n"
 		exit 71
 	fi
 
@@ -2339,8 +2337,7 @@ setup_vnc_desktop()
 	pkg update
 	if [ $? -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories.\n       Aborting.\n"
 		exit 72
 	fi
 
@@ -2350,8 +2347,7 @@ setup_vnc_desktop()
 	pkg install ${VNC_DESKTOP_PACKAGES}
 	if [ $? -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to install required packages."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to install required packages.\n       Aborting.\n"
 		exit 73
 	fi
 
@@ -2433,7 +2429,7 @@ init_hotdesking ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 80
 	fi
 
@@ -2444,7 +2440,7 @@ init_hotdesking ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n"
+		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n       Aborting.\n"
 		exit 81
 	fi
 
@@ -2456,7 +2452,7 @@ init_hotdesking ()
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
 		exit 82
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
@@ -2510,7 +2506,7 @@ init_hotdesking ()
 	NUM_SERVICE_IP=`echo ${SERVICE_IP_AVAILABLE} | wc -w`
 	if [ ${NUM_SERVICE_IP} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n       Aborting.\n"
 		exit 83
 	fi
 	if [ ${NUM_SERVICE_IP} -lt 2 ]
@@ -2573,7 +2569,7 @@ init_hotdesking ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The NIS maps failed to initialise."
-		echo -e "       Consult FDo documentation for help.\n"
+		echo -e "       Consult FDo documentation for help.\n       Aborting.\n"
 		exit 84
 	fi
 
@@ -2625,7 +2621,7 @@ init_jails ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 90
 	fi
  
@@ -2636,7 +2632,8 @@ init_jails ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the subcommand 'update-config' to keep the repo up-to-date.\n"
+		echo -e "       Please use the subcommand 'update-config' to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
 		exit 91
 	fi
  
@@ -2657,8 +2654,7 @@ init_jails ()
 	# Exit if the LAN subnet interface was not found
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found.\n       Aborting.\n"
 		exit 92
 	fi
 
@@ -2668,7 +2664,7 @@ init_jails ()
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
 		exit 93
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
@@ -2692,7 +2688,7 @@ init_jails ()
 	NUM_HOST_IP=`echo ${HOST_IP_ADDRESSES} | wc -w`
 	if [ ${NUM_HOST_IP} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No usable host IPs found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No usable host IPs found. Unable to proceed.\n       Aborting.\n"
 		exit 94
 	fi
 
@@ -2707,8 +2703,7 @@ init_jails ()
 	PATCH_HOST_RETURN_CODE=${?}
 	if [ ${PATCH_HOST_RETURN_CODE} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n       Aborting.\n"
 		exit 95
 	fi
 
@@ -2732,8 +2727,7 @@ init_jails ()
 
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n       Aborting.\n"
 		exit 96
 	fi
 
@@ -2769,8 +2763,7 @@ init_jails ()
 
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail.\n       Aborting.\n"
 		exit 97
 	fi
 
@@ -2880,7 +2873,8 @@ init_remote_desktops ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first."
+		echo -e "       Aborting.\n"
 		exit 100
 	fi
  
@@ -2891,7 +2885,8 @@ init_remote_desktops ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n"
+		echo -e "       Please use 'update-config' to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
 		exit 101
 	fi
  
@@ -2926,8 +2921,7 @@ init_remote_desktops ()
 
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VirtualBox kernel modules."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VirtualBox kernel modules.\n       Aborting.\n"
 		exit 102
 	fi
 
@@ -2937,7 +2931,7 @@ init_remote_desktops ()
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
 		exit 103
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
@@ -2988,8 +2982,7 @@ init_remote_desktops ()
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS datasets for the remote"
-		echo -e "       desktops."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "       desktops.\n       Aborting.\n"
 		exit 104
 	fi
 
@@ -3050,8 +3043,7 @@ create_remote_desktop_template ()
 	# Source the recipe
 	if [ "${RD_TEMPLATE_NAME}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No template name provided."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} No template name provided.\n       Aborting.\n"
 		exit 111
 	fi
 
@@ -3061,7 +3053,7 @@ create_remote_desktop_template ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 112
 	fi
 
@@ -3070,7 +3062,7 @@ create_remote_desktop_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsytem is not initialised."
 		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
 		exit 113
 	fi
 
@@ -3080,7 +3072,7 @@ create_remote_desktop_template ()
 		echo -e "\n${LRED}ERROR:${NRML} The template '${RD_TEMPLATE_NAME}' already exists.\n"
 		echo -e "       To delete it use the command:"
 		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "       Aborting.\n"
 		exit 114
 	fi
 
@@ -3099,8 +3091,7 @@ create_remote_desktop_template ()
 	# Exit if the LAN subnet interface was not found
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found.\n       Aborting.\n"
 		exit 115
 	fi
 
@@ -3110,7 +3101,7 @@ create_remote_desktop_template ()
 	NUM_SERVICE_IP=`echo ${SERVICE_IP_AVAILABLE} | wc -w`
 	if [ ${NUM_SERVICE_IP} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n       Aborting.\n"
 		exit 116
 	fi
 	if [ ${NUM_SERVICE_IP} -lt 2 ]
@@ -3451,7 +3442,8 @@ create_remote_desktop_instance ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first."
+		echo -e "       Aborting.\n"
 		exit 121
 	fi
 
@@ -3461,7 +3453,7 @@ create_remote_desktop_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsystem is not initialised."
 		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
 		exit 122
 	fi
 
@@ -3470,7 +3462,8 @@ create_remote_desktop_instance ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The remote desktop template '${RD_TEMPLATE_NAME}' does not exist!"
-		echo -e "       Please use the 'create-remote-desktop-template' subcommand first.\n"
+		echo -e "       Please use the 'create-remote-desktop-template' subcommand first."
+		echo -e "       Aborting.\n"
 		exit 123
 	fi
 
@@ -3482,7 +3475,7 @@ create_remote_desktop_instance ()
 	for VBOX_CONFIG in ${VBOX_CONFIGS} ; do egrep "name=\"TCP\/Ports\" value=\"60${VNC_OFFSET}\"" "${VBOX_CONFIG}" > /dev/null ; if [ ${?} -eq 0 ] ; then PORT_USED_COUNT=$(( ${PORT_USED_COUNT} + 1 )) ; fi ;done
 	if [ ${PORT_USED_COUNT} -gt 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The VNC port offset is already in use!\n"
+		echo -e "\n${LRED}ERROR:${NRML} The VNC port offset is already in use!\n       Aborting.\n"
 		exit 124
 	fi
 	IFS=${PREVIOUS_IFS}
@@ -3494,7 +3487,8 @@ create_remote_desktop_instance ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date.\n"
+		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
 		exit 125
 	fi
 
@@ -3625,7 +3619,7 @@ create_jail ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 131
 	fi
 
@@ -3635,7 +3629,7 @@ create_jail ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
 		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n       Aborting.\n"
 		exit 132
 	fi
 
@@ -3643,8 +3637,7 @@ create_jail ()
 	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail_name 'JAIL_NAME' is already in use."
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} The jail_name 'JAIL_NAME' is already in use.\n       Aborting.\n"
 		exit 133
 	fi
 
@@ -3962,7 +3955,7 @@ init_clonezilla_images ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
-		echo -e "       Please use the 'new-host' subcommand first.\n"
+		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
 		exit 160
 	fi
 
@@ -3973,7 +3966,8 @@ init_clonezilla_images ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date.\n"
+		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
 		exit 161
 	fi
 
@@ -3985,7 +3979,7 @@ init_clonezilla_images ()
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n"
+		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
 		exit 162
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
@@ -4009,8 +4003,7 @@ init_clonezilla_images ()
 	HOST_IP=`ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask.*" | egrep -v "inet.*netmask 0xffffffff" | head -1 | awk '{print $2}'`
 	if [ "${HOST_IP}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A LAN IP address for this host could not be found!"
-		echo -e "       ${LRED}Aborting.${NRML}\n"
+		echo -e "\n${LRED}ERROR:${NRML} A LAN IP address for this host could not be found!\n       Aborting.\n"
 		exit 163
 	fi
 
@@ -4085,6 +4078,7 @@ merge_local_repo_to_remote ()
 		question_yes_no "Would you like to proceed regardless?"
 		if [ "${ANSWER}" = "no" ]
 		then
+			echo "       Aborting.\n"
 			exit 180
 		fi
 	fi
@@ -4122,8 +4116,7 @@ merge_local_repo_to_remote ()
 	git clone "${REMOTE_REPO_URI}" "${REPO_NAME}"
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to clone the remote repo!"
-		echo -e "       Aborting."
+		echo -e "\n${LRED}ERROR:${NRML} Unable to clone the remote repo!\n       Aborting.\n"
 		exit 181
 	fi
 	if [ ! -d "${REPO_NAME}/configs/" ]
@@ -4134,9 +4127,8 @@ merge_local_repo_to_remote ()
 	then
 		rm -rf "${REPO_NAME}"
 		echo -e "\n${LRED}ERROR:${NRML} This host already exists in the remote repo!"
-	echo -e "       Consider removing or renaming the stale host config directory in the"
-		echo -e "       remote repo."
-		echo -e "       Aborting."
+		echo -e "       Consider removing or renaming the stale host config directory in the"
+		echo -e "       remote repo.\n       Aborting.\n"
 		exit 182
 	else
 		echo -e "\n${LGRN}The remote repo seems to be ok!${NRML}\n"
@@ -4168,8 +4160,7 @@ merge_local_repo_to_remote ()
 	git remote add origin "${REMOTE_REPO_URI}" > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!"
-		echo -e "       Aborting."
+		echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!\n       Aborting.\n"
 		exit 184
 	fi
 
@@ -4179,8 +4170,7 @@ merge_local_repo_to_remote ()
 	git fetch
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!"
-		echo -e "       Aborting."
+		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!\n       Aborting.\n"
 		git remote remove origin
 		exit 185
 	fi
@@ -4195,8 +4185,7 @@ merge_local_repo_to_remote ()
 		git merge -m "Merging local repo from host '${HOST_NAME}'."
 		if [ ${?} -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!"
-			echo -e "       Aborting."
+			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
 		git remote remove origin
 		exit 186
 		fi
@@ -4210,8 +4199,7 @@ merge_local_repo_to_remote ()
 	git_push origin master
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!"
-		echo -e "       Aborting."
+		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!\n       Aborting.\n"
 		git remote remove origin
 		git reset --soft "${LAST_LOCAL_COMMIT}"
 		exit 187
@@ -4426,7 +4414,7 @@ case "${SUB_CMD}" in
 
 	*)
 		echo ""
-		echo -e "${LRED}ERROR:${NRML} Sub-command ${SUB_CMD} is unknown!"
+		echo -e "${LRED}ERROR:${NRML} Sub-command ${SUB_CMD} is unknown!\n       Aborting.\n"
 		usage
 		exit 2
 		;;
