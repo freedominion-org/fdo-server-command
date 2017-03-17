@@ -34,7 +34,7 @@ REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL="http://freedominion.org/"
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts cpdup curl dmidecode git p7zip py27-speedtest-cli rsync stress tmux tree unrar unzip zfs-stats-lite zip nmap vim-lite"
 ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts cpdup curl portmaster rsync tree unrar unzip zip vim-lite"
-REMOTE_DESKTOP_PACKAGES="virtualbox-ose"
+REMOTE_DESKTOP_PACKAGES="virtualbox-ose py27-daemon py27-psycopg2"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
 DIALOG_OUT_FILE="/tmp/fdo-server.dialog.answer"
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
@@ -2992,6 +2992,43 @@ init_remote_desktops ()
 
 	# Copy init-remote-desktops template configs to this hosts' repo profile
 	install_file_tree config-templates/init-remote-desktops configs/${HOST_NAME}/
+
+	# Ask if the auto-screen-resize feature is wanted.
+	question_yes_no "\nWould you like to enable the auto-screen-size service for this\nremote-desktops host?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+
+		# Get dB hostname
+		RD_DB_HOST_NAME=""
+		while [ "${RD_DB_HOST_NAME}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the hostname of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
+			read RD_DB_HOST_NAME_TEMP
+			# Check that the db hostname is a valid fully qualified host name.
+			test_valid_fqhn "${RD_DB_HOST_NAME_TEMP}"
+			if [ "${VALID_FQHN}" = "yes" ]
+			then
+				question_yes_no "\nYou have entered '${RD_DB_HOST_NAME_TEMP}' as the auto-screen-resize db hostname.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					RD_DB_HOST_NAME=${RD_DB_HOST_NAME_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db hostname can not be\n'${RD_DB_HOST_NAME_TEMP}'."
+				echo -e "       It must only contain letters, numbers, periods and hyphens."
+				echo -e "       It must not begin or end with a hyphen or a period.\n"
+			fi
+		done
+
+		# Substitute config variables.
+		sed -i "" "s/DB_HOST/${RD_DB_HOST_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
+
+		# Enable auto-screen-size service.
+		sed -i "" "s/rdscreensized=\"NO\"/rdscreensized=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+
+		# Start auto-screen-size service for the first time.
+		service rdscreensized onestart
+	fi
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
