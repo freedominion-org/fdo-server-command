@@ -66,9 +66,8 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
-## TODO: consolidate ERROR: and WARNING: message formatting (and recipes, scripts)
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
-## TODO: add rdscreensized setup to init-remote-desktops
+## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf
 
 ####################################################
 
@@ -208,6 +207,18 @@ get_class_c_subnet ()
 	CLASS_C_SUBNET_SECOND=`echo "${CLASS_C_SUBNET_IP}" | cut -d. -f2`
 	CLASS_C_SUBNET_THIRD=`echo "${CLASS_C_SUBNET_IP}" | cut -d. -f3`
 	CLASS_C_SUBNET="${CLASS_C_SUBNET_FIRST}.${CLASS_C_SUBNET_SECOND}.${CLASS_C_SUBNET_THIRD}"
+}
+
+test_num_mandatory_sub_args ()
+{
+	NUM_MANDATORY_SUB_ARGS=${1}
+	if [ ${NUM_SUB_ARGS} -lt ${NUM_MANDATORY_SUB_ARGS} ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Invalid number of arguments for this sub-command!\n       Aborting.\n"
+		usage
+		exit 3
+	fi
+
 }
 
 test_valid_person_name ()
@@ -967,14 +978,6 @@ add_script ()
 
 	SCRIPT_PATH="${1}"
 
-	# Check that user has supplied a script path.
-	if [ ${#} -ne 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 14
-	fi
-
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f ${SCRIPT_PATH} ]
 	then
@@ -1028,23 +1031,15 @@ update_script ()
 
 	SCRIPT_PATH="${1}"
 
-	# Check that user has supplied a script path.
-	if [ ${#} -ne 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 20
-	fi
-
 	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f "${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
-		exit 21
+		exit 20
 	elif [ ! -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
-		exit 22
+		exit 21
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
 		read CHANGE_MESSAGE
@@ -1052,13 +1047,13 @@ update_script ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
-			exit 23
+			exit 22
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${SCRIPT_PATH}' to local git repo.\n       Aborting.\n"
-			exit 24
+			exit 23
 		fi
 		git commit -m "Updated script; '${SCRIPT_PATH}': ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
@@ -1066,7 +1061,7 @@ update_script ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${SCRIPT_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
 			echo -e "       Aborting.\n"
-			exit 25
+			exit 24
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1156,14 +1151,6 @@ add_config ()
 
 	CONFIG_FULL_PATH="${1}"
 
-	# Check that user has supplied a config file path.
-	if [ ${#} -ne 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 30
-	fi
-
 	cd /${REPO_NAME}
 
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
@@ -1188,25 +1175,25 @@ add_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n       Aborting.\n"
-		exit 31
+		exit 30
 	elif [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' already exists."
 		echo -e "       Please consider using '${SCRIPT_NAME} update-config' instead."
 		echo -e "       Aborting.\n"
-		exit 32
+		exit 31
 	else
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
-			exit 33
+			exit 32
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_REALTIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
-			exit 34
+			exit 33
 		fi
 		git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
 		if [ $? -ne 0 ]
@@ -1214,7 +1201,7 @@ add_config ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
 			echo -e "       Aborting.\n"
-			exit 35
+			exit 34
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1237,14 +1224,6 @@ update_config ()
 {
 
 	CONFIG_FULL_PATH="${1}"
-
-	# Check that user has supplied a config file path.
-	if [ ${#} -ne 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 40
-	fi
 
 	cd /${REPO_NAME}
 
@@ -1270,11 +1249,11 @@ update_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${CONFIG_FULL_PATH}' does not exist.\n       Aborting.\n"
-		exit 41
+		exit 40
 	elif [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n       Aborting.\n"
-		exit 42
+		exit 41
 	else
 		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
 		read CHANGE_MESSAGE
@@ -1282,20 +1261,20 @@ update_config ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
-			exit 43
+			exit 42
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${CONFIG_FULL_PATH}' to local git repo.\n       Aborting.\n"
-			exit 44
+			exit 43
 		fi
 		git commit -m "Updated config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}: ${CHANGE_MESSAGE}."
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${CONFIG_FULL_PATH}' to local git repo."
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n       Aborting.\n"
-			exit 45
+			exit 44
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1648,14 +1627,6 @@ new_host ()
 	HOST_NAME=${1}
 	DOMAIN_NAME=${2}
 
-	# Check that user has supplied a hostname and domain name.
-	if [ ${#} -ne 2 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 51
-	fi
-
 	test_valid_host_name "${HOST_NAME}"
 	if [ "${VALID_HOST_NAME}" = "no" ]
 	then
@@ -1663,7 +1634,7 @@ new_host ()
 		echo -e "       It must only contain letters, numbers and hyphens."
 		echo -e "       It must not begin or end with a hyphen."
 		echo -e "       Aborting.\n"
-		exit 53
+		exit 51
 	fi
 
 	# Check that the domain name is valid.
@@ -1674,7 +1645,7 @@ new_host ()
 		echo -e "       It must only contain letters, numbers, periods and hyphens."
 		echo -e "       It must not begin or end with a hyphen or a period."
 		echo -e "       Aborting.\n"
-		exit 54
+		exit 52
 	fi
 
 	# Update pkgng repositories
@@ -1683,7 +1654,7 @@ new_host ()
 	if [ $? -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories.\n       Aborting.\n"
-		exit 55
+		exit 53
 	fi
 
 	# Install essential packages
@@ -1693,7 +1664,7 @@ new_host ()
 	if [ $? -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages.\n       Aborting.\n"
-		exit 56
+		exit 54
 	fi
 
 	init_local_repo
@@ -1709,7 +1680,7 @@ new_host ()
 		if [ $? -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo.\n       Aborting.\n"
-			exit 57
+			exit 55
 		fi
 	fi
 
@@ -1721,7 +1692,7 @@ new_host ()
 		echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${HOST_NAME}'!"
 		echo -e "       It is already registered as a host in the repo."
 		echo -e "       Aborting.\n"
-		exit 59
+		exit 56
 	fi
 
 	# Copy new-host template configs to the repo
@@ -1739,7 +1710,7 @@ new_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
 		new_host_cleanup
-		exit 60
+		exit 57
 	fi
 
 
@@ -1784,7 +1755,7 @@ new_host ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!\n       Aborting.\n"
 				new_host_cleanup
-				exit 61
+				exit 58
 			fi
 			;;
 		auxiliary_local)
@@ -2865,8 +2836,6 @@ init_jails ()
 init_remote_desktops ()
 {
 
-	## TODO: provision rdscreensized
-
 	cd /${REPO_NAME}
  
 	# Check that the host is already registered.
@@ -2942,7 +2911,7 @@ init_remote_desktops ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for remote desktop datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
+			question_yes_no "\n\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2998,6 +2967,8 @@ init_remote_desktops ()
 	if [ "${ANSWER}" = "yes" ]
 	then
 
+		USES_AUTO_SCREEN_SIZE="yes"
+
 		# Get dB hostname
 		RD_DB_HOST_NAME=""
 		while [ "${RD_DB_HOST_NAME}" = "" ]
@@ -3014,24 +2985,133 @@ init_remote_desktops ()
 					RD_DB_HOST_NAME=${RD_DB_HOST_NAME_TEMP}
 				fi
 			else
-				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db hostname can not be\n'${RD_DB_HOST_NAME_TEMP}'."
-				echo -e "       It must only contain letters, numbers, periods and hyphens."
+				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db hostname can not be"
+				echo -e "       '${RD_DB_HOST_NAME_TEMP}'."
+				echo -e "       It must only contain lower case letters, numbers, periods and hyphens."
+				echo -e "       It must not begin or end with a hyphen or a period.\n"
+			fi
+		done
+
+		# Get dB name (schema)
+		RD_DB_NAME=""
+		while [ "${RD_DB_NAME}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the dB name of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
+			read RD_DB_NAME_TEMP
+			# Check that the db name is valid.
+			TEST=`echo "${RD_DB_NAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
+			if [ ${TEST} -eq 0 ] && [ "${RD_DB_NAME_TEMP}" != "" ]
+			then
+				question_yes_no "\nYou have entered '${RD_DB_NAME_TEMP}' as the auto-screen-resize dB name.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					RD_DB_NAME=${RD_DB_NAME_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize dB name can not be"
+				echo -e "       '${RD_DB_NAME_TEMP}'."
+				echo -e "       It must only contain lower case letters, numbers, periods, underscores"
+				echo -e "       and hyphens."
+				echo -e "       It must not begin or end with a hyphen or a period.\n"
+			fi
+		done
+
+		# Get dB username
+		RD_DB_USERNAME=""
+		while [ "${RD_DB_USERNAME}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the username of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
+			read RD_DB_USERNAME_TEMP
+			# Check that the db username is valid.
+			TEST=`echo "${RD_DB_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
+			if [ ${TEST} -eq 0 ] && [ "${RD_DB_USERNAME_TEMP}" != "" ]
+			then
+				question_yes_no "\nYou have entered '${RD_DB_USERNAME_TEMP}' as the auto-screen-resize db username.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					RD_DB_USERNAME=${RD_DB_USERNAME_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db username can not be"
+				echo -e "       '${RD_DB_USERNAME_TEMP}'."
+				echo -e "       It must only contain lower case letters, numbers, periods, underscores"
+				echo -e "       and hyphens."
+				echo -e "       It must not begin or end with a hyphen, underscore or a period.\n"
+			fi
+		done
+
+		# Get dB user password
+		RD_DB_USER_PASSWORD=""
+		while [ "${RD_DB_USER_PASSWORD}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the password of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
+			read RD_DB_USER_PASSWORD_TEMP
+			# Check that the db passsword a valid.
+			TEST=`echo "${RD_DB_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9][a-zA-Z0-9\_\-]+[a-zA-Z0-9]//" | wc -L`
+			if [ ${TEST} -eq 0 ] && [ "${RD_DB_NAME_TEMP}" != "" ]
+			then
+				question_yes_no "\nYou have entered '${RD_DB_USER_PASSWORD_TEMP}' as the auto-screen-resize db password.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					RD_DB_USER_PASSWORD=${RD_DB_USER_PASSWORD_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db password can not be"
+				echo -e "       '${RD_DB_USER_PASSWORD_TEMP}'."
+				echo -e "       It must only contain letters, numbers, underscores and hyphens."
+				echo -e "       It must not begin or end with a hyphen or an underscore.\n"
+			fi
+		done
+
+		# Get remote-desktops hostname
+		RD_HOST_NAME=""
+		while [ "${RD_HOST_NAME}" = "" ]
+		do
+			echo -e "\n${LCYN}Enter the remote-desktops hostname for this host\n(may differ from the server hostname): ${NRML}\c"
+			read RD_HOST_NAME_TEMP
+			# Check that the remote-desktops hostname is a valid fully qualified host name.
+			test_valid_fqhn "${RD_HOST_NAME_TEMP}"
+			if [ "${VALID_FQHN}" = "yes" ]
+			then
+				question_yes_no "\nYou have entered '${RD_HOST_NAME_TEMP}' as the remote-desktops hostname.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					RD_HOST_NAME=${RD_HOST_NAME_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The remote-desktops hostname can not be"
+				echo -e "       '${RD_HOST_NAME_TEMP}'."
+				echo -e "       It must only contain lower case letters, numbers, periods and hyphens."
 				echo -e "       It must not begin or end with a hyphen or a period.\n"
 			fi
 		done
 
 		# Substitute config variables.
 		sed -i "" "s/DB_HOST/${RD_DB_HOST_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
+		sed -i "" "s/DB_NAME/${RD_DB_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
+		sed -i "" "s/DB_USER_NAME/${RD_DB_USERNAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
+		sed -i "" "s/DB_USER_PASSWORD/${RD_DB_USER_PASSWORD}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
+		sed -i "" "s/RD_HOST/${RD_HOST_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
 
 		# Enable auto-screen-size service.
-		sed -i "" "s/rdscreensized=\"NO\"/rdscreensized=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+		sed -i "" "s/rdscreensized_enable=\"NO\"/rdscreensized_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 
-		# Start auto-screen-size service for the first time.
-		service rdscreensized onestart
+	else
+		USES_AUTO_SCREEN_SIZE="no"
 	fi
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
+
+	echo -e "\n"
+
+	if [ "${USES_AUTO_SCREEN_SIZE}" = "yes" ]
+	then
+		# Start auto-screen-size service for the first time.
+		service rdscreensized onestart
+	fi
+
+	echo -e "\n"
 
 	# Add remote desktop template user
 	pw useradd RemoteDesktop -m -s /usr/local/bin/bash -c "Remote Desktop Template User" -d /vboxguests/RemoteDesktop -G "operator vboxusers"
@@ -3070,18 +3150,11 @@ create_remote_desktop_template ()
 
 	RD_TEMPLATE_NAME=${1}
 
-	if [ ${#} -ne 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 110
-	fi
-
 	# Source the recipe
 	if [ "${RD_TEMPLATE_NAME}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No template name provided.\n       Aborting.\n"
-		exit 111
+		exit 110
 	fi
 
 	cd /${REPO_NAME}
@@ -3091,7 +3164,7 @@ create_remote_desktop_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
-		exit 112
+		exit 111
 	fi
 
 	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/remote_desktops_pool.conf 2> /dev/null`
@@ -3100,7 +3173,7 @@ create_remote_desktop_template ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsytem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
-		exit 113
+		exit 112
 	fi
 
 	zfs list ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} > /dev/null 2>&1
@@ -3110,7 +3183,7 @@ create_remote_desktop_template ()
 		echo -e "       To delete it use the command:"
 		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}"
 		echo -e "       Aborting.\n"
-		exit 114
+		exit 113
 	fi
 
 	# Get the LAN interface that the virtualbox guest will use for bridged networking
@@ -3129,7 +3202,7 @@ create_remote_desktop_template ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found.\n       Aborting.\n"
-		exit 115
+		exit 114
 	fi
 
 	# Get IP to use for VNC.
@@ -3139,7 +3212,7 @@ create_remote_desktop_template ()
 	if [ ${NUM_SERVICE_IP} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n       Aborting.\n"
-		exit 116
+		exit 115
 	fi
 	if [ ${NUM_SERVICE_IP} -lt 2 ]
 	then
@@ -3466,13 +3539,6 @@ create_remote_desktop_instance ()
 	VNC_PASSWORD=$3
 	RD_NAME=${RD_TEMPLATE_NAME}${VNC_OFFSET}
 
-	if [ ${#} -ne 3 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 120
-	fi
-
 	cd /${REPO_NAME}
 
 	# Check that the host is already registered.
@@ -3481,7 +3547,7 @@ create_remote_desktop_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the 'new-host' subcommand first."
 		echo -e "       Aborting.\n"
-		exit 121
+		exit 120
 	fi
 
 	# Check that the remote desktops subsystem is initialised and therefore we know the pool name.
@@ -3491,7 +3557,7 @@ create_remote_desktop_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
-		exit 122
+		exit 121
 	fi
 
 	# Check that the template exists
@@ -3501,7 +3567,7 @@ create_remote_desktop_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} The remote desktop template '${RD_TEMPLATE_NAME}' does not exist!"
 		echo -e "       Please use the 'create-remote-desktop-template' subcommand first."
 		echo -e "       Aborting.\n"
-		exit 123
+		exit 122
 	fi
 
 	# Check that the VNC offset is not already in use
@@ -3513,7 +3579,7 @@ create_remote_desktop_instance ()
 	if [ ${PORT_USED_COUNT} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The VNC port offset is already in use!\n       Aborting.\n"
-		exit 124
+		exit 123
 	fi
 	IFS=${PREVIOUS_IFS}
 
@@ -3526,7 +3592,7 @@ create_remote_desktop_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date."
 		echo -e "       Aborting.\n"
-		exit 125
+		exit 124
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -3637,16 +3703,6 @@ create_jail ()
 		IS_INTERACTIVE="yes"
 	fi
 
-	if [ ${#} -ne 2 ]
-	then
-		if [ ${#} -ne 3 ] || [ "${IS_INTERACTIVE}" = "yes" ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-			usage
-			exit 130
-		fi
-	fi
-
 	JAIL_NAME=${1}
 	JAIL_HOST_NAME=${2}
 
@@ -3685,7 +3741,7 @@ create_jail ()
 	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 
-	TEMPLATE_SNAPSHOT=`zfs list -t all | awk '{print $1}' | cut -d@ -f2| egrep "${FREEBSD_VERSION}" | sort | tail -1`
+	TEMPLATE_SNAPSHOT=`zfs list -t all -r ${POOL_NAME}/jails/template | awk '{print $1}' | cut -d@ -f2| egrep "^${FREEBSD_VERSION}-RELEASE" | sort | tail -1`
 
 	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 
@@ -3821,8 +3877,10 @@ edit_recipe_configs ()
 
 	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
 	do
+		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
 		FILE_NAME=`basename ${CONFIG_FILE}`
-		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ]
+		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
+			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ]
 		then
 			continue
 		fi
@@ -3849,13 +3907,6 @@ create_jail_from_recipe ()
 	JAIL_HOST_NAME="${2}"
 	JAIL_RECIPE_NAME="${3}"
 
-	if [ ${#} -ne 3 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Incorrect number of arguments!\n       Aborting.\n"
-		usage
-		exit 140
-	fi
-
 	# Source the recipe
 	if [ -f "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
 	then
@@ -3863,7 +3914,7 @@ create_jail_from_recipe ()
 	else
 		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
 		echo -e "       Check that the recipe '${JAIL_RECIPE_NAME}' exists.\n       Aborting.\n"
-		exit 141
+		exit 140
 	fi
 
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${JAIL_IP}'...${NRML}\n"
@@ -4263,6 +4314,8 @@ SUB_CMD="${1}"
 SUB_ARG1="${2}"
 SUB_ARG2="${3}"
 SUB_ARG3="${4}"
+SUB_ARG4="${5}"
+NUM_SUB_ARGS=$(( ${#} - 1 ))
 HOST_NAME=`hostname -s`
 FQHN=`hostname -f`
 DOMAIN_NAME=`echo ${FQHN} | sed "s/${HOST_NAME}\.//"`
@@ -4298,12 +4351,14 @@ case "${SUB_CMD}" in
 
 	add-script)
 		# Add new script to local and remote git repo
+		test_num_mandatory_sub_args 1
 		update_local_repo
 		add_script "${SUB_ARG1}"
 		;;
 
 	update-script)
 		# Update a script to local and remote git repo
+		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_script "${SUB_ARG1}"
 		;;
@@ -4350,12 +4405,14 @@ case "${SUB_CMD}" in
 
 	add-config)
 		# Add a config file from the system to local and remote git repo.
+		test_num_mandatory_sub_args 1
 		update_local_repo
 		add_config "${SUB_ARG1}"
 		;;
 
 	update-config)
 		# Update a config file from the system to local and remote git repo.
+		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_config "${SUB_ARG1}"
 		;;
@@ -4367,6 +4424,7 @@ case "${SUB_CMD}" in
 
 	new-host)
 		# Register a new host in the repo, install essential packages and initial configuration from templates.
+		test_num_mandatory_sub_args 2
 		new_host "${SUB_ARG1}" "${SUB_ARG2}"
 		;;
 
@@ -4415,6 +4473,7 @@ case "${SUB_CMD}" in
 
 	create-jail)
 		# Create a vanilla jail.
+		test_num_mandatory_sub_args 2
 		update_local_repo
 		JAIL_IP=""
 		create_jail "${SUB_ARG1}" "${SUB_ARG2}"
@@ -4422,6 +4481,7 @@ case "${SUB_CMD}" in
 
 	create-jail-from-recipe)
 		# Create a jail from a jail recipe.
+		test_num_mandatory_sub_args 3
 		update_local_repo
 		JAIL_IP=""
 		create_jail_from_recipe "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
@@ -4429,6 +4489,7 @@ case "${SUB_CMD}" in
 
 	revert-create-jail)
 		# Revert back to before last jail creation (developers).
+		test_num_mandatory_sub_args 1
 		revert_create_jail "${SUB_ARG1}"
 		;;
 
@@ -4440,11 +4501,13 @@ case "${SUB_CMD}" in
 
 	create-remote-desktop-template)
 		# Create a template (uses ZFS snapshots) for a particular type of remote desktop.
+		test_num_mandatory_sub_args 1
 		create_remote_desktop_template "${SUB_ARG1}"
 		;;
 
 	create-remote-desktop-instance)
 		# Create a VM instance from a remote desktop template (uses ZFS snapshots).
+		test_num_mandatory_sub_args 3
 		update_local_repo
 		create_remote_desktop_instance "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
 		;;
