@@ -766,7 +766,6 @@ init_git_config ()
 
 upgrade_repo_from_upstream ()
 {
-	## NOTE: this function will NOT push the upgraded local repo to the private remote repo.
 
 	if [ "${1}" = "--push" ]
 	then
@@ -820,9 +819,19 @@ upgrade_repo_from_upstream ()
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
 			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+			UPGRADE_REMOTE_REPO_SUCCESS="no"
+		else
+			UPGRADE_REMOTE_REPO_SUCCESS="yes"
 		fi
 	fi
-	echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n"
+
+	if [ "${DO_GIT_PUSH}" = "yes" ] && [ "${UPGRADE_REMOTE_REPO_SUCCESS}" = "yes" ]
+	then
+		echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n"
+	else
+		echo -e "\n${ORGN}OK, it seems we've successfully upgraded the local repo!${NRML}"
+		echo -e "${ORNG}But we were unable to push changes to the private remote repo.${NRML}\n"
+	fi
 
 	cd "${CWD}"
 
@@ -4458,6 +4467,7 @@ case "${SUB_CMD}" in
 
 	upgrade-repo-from-upstream)
 		# Upgrade the private repo to include changes from the public upstream skeleton repo.
+		update_local_repo
 		upgrade_repo_from_upstream --push
 		if [ $? -ne 0 ]
 		then
