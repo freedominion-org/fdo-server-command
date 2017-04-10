@@ -1267,8 +1267,11 @@ update_config ()
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n       Aborting.\n"
 		exit 41
 	else
-		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
-		read CHANGE_MESSAGE
+		if [ ! -n "${CHANGE_MESSAGE}" ]
+		then
+			echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
+			read CHANGE_MESSAGE
+		fi
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
 		then
