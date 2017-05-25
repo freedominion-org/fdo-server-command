@@ -832,7 +832,7 @@ upgrade_repo_from_upstream ()
 	then
 		echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n"
 	else
-		echo -e "\n${ORGN}OK, it seems we've successfully upgraded the local repo!${NRML}"
+		echo -e "\n${ORNG}OK, it seems we've successfully upgraded the local repo!${NRML}"
 		echo -e "${ORNG}But we were unable to push changes to the private remote repo.${NRML}\n"
 	fi
 
@@ -1031,7 +1031,7 @@ add_script ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
-		echo -e "\nOK, it seems we've successfully added the new script!\n"
+		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n"
 	fi
 
 	cd -
@@ -1086,7 +1086,7 @@ update_script ()
 				echo -e "       Aborting.\n"
 			fi
 		fi
-		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n"
+		echo -e "\n${LGRN}OK, it seems we've successfully updated the script!${NRML}\n"
 	fi
 
 	cd -
@@ -1122,7 +1122,7 @@ install_configs ()
 		cd -
 		return 1
 	else
-		echo -e "\nInstalled all config files successfully! (${CONFIG_REPO_ROOT})\n"
+		echo -e "\n${LGRN}Installed all config files successfully! (${CONFIG_REPO_ROOT})i${NRML}\n"
 		cd -
 		return 0
 	fi
@@ -1215,7 +1215,7 @@ add_config ()
 			echo -e "       Aborting.\n"
 			exit 34
 		fi
-		if [ "${REPO_URI}" != "local" ]
+		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git_push origin master
@@ -1225,7 +1225,7 @@ add_config ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
-		echo -e "\nOK, it seems we've successfully added the new config file!\n"
+		echo -e "\n${LGRN}OK, it seems we've successfully added the new config file!${NRML}\n"
 	fi
 
 	cd -
@@ -1291,7 +1291,7 @@ update_config ()
 			echo -e "       Please consider manually running 'git reset --hard' to previous commit.\n       Aborting.\n"
 			exit 44
 		fi
-		if [ "${REPO_URI}" != "local" ]
+		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
 		then
 			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
 			git_push origin master
@@ -1301,7 +1301,7 @@ update_config ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
-		echo -e "\nOK, it seems we've successfully added the new config file!\n"
+		echo -e "\n${LGRN}OK, it seems we've successfully updated the config file!${NRML}\n"
 	fi
 
 	cd -
@@ -1343,7 +1343,8 @@ connect_internet ()
 		do
 			dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 			WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "\n\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
@@ -1737,8 +1738,8 @@ new_host ()
 					 "auxiliary_local" "Auxiliary Local Server (LAN)" \
 					 2> ${DIALOG_OUT_FILE}
 		SERVER_TYPE_TEMP=`cat ${DIALOG_OUT_FILE}`
-		echo -e "\n\n"
-		question_yes_no "You have selected '${SERVER_TYPE_TEMP}' as the server type for this host.\nIs this correct?"
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${SERVER_TYPE_TEMP}' as the server type for this host.\nIs this correct?"
 		if [ "${ANSWER}" = "yes" ]
 		then
 			SERVER_TYPE="${SERVER_TYPE_TEMP}"
@@ -1791,7 +1792,8 @@ new_host ()
 			do
 				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
-				question_yes_no "\n\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
@@ -1991,7 +1993,8 @@ new_host ()
 			do
 				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${REMAINING_NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				LAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
-				question_yes_no "\n\nYou have selected '${LAN_NET_IFACE_TEMP}' as the LAN interface for this host.\nIs this correct?"
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${LAN_NET_IFACE_TEMP}' as the LAN interface for this host.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					LAN_NET_IFACE="${LAN_NET_IFACE_TEMP}"
@@ -2046,7 +2049,8 @@ new_host ()
 					echo -e "\n${LRED}ERROR:${NRML} No IP address selected! Try again.\n"
 					pause_prompt 5
 				else
-					question_yes_no "\n\nYou have selected '${LAN_IFACE_IP_TEMP}' as the LAN interface IP address.\nIs this correct?"
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${LAN_IFACE_IP_TEMP}' as the LAN interface IP address.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						LAN_IFACE_IP=${LAN_IFACE_IP_TEMP}
@@ -2116,13 +2120,13 @@ new_host ()
 	do
 		echo -e "\n${LCYN}Enter login account username: ${NRML}\c"
 		read FDO_USERNAME_TEMP
-		# Check that the username only contains letters, numbers, periods and underscores with a minimum of 3 characters.
-		TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\-]+[a-z0-9]//" | wc -L`
+		# Check that the username only contains letters, numbers, periods, underscores and hyphens with a minimum of 3 characters.
+		TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
 		if [ ${TEST} -ne 0 ] || [ "${FDO_USERNAME_TEMP}" = "" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${FDO_USERNAME_TEMP}'."
 			echo -e "       It must be at least three characters and only contain lower case"
-			echo -e "       letters, numbers, periods and hyphens.\n"
+			echo -e "       letters, numbers, periods, underscores and hyphens.\n"
 		else
 			question_yes_no "\nYou have entered '${FDO_USERNAME_TEMP}' as the login account username.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
@@ -2153,7 +2157,8 @@ new_host ()
 	do
 		dialog --no-cancel --no-items --menu "Select timezone for the hosts TZ environment variable:" 30 60 26 ${TZ_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 		TZ_TEMP=`cat ${DIALOG_OUT_FILE}`
-		question_yes_no "\n\nYou have selected '${TZ_TEMP}' for the TZ for this host.\nIs this correct?"
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${TZ_TEMP}' for the TZ for this host.\nIs this correct?"
 		if [ "${ANSWER}" = "yes" ]
 		then
 			TZ="${TZ_TEMP}"
@@ -2168,7 +2173,8 @@ new_host ()
 	service ntpd start
 
 	# Locale setup
-	question_yes_no "\n\nWould you like to configure the locale for this host?"
+	echo -e "\n"
+	question_yes_no "\nWould you like to configure the locale for this host?"
 	if [ "${ANSWER}" = "yes" ]
 	then
 		LOCALE_AVAILABLE=`ls -1 /usr/share/locale/ | egrep -v "^UTF-8" | sort`
@@ -2177,8 +2183,8 @@ new_host ()
 		do
 			dialog --no-cancel --no-items --menu "Select the locale for the host:" 30 60 26 ${LOCALE_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			LOCALE_TEMP=`cat ${DIALOG_OUT_FILE}`
-			echo -e "\n\n"
-			question_yes_no "You have selected '${LOCALE_TEMP}' for the locale for this host.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${LOCALE_TEMP}' for the locale for this host.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				LOCALE="${LOCALE_TEMP}"
@@ -2282,7 +2288,7 @@ patch_host()
 	if [ ${?} -eq 0 ]
 	then
 		PATCH_HOST_NEEDS_REBOOT="yes"
-		echo -e "\n${ORGN}ATTENTION: Please reboot when appropriate to pick up changes in patched kernel.${NRML}\n"
+		echo -e "\n${ORNG}ATTENTION: Please reboot when appropriate to pick up changes in patched kernel.${NRML}\n"
 	fi
 
 	rm /tmp/fdo-freebsd-update.output
@@ -2447,6 +2453,7 @@ init_hotdesking ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
 			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the hotdesk users home folders.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
@@ -2501,7 +2508,8 @@ init_hotdesking ()
 		do
 			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${SERVICE_IP_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			NIS_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${NIS_SERVER_IP_TEMP}' to use for the NIS server.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NIS_SERVER_IP_TEMP}' to use for the NIS server.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				NIS_SERVER_IP="${NIS_SERVER_IP_TEMP}"
@@ -2659,6 +2667,7 @@ init_jails ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for jails datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
 			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the service jails.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
@@ -2924,7 +2933,8 @@ init_remote_desktops ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for remote desktop datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "\n\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -3057,22 +3067,19 @@ init_remote_desktops ()
 		RD_DB_USER_PASSWORD=""
 		while [ "${RD_DB_USER_PASSWORD}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the password of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
-			read RD_DB_USER_PASSWORD_TEMP
-			# Check that the db passsword a valid.
-			TEST=`echo "${RD_DB_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9][a-zA-Z0-9\_\-]+[a-zA-Z0-9]//" | wc -L`
-			if [ ${TEST} -eq 0 ] && [ "${RD_DB_NAME_TEMP}" != "" ]
+			echo -e "\n${LCYN}Enter dB user password:    ${NRML}\c"
+			read RD_DB_USER_PASSWORD_TEMP1
+			echo -e "${LCYN}Re-enter dB user password: ${NRML}\c"
+			read RD_DB_USER_PASSWORD_TEMP2
+
+			if [ "${RD_DB_USER_PASSWORD_TEMP1}" != "${RD_DB_USER_PASSWORD_TEMP2}" ]
 			then
-				question_yes_no "\nYou have entered '${RD_DB_USER_PASSWORD_TEMP}' as the auto-screen-resize db password.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					RD_DB_USER_PASSWORD=${RD_DB_USER_PASSWORD_TEMP}
-				fi
+				echo -e "\n${LRED}ERROR:${NRML} Password mismatch, try again!\n"
+			elif [ "${RD_DB_USER_PASSWORD_TEMP1}" = "" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Password not entered, try again!\n"
 			else
-				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db password can not be"
-				echo -e "       '${RD_DB_USER_PASSWORD_TEMP}'."
-				echo -e "       It must only contain letters, numbers, underscores and hyphens."
-				echo -e "       It must not begin or end with a hyphen or an underscore.\n"
+				RD_DB_USER_PASSWORD=${RD_DB_USER_PASSWORD_TEMP1}
 			fi
 		done
 
@@ -3193,8 +3200,8 @@ create_remote_desktop_template ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The template '${RD_TEMPLATE_NAME}' already exists.\n"
-		echo -e "       To delete it use the command:"
-		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}"
+		echo -e "       To delete it, use the command:"
+		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}\n"
 		echo -e "       Aborting.\n"
 		exit 113
 	fi
@@ -3235,7 +3242,8 @@ create_remote_desktop_template ()
 		do
 			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${SERVICE_IP_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			VNC_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "You have selected '${VNC_SERVER_IP_TEMP}' to use for the VNC session.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${VNC_SERVER_IP_TEMP}' to use for the VNC session.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VNC_SERVER_IP="${VNC_SERVER_IP_TEMP}"
@@ -3334,7 +3342,12 @@ create_remote_desktop_template ()
 				file "${OS_INSTALLER_ISO_TEMP}" | grep "ISO 9660" > /dev/null
 				if [ ${?} -eq 0 ]
 				then
-					OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${OS_INSTALLER_ISO_TEMP}' as the OS installer ISO.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
+					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
 					pause_prompt 5
@@ -3360,7 +3373,12 @@ create_remote_desktop_template ()
 				file "${EXISTING_VDI_PATH_TEMP}" | grep "VirtualBox Disk Image" > /dev/null
 				if [ ${?} -eq 0 ]
 				then
-					EXISTING_VDI_PATH="${EXISTING_VDI_PATH_TEMP}"
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${EXISTING_VDI_PATH_TEMP}' as the existing VDI file.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						EXISTING_VDI_PATH="${EXISTING_VDI_PATH_TEMP}"
+					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not a VDI image!\n"
 					pause_prompt 5
@@ -3743,7 +3761,7 @@ create_jail ()
 	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail_name 'JAIL_NAME' is already in use.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${JAIL_NAME}' is already in use.\n       Aborting.\n"
 		exit 133
 	fi
 
@@ -3974,14 +3992,32 @@ create_jail_from_recipe ()
 		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
 		edit_recipe_configs
 
+		# Save recipe name to information file
+		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo_jail_recipe.inf
+		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo_jail_recipe.inf
+
 		# Install any new or modfied configs
 		install_file_tree configs/${HOST_NAME} /
 		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
 
 		# Restart pf if required
-		if [ "${RECIPE_REQUIRES_PF_RELOAD}" = "yes" ]
+		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
 		then
-			service pf reload
+			echo -e "\n"
+			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
+				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+				then
+					service ppp restart
+				fi
+				IS_PF_ENABLED=`sysrc pf_enable | awk '{print $2}'`
+				if [ "${IS_PF_ENABLED}" = "YES" ]
+				then
+					service pf reload
+				fi
+			fi
 		fi
 
 		# Restart jail if required
@@ -4002,7 +4038,7 @@ create_jail_from_recipe ()
 		echo -e "\n${LRED}ERROR:${NRML} Jail recipe failed!\n"
 		revert_create_jail ${JAIL_NAME}
 	else
-		echo -e "\n${ORGN}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS variable!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS variable!\n"
 	fi
 
 	if [ "${RECIPE_SUCCESS}" = "devel" ]
@@ -4091,7 +4127,8 @@ init_clonezilla_images ()
 		do
 			dialog --no-items --no-cancel --menu "Select pool for Clonezilla images:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			question_yes_no "\n\nYou have selected '${POOL_NAME_TEMP}' to store the Clonezilla images.\nIs this correct?"
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the Clonezilla images.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
