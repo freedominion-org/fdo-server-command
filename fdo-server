@@ -2254,44 +2254,42 @@ patch_host()
 	echo -e "\n${YELL}We are now going to perform a 'freebsd-update fetch' operation.${NRML}"
 	echo -e "${YELL}It may take a while...${NRML}\n"
 
-	PAGER=cat freebsd-update fetch > /tmp/fdo-freebsd-update.output
+	NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+	PAGER=cat freebsd-update fetch > /tmp/fdo-freebsd-update-output.host.fetch.${NOW}
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update fetch' operation failed!"
 		echo -e "       Check for network related issues.\n       Aborting.\n"
-		rm /tmp/fdo-freebsd-update.output
 		return 1
 	fi
 
-	cat /tmp/fdo-freebsd-update.output | tail -1 | grep "^No updates needed" > /dev/null
+	cat /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | tail -1 | grep "^No updates needed" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LGRN}This host does not need patches installed, it's already fully patched.${NRML}\n"
-		rm /tmp/fdo-freebsd-update.output
 		return 0
 	fi
 
 	echo -e "\n${YELL}And now let's perform a 'freebsd-update install' operation...${NRML}\n"
 
-	PAGER=cat freebsd-update install > /tmp/fdo-freebsd-update.output
+	PAGER=cat freebsd-update install > /tmp/fdo-freebsd-update-output.host.install.${NOW}
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update install' operation failed!"
 		echo -e "       Check FDo documentation for help.\n       Aborting.\n"
-		rm /tmp/fdo-freebsd-update.output
 		return 2
 	fi
 
 	echo -e "\n${LGRN}This host has been successfully patched!${NRML}\n"
 
-	cat /tmp/fdo-freebsd-update.output | tail -2 | grep "Please reboot" > /dev/null
-	if [ ${?} -eq 0 ]
+	FREEBSD_INSTALLED_KERNEL_VERSION=`freebsd-version -k`
+	FREEBSD_RUNNING_KERNEL_VERSION=`uname -v`
+	if [ "${FREEBSD_RUNNING_KERNEL_VERSION}" != "${FREEBSD_INSTALLED_KERNEL_VERSION}" ]
 	then
 		PATCH_HOST_NEEDS_REBOOT="yes"
 		echo -e "\n${ORNG}ATTENTION: Please reboot when appropriate to pick up changes in patched kernel.${NRML}\n"
 	fi
 
-	rm /tmp/fdo-freebsd-update.output
 	return 0
 
 }
@@ -3717,7 +3715,7 @@ start_jail_service ()
 
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "${LRED}WARNING:${NRML} Failed to start service '${2}' in jail '${1}'!\n"
+		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${2}' in jail '${1}'!\n"
 	else
 		echo -e "${YELL}INFO:${NRML} Successfully started service '${2}' in jail '${1}'!\n"
 	fi
