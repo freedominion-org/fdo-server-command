@@ -836,6 +836,8 @@ upgrade_repo_from_upstream ()
 		echo -e "${ORNG}But we were unable to push changes to the private remote repo.${NRML}\n"
 	fi
 
+	## TODO: ask whether to perform an 'fdo-server install-scripts'
+
 	cd "${CWD}"
 
 	return 0
@@ -3790,7 +3792,11 @@ create_jail ()
 		JAIL_IP="${SERVICES_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
+	# Create new jail fileststem by clonging from the template jail
 	zfs clone ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} ${POOL_NAME}/jails/${JAIL_NAME}
+
+	# Save the previous git commit reference to file, for later use in reverting operations
+	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
 
 	# Create entry in configs/${HOST_NAME}/etc/jail.conf
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
@@ -3816,10 +3822,11 @@ create_jail ()
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
-	git add configs/${HOST_NAME}
-
 	if [ "${IS_INTERACTIVE}" = "yes" ]
 	then
+		# Add changes to the local config repo
+		git add configs/${HOST_NAME}
+
 		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
 
@@ -3833,6 +3840,9 @@ create_jail ()
 				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
 			fi
 		fi
+
+		# Save this git commit reference to file, for later use in reverting operations
+		git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-post-create-jail.commit.inf
 
 		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${JAIL_NAME}'.${NRML}"
 		echo -e "\n${LGRN}To login to the jail, use the command:${NRML}"
@@ -3856,6 +3866,8 @@ create_jail ()
 revert_create_jail ()
 {
 	JAIL_TO_REVERT=${1}
+	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
+	AFFECTED_RECIPE_JAILS=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
 
 	echo -e "\n${YELL}Reverting create jail for ${JAIL_TO_REVERT}...${NRML}\n"
 
@@ -3888,11 +3900,21 @@ revert_create_jail ()
 	# Delete jail config directory from local repo
 	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME}
 
-	# Roll back local repo to last commit
-	git reset --hard HEAD
+	# Roll back local repo to last good commit (!!!DANGEROUS!!!)
+	git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
 
 	# Install back old host configs
 	install_file_tree configs/${HOST_NAME} /
+
+	# Remove untracked config files from host and config repo
+	rm /etc/fstab.${JAIL_TO_REVERT}
+	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT}
+
+	# Install back affected jail configs
+	for JAIL_RECIPE_NAME in ${AFFECTED_RECIPE_JAILS}
+	do
+		echo -e "${LRED}Reverting configs for jail recipe ${JAIL_RECIPE_NAME}...${NRML}"
+	done
 
 	echo -e "\n${YELL}Finished reverting jail creation! Exiting.${NRML}\n"
 	exit 139
@@ -4005,6 +4027,7 @@ create_jail_from_recipe ()
 			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now?"
 			if [ "${ANSWER}" = "yes" ]
 			then
+				echo -e ""
 				IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
@@ -4043,6 +4066,14 @@ create_jail_from_recipe ()
 	then
 		echo -e "\n${LGRN}After tasting your new recipe, you may run the command:${NRML}"
 		echo -e "${LBLU}${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
+
+		question_yes_no "Would you like to commit the changes to the config repo?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			RECIPE_SUCCESS="yes"
+		else
+			echo -e ""
+		fi
 	fi
 
 	if [ "${RECIPE_SUCCESS}" = "yes" ]
@@ -4062,6 +4093,9 @@ create_jail_from_recipe ()
 			fi
 		fi
  
+		# Save this git commit reference to file, for later use in reverting operations
+		git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-post-create-jail.commit.inf
+
 		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
 		then
 			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
