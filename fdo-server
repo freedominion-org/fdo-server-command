@@ -3769,8 +3769,10 @@ create_jail ()
 	FREEBSD_VERSION_STRING=`freebsd-version`
 	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
+	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
 	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
+	FREEBSD_ARCH=`uname -m`
 
 	TEMPLATE_SNAPSHOT=`zfs list -t all -r ${POOL_NAME}/jails/template | awk '{print $1}' | cut -d@ -f2| egrep "^${FREEBSD_VERSION}-RELEASE" | sort | tail -1`
 
@@ -3994,9 +3996,12 @@ create_jail_from_recipe ()
 
 	cd /${REPO_NAME}
 
-	# Install recipe config templates to new jails' repo config directory
+	# Install recipe config templates to new jails' config repo directory
 	mkdir configs/${JAIL_NAME}@${HOST_NAME}
 	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
+
+	# Set the correct jail ABI in the jails' pkg repo conf file
+	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
 
 	# Install initial config templates to the new jail
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
