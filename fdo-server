@@ -3910,11 +3910,11 @@ revert_create_jail ()
 
 	# Remove untracked config files from host and config repo
 	rm /etc/fstab.${JAIL_TO_REVERT}
-	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT}
 
 	# Install back affected jail configs
 	for JAIL_RECIPE_NAME in ${AFFECTED_RECIPE_JAILS}
 	do
+		## TODO: find jail name from recipe name and install_file_tree from config repo to affected jails' root
 		echo -e "${LRED}Reverting configs for jail recipe ${JAIL_RECIPE_NAME}...${NRML}"
 	done
 
@@ -4018,8 +4018,8 @@ create_jail_from_recipe ()
 		edit_recipe_configs
 
 		# Save recipe name to information file
-		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo_jail_recipe.inf
-		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo_jail_recipe.inf
+		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
 
 		# Install any new or modfied configs
 		install_file_tree configs/${HOST_NAME} /
