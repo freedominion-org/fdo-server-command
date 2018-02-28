@@ -68,6 +68,11 @@ CARRIAGE_RETURN="
 
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf
+## TODO: add merge detection and auto message support to git_pull function
+## TODO: prepare both pf.conf and ppp.conf with variable substitiutions regardless of which one used
+## TODO: resolve http_gateway not being added to jail_list in /etc/rc.conf
+## TODO: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'
+## TODO: improve global bashrc for unlimited and live history with timestamps, see rollout
 
 ####################################################
 
