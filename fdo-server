@@ -66,13 +66,19 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
-## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys)
-## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf
-## TODO: add merge detection and auto message support to git_pull function
-## TODO: prepare both pf.conf and ppp.conf with variable substitiutions regardless of which one used
-## TODO: resolve http_gateway not being added to jail_list in /etc/rc.conf
-## TODO: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'
-## TODO: improve global bashrc for unlimited and live history with timestamps, see rollout
+## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys).
+## TODO: add merge detection and auto message support to git_pull function.
+## TODO: convert reserved jail LAN IP addresses in rc.conf to only in jail.conf.
+## TODO: prepare both pf.conf and ppp.conf with variable substitiutions regardless of which one used. Maybe redo how rules are added by recipes.
+## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
+
+## TODO: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
+## TEST: manage jail_parallel_start and  jail_list in /etc/rc.conf.
+## TEST: "Enter the git user name:" needs clarification.
+## TEST: improve global bashrc for unlimited, real-time, timestamped history, see Gentoo rollout.
+## TEST: move all jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
+## TEST: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'.
+## TEST: disable log rotation in host and jails. perhaps even all periodic.
 
 ####################################################
 
@@ -719,7 +725,7 @@ init_git_config ()
 	then
 		while [ "${GIT_USER_NAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the git user name: ${NRML}\c"
+			echo -e "\n${LCYN}Enter the git user name (e.g. John Doe): ${NRML}\c"
 			read GIT_USER_NAME_TEMP
 			# Check that the git user name only contains letters numbers and spaces.
 			test_valid_person_name "${GIT_USER_NAME_TEMP}"
@@ -3820,6 +3826,9 @@ create_jail ()
 	sed -i "" "s/^#\(ifconfig_${LAN_NET_IFACE}_alias.*${JAIL_IP}.*\)/\1/" configs/${HOST_NAME}/etc/rc.conf
 	ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias
 
+	# Add jail to jail_list in /etc/rc.conf
+	sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf
+
 	# Copy latest resolv.conf file from current template jail filesystem (not snapshot)
 	cp /jls/template/etc/resolv.conf /jls/${JAIL_NAME}/etc/resolv.conf
 
@@ -3874,7 +3883,12 @@ revert_create_jail ()
 {
 	JAIL_TO_REVERT=${1}
 	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
-	AFFECTED_RECIPE_JAILS=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
+	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
+	then
+		AFFECTED_RECIPE_JAILS=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
+	else
+		AFFECTED_RECIPE_JAILS=""
+	fi
 
 	echo -e "\n${YELL}Reverting create jail for ${JAIL_TO_REVERT}...${NRML}\n"
 
