@@ -72,13 +72,16 @@ CARRIAGE_RETURN="
 ## TODO: prepare both pf.conf and ppp.conf with variable substitiutions regardless of which one used. Maybe redo how rules are added by recipes.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
 
-## TODO: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
-## TEST: manage jail_parallel_start and  jail_list in /etc/rc.conf.
-## TEST: "Enter the git user name:" needs clarification.
-## TEST: improve global bashrc for unlimited, real-time, timestamped history, see Gentoo rollout.
-## TEST: move all jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
-## TEST: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'.
-## TEST: disable log rotation in host and jails. perhaps even all periodic.
+## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
+## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
+## DONE: "Enter the git user name:" needs clarification.
+## DONE: improve global bashrc for unlimited, real-time, timestamped history, see Gentoo rollout.
+## TEST: (test in 10.4) move all jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
+## DONE: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'.
+## DONE: disable log rotation in host and jails. perhaps even all periodic.
+
+## BUG: after fail jail creation (ldap_consumer, dhcp_server) and auto-revert, the host has stale /etc/fstab.jail_name in local repo configss/ dir.
+## BUG: at the and of upgrade-repo-from-upstream we get "But we were unable to push changes to the private remote repo." when we are a local only repo.
 
 ####################################################
 
@@ -1135,7 +1138,7 @@ install_configs ()
 		cd -
 		return 1
 	else
-		echo -e "\n${LGRN}Installed all config files successfully! (${CONFIG_REPO_ROOT})i${NRML}\n"
+		echo -e "\n${LGRN}Installed all config files successfully! (${CONFIG_REPO_ROOT})${NRML}\n"
 		cd -
 		return 0
 	fi
@@ -2271,9 +2274,19 @@ patch_host()
 	PAGER=cat freebsd-update fetch > /tmp/fdo-freebsd-update-output.host.fetch.${NOW}
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update fetch' operation failed!"
-		echo -e "       Check for network related issues.\n       Aborting.\n"
-		return 1
+		tail -4 /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | egrep "WARNING: FreeBSD .*-RELEASE HAS PASSED ITS END-OF-LIFE DATE" > /dev/null
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update fetch' operation failed!"
+			echo -e "       Check for network related issues.\n       Aborting.\n"
+			return 1
+		else
+			question_yes_no "It seems you are on an unsupported version of FreeBSD.\nWould you like to continue?"
+			if [ "${ANSWER}" = "no" ]
+			then
+				return 1
+			fi
+		fi
 	fi
 
 	cat /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | tail -1 | grep "^No updates needed" > /dev/null
@@ -3935,6 +3948,7 @@ revert_create_jail ()
 	do
 		## TODO: find jail name from recipe name and install_file_tree from config repo to affected jails' root
 		echo -e "${LRED}Reverting configs for jail recipe ${JAIL_RECIPE_NAME}...${NRML}"
+		## use install_config to reinstate configs for jail_name found from jail_recipe_name
 	done
 
 	echo -e "\n${YELL}Finished reverting jail creation! Exiting.${NRML}\n"
