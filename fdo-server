@@ -66,24 +66,36 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
-## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key addedd to servers' authorized_keys).
+### TODOs ###
+
+## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
 ## TODO: add merge detection and auto message support to git_pull function.
-## TODO: convert reserved jail LAN IP addresses in rc.conf to only in jail.conf.
-## TODO: prepare both pf.conf and ppp.conf with variable substitiutions regardless of which one used. Maybe redo how rules are added by recipes.
+## TODO: rename subcommand 'new-host' to 'init-host'.
+## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
+## TODO: consider disabling 'y' prompt for installing packages in init-host/init-jails.
+## TODO; consider adding missing config files from init-hosts/init-jails/create-jaili to repo.
+## TODO: add "all checks passed" or "one or more failed" to end of check-configs.
 
 ## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
 ## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
 ## DONE: "Enter the git user name:" needs clarification.
 ## DONE: improve global bashrc for unlimited, real-time, timestamped history, see Gentoo rollout.
-## TEST: (test in 10.4) move all jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
 ## DONE: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'.
 ## DONE: disable log rotation in host and jails. perhaps even all periodic.
+## DONE: convert reserved jail LAN IP addresses in rc.conf to only in jail.conf.
+## DONE: make init-jails idempotent. TEST:(i) destroy when clones exist, (ii) rename of template fs.
+## DONE: do a check_configs in create-jail.
+## DONE: move all (ldap) jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
 
-## BUG: after fail jail creation (ldap_consumer, dhcp_server) and auto-revert, the host has stale /etc/fstab.jail_name in local repo configss/ dir.
-## BUG: at the and of upgrade-repo-from-upstream we get "But we were unable to push changes to the private remote repo." when we are a local only repo.
+#############
 
-####################################################
+### BUGS ###
+
+## DONE: at the end of upgrade-repo-from-upstream we get "But we were unable to push changes to the private remote repo." when we are a local only repo.
+## DONE: after fail jail creation (ldap_consumer, dhcp_server) and auto-revert, the host has stale /etc/fstab.jail_name in local repo configss/ dir.
+
+############
 
 usage ()
 {
@@ -842,12 +854,13 @@ upgrade_repo_from_upstream ()
 		fi
 	fi
 
-	if [ "${DO_GIT_PUSH}" = "yes" ] && [ "${UPGRADE_REMOTE_REPO_SUCCESS}" = "yes" ]
+	if [ "${DO_GIT_PUSH}" = "yes" ]
 	then
 		echo -e "\n${LGRN}OK, it seems we've successfully upgraded the local repo!${NRML}\n"
-	else
-		echo -e "\n${ORNG}OK, it seems we've successfully upgraded the local repo!${NRML}"
-		echo -e "${ORNG}But we were unable to push changes to the private remote repo.${NRML}\n"
+		if [ "${REPO_URI}" != "local" ] && [ "${UPGRADE_REMOTE_REPO_SUCCESS}" = "no" ]
+		then
+			echo -e "${ORNG}But we were unable to push changes to the private remote repo.${NRML}\n"
+		fi
 	fi
 
 	## TODO: ask whether to perform an 'fdo-server install-scripts'
@@ -1592,8 +1605,8 @@ connect_internet ()
 		sleep 10
 
 		# Test internet connection
-		ping -c 3 8.8.8.8 > /dev/null 2>&1
-		if [ ${?} -eq 0 ]
+		test_ping_host 8.8.8.8
+		if [ "${VALID_HOST_PING}" = "yes" ]
 		then
 			IS_IP_WORKING="yes"
 		fi
@@ -2081,17 +2094,18 @@ new_host ()
 	fi
 	# END: if WAN_NET_IFACE != NULL
 
-	sed -i "" "s/LAN_SUBNET_C/${LAN_SUBNET_C}/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/LAN_SUBNET_C/${LAN_SUBNET_C}/" configs/${HOST_NAME}/etc/jail.conf
+	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
+	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
 
 	# END: configure LAN interface
 
 	# Configure firewall / NAT router
 	if [ "${WAN_NET_IFACE}" != "NULL" ] && [ "${USES_PPP}" = "no" ]
 	then
-		sed -i "" "s|WAN_NET_IFACE|${WAN_NET_IFACE}|" configs/${HOST_NAME}/etc/pf.conf
-		sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|" configs/${HOST_NAME}/etc/pf.conf
-		sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|" configs/${HOST_NAME}/etc/pf.conf
+		sed -i "" "s|WAN_NET_IFACE|${WAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
+		sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
+		sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/pf.conf
 		sed -i "" "s|^pf_enable=.*|pf_enable\=\"YES\"|" configs/${HOST_NAME}/etc/rc.conf
 		sed -i "" "s|^pflog_enable=.*|pflog_enable\=\"YES\"|" configs/${HOST_NAME}/etc/rc.conf
 	fi
@@ -2335,7 +2349,7 @@ setup_vnc_desktop()
 
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
-	echo -e "config files...${NRML}\n"
+	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
 	if [ ${?} -eq 0 ]
 	then
@@ -2714,6 +2728,34 @@ init_jails ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${POOL_NAME}/jails' already exists!\n"
+		JAILS_FILESYSTEM_EXISTS="yes"
+	else
+		JAILS_FILESYSTEM_EXISTS="no"
+	fi
+
+	pause_prompt 8
+
+	# Test for existing template jail and prompt how to proceed
+	zfs list ${POOL_NAME}/jails/template 2> /dev/null
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The ZFS dataset '${POOL_NAME}/jails/template' already exists!\n"
+		question_yes_no "\nIt seems as though 'init-jails' has already been applied to this host.\nWould you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Ask whether to rename exsiting filesystem or delete
+			question_yes_no "\nWould you like to delete the existing jail template filesystem \nand all dependent clones?\nAnswer 'no' to rename the existing filesystem.\n[CAUTION]"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				zfs destroy -Rf ${POOL_NAME}/jails/template
+			else
+				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+				zfs rename -f ${POOL_NAME}/jails/template ${POOL_NAME}/jails/template_renamed-by-init-jails-${NOW}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
+			exit 95
+		fi
 	fi
 
 	patch_host
@@ -2721,7 +2763,7 @@ init_jails ()
 	if [ ${PATCH_HOST_RETURN_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n       Aborting.\n"
-		exit 95
+		exit 96
 	fi
 
 	# Get version strings
@@ -2745,13 +2787,16 @@ init_jails ()
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n       Aborting.\n"
-		exit 96
+		exit 97
 	fi
 
 	# Create ZFS datasets for service jail template
 	echo -e "\n${YELL}Creating ZFS datasets for template jail...${NRML}\n"
-	zfs create -o mountpoint=/jls ${POOL_NAME}/jails
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
+	then
+		zfs create -o mountpoint=/jls ${POOL_NAME}/jails
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	fi
 	zfs create ${POOL_NAME}/jails/template
 	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
 
@@ -2781,7 +2826,7 @@ init_jails ()
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail.\n       Aborting.\n"
-		exit 97
+		exit 98
 	fi
 
 	echo "${POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
@@ -2825,7 +2870,6 @@ init_jails ()
 	# Run tzsetup for the jail
 	tzsetup -s -C /jls/template `cat /var/db/zoneinfo`
 
-	ifconfig ${LAN_NET_IFACE} inet ${SERVICES_LAN_SUBNET_C}.11 netmask 255.255.255.255 alias
 	service pf reload
 	service sshd reload
 	service jail start template
@@ -2848,7 +2892,6 @@ init_jails ()
 
 	# Disable template jail from running again
 	sed -i "" "s/^template/#template/" configs/${HOST_NAME}/etc/jail.conf
-	ifconfig ${LAN_NET_IFACE} inet ${SERVICES_LAN_SUBNET_C}.11 netmask 255.255.255.255 -alias
 
 	# Install updated host configs to the system (after disabling template jail)
 	install_file_tree configs/${HOST_NAME} /
@@ -3763,6 +3806,17 @@ create_jail ()
 
 	cd /${REPO_NAME}
 
+	# Check for unsaved registered host config files
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use 'update-config' to keep the repo up-to-date.\n       Aborting.\n"
+		exit 130
+	fi
+
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
@@ -3781,12 +3835,23 @@ create_jail ()
 		exit 132
 	fi
 
-	# Check that the jail_name has not already been used
+	# Check that the jail_name has not already been used.
 	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${JAIL_NAME}' is already in use.\n       Aborting.\n"
 		exit 133
+	fi
+
+	# Check that, if specified, the jail IP address is not already in use.
+	if [ "${JAIL_IP}" != "" ]
+	then
+		test_ping_host ${JAIL_IP}
+		if [ "${VALID_HOST_PING}" = "yes" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The jail IP address '${JAIL_IP}' is already in use.\n       Aborting.\n"
+			exit 134
+		fi
 	fi
 
 	# Get version strings
@@ -3827,6 +3892,8 @@ create_jail ()
 	# Create entry in configs/${HOST_NAME}/etc/jail.conf
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
 	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
+	echo "        exec.prestart += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias\";" >> configs/${HOST_NAME}/etc/jail.conf
+	echo "        exec.poststop += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 -alias\";" >> configs/${HOST_NAME}/etc/jail.conf
 	echo "        host.hostname = \"${JAIL_HOST_NAME}\";" >> configs/${HOST_NAME}/etc/jail.conf
 	echo "        ip4.addr = ${JAIL_IP};" >> configs/${HOST_NAME}/etc/jail.conf
 	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
@@ -3835,12 +3902,14 @@ create_jail ()
 	cp config-templates/new-host/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
 	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
 
-	# Create IP address (alias) for the jail
-	sed -i "" "s/^#\(ifconfig_${LAN_NET_IFACE}_alias.*${JAIL_IP}.*\)/\1/" configs/${HOST_NAME}/etc/rc.conf
-	ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias
-
 	# Add jail to jail_list in /etc/rc.conf
-	sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf
+	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null
+	if [ $? -ne 0 ]
+	then
+		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf
+	else
+		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${JAIL_NAME}' already exists in jail_list (/etc/rc.conf)!\n"
+	fi
 
 	# Copy latest resolv.conf file from current template jail filesystem (not snapshot)
 	cp /jls/template/etc/resolv.conf /jls/${JAIL_NAME}/etc/resolv.conf
@@ -3936,6 +4005,9 @@ revert_create_jail ()
 
 	# Roll back local repo to last good commit (!!!DANGEROUS!!!)
 	git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
+
+	# Remove untracked files from local repo
+	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT}
 
 	# Install back old host configs
 	install_file_tree configs/${HOST_NAME} /
@@ -4069,7 +4141,13 @@ create_jail_from_recipe ()
 				IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
-					service ppp restart
+					# TODO: resolve why ppp can't reconnect on service restart.
+					#service ppp restart
+					service ppp stop
+					sleep 3
+					service ppp start
+					sleep 3
+					service ppp start
 				fi
 				IS_PF_ENABLED=`sysrc pf_enable | awk '{print $2}'`
 				if [ "${IS_PF_ENABLED}" = "YES" ]
