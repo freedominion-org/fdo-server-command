@@ -73,9 +73,9 @@ CARRIAGE_RETURN="
 ## TODO: rename subcommand 'new-host' to 'init-host'.
 ## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
-## TODO: consider disabling 'y' prompt for installing packages in init-host/init-jails.
-## TODO; consider adding missing config files from init-hosts/init-jails/create-jaili to repo.
-## TODO: add "all checks passed" or "one or more failed" to end of check-configs.
+## TODO; consider adding missing config files from init-hosts/init-jails/create-jail to repo.
+
+## TEST: disable 'y' prompt for installing packages in init-host/init-jails etc.
 
 ## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
 ## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
@@ -87,6 +87,7 @@ CARRIAGE_RETURN="
 ## DONE: make init-jails idempotent. TEST:(i) destroy when clones exist, (ii) rename of template fs.
 ## DONE: do a check_configs in create-jail.
 ## DONE: move all (ldap) jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
+## DONE: add "all checks passed" or "one or more failed" to end of check-configs.
 
 #############
 
@@ -627,6 +628,7 @@ install_file_tree ()
 	DEST_FILES_ROOT="${2}"
 	CHOWN_USER="${3}"
 	CHOWN_GROUP="${4}"
+	INSTALL_FILE_ERROR_COUNT=0
 
 	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort`
 	do
@@ -648,7 +650,7 @@ install_file_tree ()
 		fi
 		if [ $? -ne 0 ]
 		then
-			ERROR_COUNT=$((ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
 		fi
 
 		if [ "${CHOWN_USER}" != "" ]
@@ -657,7 +659,7 @@ install_file_tree ()
 		fi
 		if [ $? -ne 0 ]
 		then
-			ERROR_COUNT=$((ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
 		fi
 
 		if [ "${CHOWN_GROUP}" != "" ]
@@ -666,7 +668,7 @@ install_file_tree ()
 		fi
 		if [ $? -ne 0 ]
 		then
-			ERROR_COUNT=$((ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
 		fi
 	done
 
@@ -678,6 +680,7 @@ compare_file_tree ()
 	SOURCE_FILES_ROOT=${1}
 	DEST_FILES_ROOT=${2}
 	SILENT_MODE="no"
+	COMPARE_FILE_ERROR_COUNT=0
 
 	if [ "${3}" = "--silent" ]
 	then
@@ -695,11 +698,13 @@ compare_file_tree ()
 			if [ ! -d ${DEST_FILE_PATH} ]
 			then
 				echo -e "${ORNG}WARNING:${NRML} The following directory ${LRED}DOES NOT EXIST${NRML}: ${DEST_FILE_PATH}"
+				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 			fi
 		else
 			if [ ! -f ${DEST_FILE_PATH} ]
 			then
 				echo -e "${ORNG}WARNING:${NRML} The following file      ${LRED}DOES NOT EXIST${NRML}: ${DEST_FILE_PATH}"
+				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 			else
 				diff ${SOURCE_FILE_PATH} ${DEST_FILE_PATH} > /dev/null 2>&1
 				if [ $? -eq 0 ]
@@ -707,6 +712,7 @@ compare_file_tree ()
 					echo -e "${LGRN}CHECKED${NRML}: The following file is ${LGRN}IN CHECK${NRML}:       ${DEST_FILE_PATH}"
 				else
 					echo -e "${ORNG}WARNING${NRML}: The following file is ${ORNG}OUT OF CHECK${NRML}:   ${DEST_FILE_PATH}"
+					COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 					if [ "${SILENT_MODE}" = "no" ]
 					then
 						echo -e ""
@@ -995,13 +1001,12 @@ install_scripts ()
 {
 
 	INSTALL_PATH=${1}
-	ERROR_COUNT=0
 
 	cd /${REPO_NAME}
 
 	install_file_tree scripts ${INSTALL_PATH}
 
-	if [ ${ERROR_COUNT} -gt 0 ]
+	if [ ${INSTALL_FILE_ERROR_COUNT} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more scripts to target location:"
 		echo -e "       ${ORNG}(${INSTALL_PATH})${NRML}\n"
@@ -1127,7 +1132,6 @@ install_configs ()
 
 	CONFIG_REPO_ROOT=${1}
 	INSTALL_PATH=${2}
-	ERROR_COUNT=0
 
 	cd /${REPO_NAME}
 
@@ -1145,7 +1149,7 @@ install_configs ()
 
 	install_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH}
 
-	if [ ${ERROR_COUNT} -gt 0 ]
+	if [ ${INSTALL_FILE_ERROR_COUNT} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to target location. (${CONFIG_REPO_ROOT})\n"
 		cd -
@@ -1163,7 +1167,6 @@ check_configs ()
 
 	CONFIG_REPO_ROOT=${1}
 	INSTALL_PATH=${2}
-	ERROR_COUNT=0
 
 	cd /${REPO_NAME}
 
@@ -1182,6 +1185,13 @@ check_configs ()
 	fi
 
 	compare_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH} ${3}
+
+	if [ ${COMPARE_FILE_ERROR_COUNT} -eq 0 ]
+	then
+		echo -e "\n${LGRN}It seems the configs tracked by the repo are all IN CHECK!${NRML}\n"
+	else
+		echo -e "\n${ORNG}It seems at least one config tracked by the repo is missing or OUT OF CHECK!${NRML}\n"
+	fi
 
 	cd -
 
@@ -1702,9 +1712,10 @@ new_host ()
 	fi
 
 	# Install essential packages
-	echo -e "\n${YELL}Next we need to install some essential packages. Please accept when prompted...${NRML}\n"
+	echo -e "\n${YELL}Next we need to install some essential packages...${NRML}\n"
 	pause_prompt 8
-	pkg install ${ESSENTIAL_PACKAGES}
+	pkg update -f
+	pkg install -y ${ESSENTIAL_PACKAGES}
 	if [ $? -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages.\n       Aborting.\n"
@@ -2370,9 +2381,10 @@ setup_vnc_desktop()
 	fi
 
 	# Install desktop / vnc packages
-	echo -e "\n${YELL}Next we need to install some required packages. Please accept when prompted...${NRML}\n"
+	echo -e "\n${YELL}Next we need to install some required packages...${NRML}\n"
 	pause_prompt 8
-	pkg install ${VNC_DESKTOP_PACKAGES}
+	pkg update -f
+	pkg install -y ${VNC_DESKTOP_PACKAGES}
 	if [ $? -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install required packages.\n       Aborting.\n"
@@ -2952,11 +2964,10 @@ init_remote_desktops ()
  
 	SUM_EXIT_CODE=0
 
-	echo -e "\n${YELL}First we need to install some required packages.${NRML}"
-	echo -e "${YELL}Please accept when prompted...${NRML}\n"
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
 	pause_prompt 8
-	pkg update
-	pkg install ${REMOTE_DESKTOP_PACKAGES}
+	pkg update -f
+	pkg install -y ${REMOTE_DESKTOP_PACKAGES}
 
 	kldstat | grep vboxdrv.ko > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
@@ -4091,11 +4102,11 @@ create_jail_from_recipe ()
 	echo -e "\n\n${YELL}Creating any additional jail recipe datasets...${NRML}\n"
 
 	# Create additional jail recipe datasets
-	COUNT=0
+	COUNT_DATASETS=0
 	for RECIPE_ZFS_DATASET in ${RECIPE_ZFS_DATASETS}
 	do
-		COUNT=$(( ${COUNT} + 1 ))
-		RECIPE_ZFS_MOUNTPOINT=`echo ${RECIPE_ZFS_MOUNTPOINTS} | awk -v column="${COUNT}" '{print $column}'`
+		COUNT_DATASETS=$(( ${COUNT_DATASETS} + 1 ))
+		RECIPE_ZFS_MOUNTPOINT=`echo ${RECIPE_ZFS_MOUNTPOINTS} | awk -v column="${COUNT_DATASETS}" '{print $column}'`
 		zfs create -o mountpoint=${RECIPE_ZFS_MOUNTPOINT} ${RECIPE_ZFS_DATASET}
 	done
 
