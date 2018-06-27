@@ -73,9 +73,6 @@ CARRIAGE_RETURN="
 ## TODO: rename subcommand 'new-host' to 'init-host'.
 ## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
-## TODO; consider adding missing config files from init-hosts/init-jails/create-jail to repo.
-
-## TEST: disable 'y' prompt for installing packages in init-host/init-jails etc.
 
 ## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
 ## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
@@ -88,6 +85,8 @@ CARRIAGE_RETURN="
 ## DONE: do a check_configs in create-jail.
 ## DONE: move all (ldap) jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
 ## DONE: add "all checks passed" or "one or more failed" to end of check-configs.
+## DONE: disable 'y' prompts for installing packages in init-host/init-jails etc.
+## DONE: track template config files from create-jail to repo.
 
 #############
 
@@ -1186,7 +1185,30 @@ check_configs ()
 
 	compare_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH} ${3}
 
-	if [ ${COMPARE_FILE_ERROR_COUNT} -eq 0 ]
+	cd -
+
+}
+
+check_all_configs ()
+{
+
+	CHECK_ALL_CONFIGS_ERROR_COUNT=0
+
+	# Check configs for the host.
+	echo -e "\nChecking configs for the host...\n"
+	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
+	CHECK_ALL_CONFIGS_ERROR_COUNT=$((CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
+
+	# Check configs for the jails.
+	cd /${REPO_NAME}
+	for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
+	do
+		echo -e "\nChecking configs for the '${JAIL_NAME}' jail...\n"
+		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
+		CHECK_ALL_CONFIGS_ERROR_COUNT=$((CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
+	done
+
+	if [ ${CHECK_ALL_CONFIGS_ERROR_COUNT} -eq 0 ]
 	then
 		echo -e "\n${LGRN}It seems the configs tracked by the repo are all IN CHECK!${NRML}\n"
 	else
@@ -1681,6 +1703,7 @@ new_host ()
 	HOST_NAME=${1}
 	DOMAIN_NAME=${2}
 
+	# Check that the host name is valid.
 	test_valid_host_name "${HOST_NAME}"
 	if [ "${VALID_HOST_NAME}" = "no" ]
 	then
@@ -2893,11 +2916,10 @@ init_jails ()
 	service jail restart template
 
 	# Install essential package into the template jail
-	echo -e "\n${YELL}Next we need to install some essential packages into the template jail.${NRML}"
-	echo -e "${YELL}Please accept when prompted...${NRML}\n"
+	echo -e "\n${YELL}Next we need to install some essential packages into the template jail.${NRML}\n"
 	pause_prompt 8
-	pkg -j template update
-	pkg -j template install ${ESSENTIAL_JAIL_PACKAGES}
+	pkg -j template update -f
+	pkg -j template install -y ${ESSENTIAL_JAIL_PACKAGES}
 
 	# Stop the template jail now that we're done making the template
 	service jail stop template
@@ -3894,8 +3916,30 @@ create_jail ()
 		JAIL_IP="${SERVICES_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
-	# Create new jail fileststem by clonging from the template jail
+	# Create new jail fileststem by cloning from the template jail
 	zfs clone ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} ${POOL_NAME}/jails/${JAIL_NAME}
+
+	# Install template jails' configs to new jails' config repo directory
+	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state
+	mkdir configs/${JAIL_NAME}@${HOST_NAME}
+	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
+	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
+	do
+		FILE_CONTENTS=`cat config-templates/init-jails/${CONFIG_FILE}`
+		if [ "${FILE_CONTENTS}" != "COPY_STATIC_FROM_HOST" ]
+		then
+			if [ -f "/jls/template/${CONFIG_FILE}" ]
+			then
+				CONFIG_FILE_DIR=`dirname ${CONFIG_FILE}`
+				if [ ! -d ${CONFIG_FILE_DIR} ]
+				then
+					mkdir -p configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE_DIR}
+				fi
+				cp /jls/template/${CONFIG_FILE} configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE}
+			fi
+		fi
+
+	done
 
 	# Save the previous git commit reference to file, for later use in reverting operations
 	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
@@ -3922,19 +3966,20 @@ create_jail ()
 		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${JAIL_NAME}' already exists in jail_list (/etc/rc.conf)!\n"
 	fi
 
-	# Copy latest resolv.conf file from current template jail filesystem (not snapshot)
-	cp /jls/template/etc/resolv.conf /jls/${JAIL_NAME}/etc/resolv.conf
-
 	# Install latest scripts to the jail
 	install_scripts /jls/${JAIL_NAME}/
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
+	# Install initial config templates to the new jail
+	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+
 	if [ "${IS_INTERACTIVE}" = "yes" ]
 	then
 		# Add changes to the local config repo
 		git add configs/${HOST_NAME}
+		git add configs/${JAIL_NAME}@${HOST_NAME}
 
 		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
@@ -4046,6 +4091,7 @@ edit_recipe_configs ()
 
 	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
 	do
+		# Skip directories and certain unintersting files
 		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
 		FILE_NAME=`basename ${CONFIG_FILE}`
 		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
@@ -4054,6 +4100,14 @@ edit_recipe_configs ()
 			continue
 		fi
 
+		# Skip files modified prior to recipe (e.g. from create_jail)
+		CONFIG_FILE_MODIFIED_TIMESTAMP=`stat -f "%Sm" -t "%s" ${CONFIG_FILE}`
+		if [ ${PRE_RECIPE_TIMESTAMP} -gt ${CONFIG_FILE_MODIFIED_TIMESTAMP} ]
+		then
+			continue
+		fi
+
+		# Prompt user and if yes, display the config file in EDITOR
 		question_yes_no "Would you like to edit the recipe config '${CONFIG_FILE}'?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -4101,6 +4155,9 @@ create_jail_from_recipe ()
 
 	echo -e "\n\n${YELL}Creating any additional jail recipe datasets...${NRML}\n"
 
+	PRE_RECIPE_TIMESTAMP=`date "+%s"`
+	sleep 1
+
 	# Create additional jail recipe datasets
 	COUNT_DATASETS=0
 	for RECIPE_ZFS_DATASET in ${RECIPE_ZFS_DATASETS}
@@ -4113,7 +4170,6 @@ create_jail_from_recipe ()
 	cd /${REPO_NAME}
 
 	# Install recipe config templates to new jails' config repo directory
-	mkdir configs/${JAIL_NAME}@${HOST_NAME}
 	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
 
 	# Set the correct jail ABI in the jails' pkg repo conf file
@@ -4597,19 +4653,7 @@ case "${SUB_CMD}" in
 
 	check-configs)
 		update_local_repo
-
-		# Check configs for the host.
-		echo -e "\nChecking configs for the host...\n"
-		check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
-
-		# Check configs for the jails.
-		cd /${REPO_NAME}
-		for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
-		do
-			echo -e "\nChecking configs for the '${JAIL_NAME}' jail...\n"
-			check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
-		done
-		cd -
+		check_all_configs
 		;;
 
 	add-config)
