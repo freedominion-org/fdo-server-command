@@ -70,9 +70,9 @@ CARRIAGE_RETURN="
 
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
 ## TODO: add merge detection and auto message support to git_pull function.
-## TODO: rename subcommand 'new-host' to 'init-host'.
 ## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
+
 
 ## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
 ## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
@@ -87,6 +87,7 @@ CARRIAGE_RETURN="
 ## DONE: add "all checks passed" or "one or more failed" to end of check-configs.
 ## DONE: disable 'y' prompts for installing packages in init-host/init-jails etc.
 ## DONE: track template config files from create-jail to repo.
+## DONE: rename subcommand 'new-host' to 'init-host'.
 
 #############
 
@@ -109,8 +110,8 @@ usage ()
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} connect-internet${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} new-host host_name domain_name${NRML}"
-	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} new-host beastie1 example.net${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-host host_name domain_name${NRML}"
+	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} init-host beastie1 example.net${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} patch-host${NRML}"
 	echo -e ""
@@ -1687,16 +1688,16 @@ connect_internet ()
 
 }
 
-new_host_cleanup ()
+init_host_cleanup ()
 {
 	rm -rf configs/${HOST_NAME}
 	exit 50
 }
 
-new_host ()
+init_host ()
 {
 
-	trap 'new_host_cleanup' HUP INT QUIT KILL TERM
+	trap 'init_host_cleanup' HUP INT QUIT KILL TERM
 
 	# NOTE: we have to assume we only have base userland at this point. No local repo either.
 
@@ -1773,9 +1774,9 @@ new_host ()
 		exit 56
 	fi
 
-	# Copy new-host template configs to the repo
+	# Copy init-host template configs to the repo
 	mkdir configs/${HOST_NAME}
-	install_file_tree config-templates/new-host configs/${HOST_NAME}/
+	install_file_tree config-templates/init-host configs/${HOST_NAME}/
 
 	# Update hostname
 	sed -i "" "s/^hostname\=.*/hostname\=${HOST_NAME}\.${DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
@@ -1787,7 +1788,7 @@ new_host ()
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
-		new_host_cleanup
+		init_host_cleanup
 		exit 57
 	fi
 
@@ -1832,7 +1833,7 @@ new_host ()
 			if [ ${NUM_NET_IFACES} -lt 2 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!\n       Aborting.\n"
-				new_host_cleanup
+				init_host_cleanup
 				exit 58
 			fi
 			;;
@@ -2152,17 +2153,17 @@ new_host ()
 	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
 	if [ "${ANSWER}" = "no" ]
 	then
-		new_host_cleanup
+		init_host_cleanup
 	fi
 
 	#### POINT OF NO RETURN ####
 
 	# Backup existing core system conf files
-	backup_file /etc/rc.conf new-host
-	backup_file /etc/sysctl.conf new-host
-	backup_file /boot/loader.conf new-host
+	backup_file /etc/rc.conf init-host
+	backup_file /etc/sysctl.conf init-host
+	backup_file /boot/loader.conf init-host
 
-	# Install new-host configs to the system so that FDO user has a useful profile
+	# Install init-host configs to the system so that FDO user has a useful profile
 	install_file_tree configs/${HOST_NAME} /
 
 	# Set password for toor user
@@ -2262,7 +2263,7 @@ new_host ()
 	# Install scripts to the system
 	install_scripts /
 
-	# Install final new-host configs to the system
+	# Install final init-host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
 	# Create ssl certs directory
@@ -2271,7 +2272,7 @@ new_host ()
 	# If not using DHCP, symlink resolv.conf.static to resolv.conf
 	if [ "${IS_PRIMARY_IFACE_DHCP}" = "no" ] || [ "${USES_PPP}" = "yes" ]
 	then
-		backup_file /etc/resolv.conf new-host
+		backup_file /etc/resolv.conf init-host
 		rm /etc/resolv.conf
 		ln -s /etc/resolv.conf.static /etc/resolv.conf
 	fi
@@ -2308,7 +2309,7 @@ new_host ()
 
 	cd -
 
-} ## END: new_host()
+} ## END: init_host()
 
 patch_host()
 {
@@ -2377,7 +2378,7 @@ setup_vnc_desktop()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 70
 	fi
 
@@ -2492,7 +2493,7 @@ init_hotdesking ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 80
 	fi
 
@@ -2686,7 +2687,7 @@ init_jails ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 90
 	fi
  
@@ -2965,7 +2966,7 @@ init_remote_desktops ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first."
+		echo -e "       Please use the 'init-host' subcommand first."
 		echo -e "       Aborting.\n"
 		exit 100
 	fi
@@ -3283,7 +3284,7 @@ create_remote_desktop_template ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 111
 	fi
 
@@ -3676,7 +3677,7 @@ create_remote_desktop_instance ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first."
+		echo -e "       Please use the 'init-host' subcommand first."
 		echo -e "       Aborting.\n"
 		exit 120
 	fi
@@ -3854,7 +3855,7 @@ create_jail ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 131
 	fi
 
@@ -3954,7 +3955,7 @@ create_jail ()
 	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
 
 	# Prepare the jail fstab
-	cp config-templates/new-host/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
+	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
 	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
 
 	# Add jail to jail_list in /etc/rc.conf
@@ -4065,11 +4066,11 @@ revert_create_jail ()
 	# Remove untracked files from local repo
 	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT}
 
-	# Install back old host configs
-	install_file_tree configs/${HOST_NAME} /
-
 	# Remove untracked config files from host and config repo
 	rm /etc/fstab.${JAIL_TO_REVERT}
+
+	# Install back old host configs
+	install_file_tree configs/${HOST_NAME} /
 
 	# Install back affected jail configs
 	for JAIL_RECIPE_NAME in ${AFFECTED_RECIPE_JAILS}
@@ -4307,7 +4308,7 @@ init_clonezilla_images ()
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
-		echo -e "       Please use the 'new-host' subcommand first.\n       Aborting.\n"
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
 		exit 160
 	fi
 
@@ -4675,10 +4676,10 @@ case "${SUB_CMD}" in
 		connect_internet
 		;;
 
-	new-host)
+	init-host)
 		# Register a new host in the repo, install essential packages and initial configuration from templates.
 		test_num_mandatory_sub_args 2
-		new_host "${SUB_ARG1}" "${SUB_ARG2}"
+		init_host "${SUB_ARG1}" "${SUB_ARG2}"
 		;;
 
 	patch-host)
