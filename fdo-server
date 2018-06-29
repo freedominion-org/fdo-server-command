@@ -69,7 +69,6 @@ CARRIAGE_RETURN="
 ### TODOs ###
 
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
-## TODO: add merge detection and auto message support to git_pull function.
 ## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
 
@@ -833,7 +832,7 @@ upgrade_repo_from_upstream ()
 	fi
 
 	# Merge the upstream changes to the local repo.
-	git merge upstream/master -m "Upgrading private repo from upstream skeleton repo."
+	git merge upstream/master --allow-unrelated-histories -m "Upgrading private repo from upstream skeleton repo on host '${HOST_NAME}'."
 	if [ ${?} -ne 0 ]
 	then
 		return 4
@@ -941,7 +940,7 @@ init_local_repo ()
 			# Initialise a new local only repo.
 			# Clone the upstream skeleton repo from github.
 			echo -e "${YELL}Cloning the upstream skeleton git repo...${NRML}\n"
-			git clone "${FDO_SERVER_SKELETON_REPO}"
+			git clone "${FDO_SERVER_SKELETON_REPO}" ${REPO_NAME}
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo.\n       Aborting.\n"
@@ -954,7 +953,7 @@ init_local_repo ()
 			# Initialise a new local repo and attach to its remote repo.
 			# Clone our private remote git repo
 			echo -e "${YELL}Cloning our private remote git repo...${NRML}\n"
-			git clone ${REPO_URI}
+			git clone ${REPO_URI} ${REPO_NAME}
 			if [ $? -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo.\n       Aborting.\n"
@@ -1746,13 +1745,17 @@ init_host ()
 		exit 54
 	fi
 
+	# Initialise the local private repo
 	init_local_repo
+
+	# Initialise the git config, so we can commit and push without warnings.
+	init_git_config
 
 	# Check that the local repo is not empty, otherwise pull a fresh skeleton.
 	if [ ! -d "/${REPO_NAME}/configs" ]
 	then
 		# Get a skeleton from the public upstream skeleton repo.
-		echo -e "${ORNG}WARNING:${NRML} Repo is invalid! It is missing the configs directory."
+		echo -e "\n${ORNG}WARNING:${NRML} Repo is invalid! It is missing the configs directory."
 	    echo -e "         we will attempt to fetch the upstream skeleton git repo...${NRML}\n"
 		pause_prompt 8
 		upgrade_repo_from_upstream
@@ -2276,9 +2279,6 @@ init_host ()
 		rm /etc/resolv.conf
 		ln -s /etc/resolv.conf.static /etc/resolv.conf
 	fi
-
-	# Initialise the git config, so we can commit and push without warnings.
-	init_git_config
 
 	# Remove the .gitignore from the local repo configs directory (if it exists)
 	git rm configs/.gitignore 2> /dev/null
@@ -4467,6 +4467,7 @@ merge_local_repo_to_remote ()
 	rm -rf "${REPO_NAME}"
 	echo -e "\n${YELL}We need to check that this host does not already exist in the remote repo.${NRML}"
 	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
 	git clone "${REMOTE_REPO_URI}" "${REPO_NAME}"
 	if [ ${?} -ne 0 ]
 	then
@@ -4521,6 +4522,7 @@ merge_local_repo_to_remote ()
 	# Fetch the remote repo.
 	echo -e "\n${YELL}Next we need to fetch the remote repo into our local repo.${NRML}"
 	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
 	git fetch
 	if [ ${?} -ne 0 ]
 	then
@@ -4536,7 +4538,7 @@ merge_local_repo_to_remote ()
 		# Remote is non-empty. Perform a merge of the local and remote master branch.
 		echo -e "\n${YELL}Next we need to merge the remote repo and our local repo...${NRML}\n"
 		pause_prompt 8
-		git merge -m "Merging local repo from host '${HOST_NAME}'."
+		git merge origin/master --allow-unrelated-histories -m "Merging local repo from host '${HOST_NAME}'."
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
@@ -4550,6 +4552,7 @@ merge_local_repo_to_remote ()
 	# Lastly, push the local repo deltas to the remote repo.
 	echo -e "\n${YELL}Now we need to push the local repo changes to the remote repo.${NRML}"
 	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
 	git_push origin master
 	if [ ${?} -ne 0 ]
 	then
@@ -4757,6 +4760,7 @@ case "${SUB_CMD}" in
 	create-remote-desktop-template)
 		# Create a template (uses ZFS snapshots) for a particular type of remote desktop.
 		test_num_mandatory_sub_args 1
+		update_local_repo
 		create_remote_desktop_template "${SUB_ARG1}"
 		;;
 
