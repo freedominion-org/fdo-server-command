@@ -87,6 +87,7 @@ CARRIAGE_RETURN="
 ## DONE: disable 'y' prompts for installing packages in init-host/init-jails etc.
 ## DONE: track template config files from create-jail to repo.
 ## DONE: rename subcommand 'new-host' to 'init-host'.
+## DONE: init-host; change sshd_config ListenAddress addditional line to a substition of the existing line.
 
 #############
 
@@ -233,6 +234,23 @@ get_class_c_subnet ()
 	CLASS_C_SUBNET_SECOND=`echo "${CLASS_C_SUBNET_IP}" | cut -d. -f2`
 	CLASS_C_SUBNET_THIRD=`echo "${CLASS_C_SUBNET_IP}" | cut -d. -f3`
 	CLASS_C_SUBNET="${CLASS_C_SUBNET_FIRST}.${CLASS_C_SUBNET_SECOND}.${CLASS_C_SUBNET_THIRD}"
+}
+
+get_enabled_nat_services ()
+{
+
+	IS_PF_NAT_ENABLED=`sysrc pf_enable | awk '{print $2}'`
+	IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
+
+}
+
+get_jail_id_from_name ()
+{
+	# ${1} is jail name
+
+	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id | head -1`
+	JAIL_ID=`cat ${JAIL_ID_FILE}`
+
 }
 
 test_num_mandatory_sub_args ()
@@ -781,7 +799,7 @@ init_git_config ()
 					GIT_USER_EMAIL=${GIT_USER_EMAIL_TEMP}
 				fi
 			else
-				echo -e "\n${LRED}ERROR:${NRML} The email address can not be '${GIT_USER_EMAIL}'."
+				echo -e "\n${LRED}ERROR:${NRML} The email address can not be '${GIT_USER_EMAIL_TEMP}'."
 				echo -e "       It must be a valid email address.\n"
 			fi
 		done
@@ -1507,7 +1525,7 @@ connect_internet ()
 			fi
 		done
 
-		while [ "${WAN_IFACE_NETMASK}" = "" ] && [ "${USES_PPP}" != "yes" ]
+		while [ "${WAN_IFACE_NETMASK}" = "" ]
 		do
 			echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
 			read WAN_IFACE_NETMASK_TEMP
@@ -1596,17 +1614,17 @@ connect_internet ()
 		echo " set authname ${PPP_AUTHNAME}" >> /etc/ppp/ppp.conf
 		echo " set authkey ${PPP_AUTHKEY}" >> /etc/ppp/ppp.conf
 		echo " set dial" >> /etc/ppp/ppp.conf
-		echo " set timeout 0" >> /etc/ppp/ppp.conf
-		echo " set lqrperiod 30" >> /etc/ppp/ppp.conf
-		echo " enable lqr echo" >> /etc/ppp/ppp.conf
-		echo " set redial 15 0" >> /etc/ppp/ppp.conf
-		echo " set reconnect 5 0" >> /etc/ppp/ppp.conf
 		echo " set login" >> /etc/ppp/ppp.conf
+		echo " set redial 30 0" >> /etc/ppp/ppp.conf
+		echo " set reconnect 5 0" >> /etc/ppp/ppp.conf
+		echo " set timeout 0" >> /etc/ppp/ppp.conf
+		echo " enable lqr echo" >> /etc/ppp/ppp.conf
+		echo " set lqrperiod 45" >> /etc/ppp/ppp.conf
 		if [ "${IS_WAN_IFACE_DHCP}" = "yes"  ]
 		then
 			echo " set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.255 0.0.0.0" >> /etc/ppp/ppp.conf
 		else
-			echo " set ifaddr ${WAN_IFACE_IP}/0 ${WAN_ROUTER_IP}/0 255.255.255.255 0.0.0.0" >> /etc/ppp/ppp.conf
+			echo " set ifaddr ${WAN_IFACE_IP} ${WAN_ROUTER_IP} ${WAN_IFACE_NETMASK} 0.0.0.0" >> /etc/ppp/ppp.conf
 		fi
 		echo " add default HISADDR" >> /etc/ppp/ppp.conf
 		ppp -ddial
@@ -1988,7 +2006,7 @@ init_host ()
 				fi
 			done
 
-			while [ "${WAN_IFACE_NETMASK}" = "" ] && [ "${USES_PPP}" != "yes" ]
+			while [ "${WAN_IFACE_NETMASK}" = "" ]
 			do
 				echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
 				read WAN_IFACE_NETMASK_TEMP
@@ -2025,15 +2043,16 @@ init_host ()
 	
 			if [ "${USES_PPP}" = "yes" ]
 			then
-				sed -i "" "s|^ #set ifaddr .*| set ifaddr ${WAN_IFACE_IP}/0 ${WAN_ROUTER_IP}/0 255.255.255.255 0.0.0.0|" configs/${HOST_NAME}/etc/ppp/ppp.conf
+				sed -i "" "s|^ set ifaddr .*| set ifaddr ${WAN_IFACE_IP} ${WAN_ROUTER_IP} ${WAN_IFACE_NETMASK} 0.0.0.0|" configs/${HOST_NAME}/etc/ppp/ppp.conf
 			else
 				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_ROUTER_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
 			fi
 		elif [ "${USES_PPP}" = "yes" ]
 		then
-			sed -i "" "s|^ #set ifaddr | set ifaddr |" configs/${HOST_NAME}/etc/ppp/ppp.conf
+			# WAN PPP connection uses Dynamic IP
 		else
+			# WAN IP interface uses DHCP
 			sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 		fi
 		# END: if IS_WAN_IFACE_DHCP = no
@@ -2302,6 +2321,7 @@ init_host ()
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up the new host:${NRML}"
 	echo -e "${LGRN}'${HOST_NAME}'.${NRML}\n\n"
 	question_yes_no "Would you like to reboot now for new settings to take full effect?\n[RECOMMENDED]"
+	echo -e "\n"
 	if [ "${ANSWER}" = "yes" ]
 	then
 		reboot
@@ -2751,7 +2771,7 @@ init_jails ()
 	fi
  
 	# Get host IPs to use for sshd.
-	HOST_IP_ADDRESSES=`ifconfig | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}"`
+	HOST_IP_ADDRESSES=`ifconfig | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}" | sort`
 	NUM_HOST_IP=`echo ${HOST_IP_ADDRESSES} | wc -w`
 	if [ ${NUM_HOST_IP} -lt 1 ]
 	then
@@ -2872,11 +2892,15 @@ init_jails ()
 	# Only run sshd on LAN host (not jail) IPs
 	for IP_ADDRESS in ${HOST_IP_ADDRESSES}
 	do
-		## TODO: decide which of these IP addresses (if more than one) to use in port forwarding rule.
-		##       Currently it will use the first in the list.
-		sed -i "" "s/HOST_LAN_IP/${IP_ADDRESS}/" configs/${HOST_NAME}/etc/pf.conf
-		sed -i "" "s/#\(rdr on .*host_sshd.*\)/\1/" configs/${HOST_NAME}/etc/pf.conf
-		echo "ListenAddress ${IP_ADDRESS}" >> configs/${HOST_NAME}/etc/ssh/sshd_config
+		# Add port forwarding rules to pf and ppp config
+		IS_REPO_CONF="yes" PF_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+		IS_REPO_CONF="yes" PPP_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+
+		# Set this hosts sshd to only run on the primary LAN IP
+		sed -i "" "s/#ListenAddress .*/ListenAddress ${IP_ADDRESS}/" configs/${HOST_NAME}/etc/ssh/sshd_config
+
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		break
 	done
 
 	# Install host configs to the system
@@ -3790,15 +3814,6 @@ create_remote_desktop_instance ()
 
 }
 
-get_jail_id_from_name ()
-{
-	# ${1} is jail name
-
-	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id | head -1`
-	JAIL_ID=`cat ${JAIL_ID_FILE}`
-
-}
-
 start_jail_service ()
 {
 	# ${1} is jail name
@@ -3822,6 +3837,29 @@ start_jail_service ()
 	else
 		echo -e "${YELL}INFO:${NRML} Successfully started service '${2}' in jail '${1}'!\n"
 	fi
+
+}
+
+find_jails_from_recipe_name ()
+{
+	FIND_RECIPE_NAME="${1}"
+	FOUND_RECIPE_JAILS=""
+	for TEST_JAIL_NAME in `ls -1 /jls | cut -d/ -f1`
+	do
+		if [ -f "/jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf" ]
+		then
+			TEST_RECIPE_NAME=`cat /jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf`
+			if [ "${TEST_RECIPE_NAME}" = "${FIND_RECIPE_NAME}" ]
+			then
+				if [ "${FOUND_RECIPE_JAILS}" = "" ]
+				then
+					FOUND_RECIPE_JAILS="${TEST_JAIL_NAME}"
+				else
+					FOUND_RECIPE_JAILS="${FOUND_RECIPE_JAILS} ${TEST_JAIL_NAME}"
+				fi
+			fi
+		fi
+	done
 
 }
 
@@ -4024,9 +4062,9 @@ revert_create_jail ()
 	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
 	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
 	then
-		AFFECTED_RECIPE_JAILS=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
+		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
 	else
-		AFFECTED_RECIPE_JAILS=""
+		AFFECTED_JAIL_RECIPES=""
 	fi
 
 	echo -e "\n${YELL}Reverting create jail for ${JAIL_TO_REVERT}...${NRML}\n"
@@ -4044,6 +4082,8 @@ revert_create_jail ()
 		jail -r ${JAIL_ID}
 		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs
 	fi
+
+	echo -e "\n"
 
 	# Destroy additional jail recipe datasets in reverse order
 	REV_RECIPE_ZFS_DATASETS=`echo ${RECIPE_ZFS_DATASETS} | rev`
@@ -4064,20 +4104,25 @@ revert_create_jail ()
 	git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
 
 	# Remove untracked files from local repo
-	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT}
+	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
 
 	# Remove untracked config files from host and config repo
-	rm /etc/fstab.${JAIL_TO_REVERT}
+	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
 
 	# Install back old host configs
 	install_file_tree configs/${HOST_NAME} /
 
 	# Install back affected jail configs
-	for JAIL_RECIPE_NAME in ${AFFECTED_RECIPE_JAILS}
+	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
 	do
-		## TODO: find jail name from recipe name and install_file_tree from config repo to affected jails' root
-		echo -e "${LRED}Reverting configs for jail recipe ${JAIL_RECIPE_NAME}...${NRML}"
-		## use install_config to reinstate configs for jail_name found from jail_recipe_name
+		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${AFFECTED_JAIL_RECIPE}':${NRML}"
+		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
+		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
+		do
+			# Use install_config to reinstate configs for jail found to be affected
+			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
+			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
+		done
 	done
 
 	echo -e "\n${YELL}Finished reverting jail creation! Exiting.${NRML}\n"
@@ -4096,7 +4141,7 @@ edit_recipe_configs ()
 		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
 		FILE_NAME=`basename ${CONFIG_FILE}`
 		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
-			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ]
+			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ] || [ "${FILE_NAME}" = ".empty" ]
 		then
 			continue
 		fi
@@ -4130,6 +4175,8 @@ create_jail_from_recipe ()
 	JAIL_NAME="${1}"
 	JAIL_HOST_NAME="${2}"
 	JAIL_RECIPE_NAME="${3}"
+
+	get_enabled_nat_services
 
 	# Source the recipe
 	if [ -f "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
@@ -4184,6 +4231,23 @@ create_jail_from_recipe ()
 	# Cook the sourced recipe
 	cook_recipe
 
+	# Add any port forwarding rules
+	if [ ${RECIPE_TCP_PORTS} ] && [ ${RECIPE_UDP_PORTS} ]
+	then
+		IS_REPO_CONF="yes" PF_CONF_PATH="configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to pf!\n"
+			RECIPE_SUCCESS="no"
+		fi
+		IS_REPO_CONF="yes" PPP_CONF_PATH="configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to ppp nat!\n"
+			RECIPE_SUCCESS="no"
+		fi
+	fi
+
 	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
 		# Interactively edit the configs touched by the recipe
@@ -4206,7 +4270,6 @@ create_jail_from_recipe ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				echo -e ""
-				IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
 					# TODO: resolve why ppp can't reconnect on service restart.
@@ -4217,8 +4280,7 @@ create_jail_from_recipe ()
 					sleep 3
 					service ppp start
 				fi
-				IS_PF_ENABLED=`sysrc pf_enable | awk '{print $2}'`
-				if [ "${IS_PF_ENABLED}" = "YES" ]
+				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
 				then
 					service pf reload
 				fi
