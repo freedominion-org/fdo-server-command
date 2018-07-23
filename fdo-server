@@ -69,7 +69,6 @@ CARRIAGE_RETURN="
 ### TODOs ###
 
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
-## TODO: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 ## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
 
 
@@ -88,6 +87,7 @@ CARRIAGE_RETURN="
 ## DONE: track template config files from create-jail to repo.
 ## DONE: rename subcommand 'new-host' to 'init-host'.
 ## DONE: init-host; change sshd_config ListenAddress addditional line to a substition of the existing line.
+## DONE: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 
 #############
 
@@ -835,6 +835,9 @@ upgrade_repo_from_upstream ()
 		return 1
 	fi
 
+	# Get the pre-upgrade git commit reference
+	PRE_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
+
 	# Add the public upstream skeleton repo as a remote called 'upstream'.
 	git remote add upstream "${FDO_SERVER_SKELETON_REPO}"
 	if [ ${?} -ne 0 ]
@@ -886,7 +889,30 @@ upgrade_repo_from_upstream ()
 		fi
 	fi
 
-	## TODO: ask whether to perform an 'fdo-server install-scripts'
+	# Get the post-upgrade git commit reference
+	POST_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
+
+	# Check if any scripts have been updated in this upgrade cycle
+	echo -e "\n${YELL}Checking if any scripts have been updated in this upgrade...${NRML}\n"
+	git diff-tree --no-commit-id --name-only -r ${PRE_UPGRADE_COMMIT_REF} ${POST_UPGRADE_COMMIT_REF} | grep "^scripts/"
+
+	if [ ${?} -eq 0 ]
+	then
+		# Ask whether to perform an 'install-scripts'
+		question_yes_no "\nIt seems that one or more scripts have been updated in this upgrade.\nWould you like to perform an 'install-scripts' now?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Install scripts to the host
+			install_scripts /
+
+			# Install scripts to the jails
+			for JAIL_DIR in `ls -1 /jls 2> /dev/null`
+			do
+				install_scripts /jls/${JAIL_DIR}/
+			done
+		fi
+		echo -e ""
+	fi
 
 	cd "${CWD}"
 
@@ -2447,10 +2473,6 @@ setup_vnc_desktop()
 	else
 		mv configs/${HOST_NAME}/home/FDO_USERNAME configs/${HOST_NAME}/home/${FDO_USERNAME}
 	fi
-
-	# DELETE ME: no longer needed now that install_file_tree takes chown args
-	# Correctively change ownership of FDo users' profile config files
-	#chown -R ${FDO_USERNAME}:${FDO_USERNAME} configs/${HOST_NAME}/home/${FDO_USERNAME}
 
 	# Enable DBUS in rc.conf
 	sed -i "" "s/dbus_enable=\"NO\"/dbus_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
