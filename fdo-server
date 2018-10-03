@@ -36,20 +36,22 @@ ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts cpdup curl
 ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts cpdup curl portmaster rsync tree unrar unzip zip vim-console"
 REMOTE_DESKTOP_PACKAGES="virtualbox-ose py27-daemon py27-psycopg2"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
-DIALOG_OUT_FILE="/tmp/fdo-server.dialog.answer"
+DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
 AUX_LOCAL_SERVER_IP_MIN=2
 AUX_LOCAL_SERVER_IP_MAX=9
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
-FDO_LAN_SUBNET_B="192.168"
-FDO_LAN_SUBNET_NETMASK="255.255.0.0"
-SERVICES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.10"
+FDO_LAN_SUBNET_B=${FDO_LAN_SUBNET_B:-"10.0"}
+FDO_LAN_SUBNET_MASK="255.255.0.0"
+SERVERS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.10"
+JAILS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.11"
 WORKSTATIONS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.20"
-HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.30"
-MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
-DYNAMIC_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.50"
+HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.25"
+MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.30"
+GUESTS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
+FDO_LAN_GATEWAY_IP="${SERVERS_LAN_SUBNET_C}.1"
 
 TERM="xterm"
 LRED="\033[1;31m"
@@ -69,8 +71,13 @@ CARRIAGE_RETURN="
 ### TODOs ###
 
 ## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
-## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
+## TODO: remove commented out entries from /etc/devfs.rules in init-host templates, replace with better sed to add entries.
+## TODO: make a read inbuilt command replacement that supports password input and preset (suggested) text
+## TODO: add support for running jail config edit scripts (e.g. fdo-<service>-edit) from the host or within jail.
 
+# Remote Desktops sub-system
+## TODO: Remote Desktops should allow option for using VNC or RDP, perhaps choice made at init-remote-desktops stage.
+## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
 
 ## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
 ## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
@@ -88,6 +95,7 @@ CARRIAGE_RETURN="
 ## DONE: rename subcommand 'new-host' to 'init-host'.
 ## DONE: init-host; change sshd_config ListenAddress addditional line to a substition of the existing line.
 ## DONE: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
+## DONE: jail recipes; use variable JAILS_LAN_SUBNET_C for JAIL_IP and other jail related IPs.
 
 #############
 
@@ -95,6 +103,11 @@ CARRIAGE_RETURN="
 
 ## DONE: at the end of upgrade-repo-from-upstream we get "But we were unable to push changes to the private remote repo." when we are a local only repo.
 ## DONE: after fail jail creation (ldap_consumer, dhcp_server) and auto-revert, the host has stale /etc/fstab.jail_name in local repo configss/ dir.
+## DONE: setup-vnc-desktop: make rc.local and rc.shutdown.local preparation more robust.
+## DONE: setup-vnc-desktop: init-host needs to add LAN IP and hostname (FQHN, same as 'hostname' command output) to /etc/hosts.
+## DONE: revert-create-jail needs sanity test for when jail name is invalid.
+## DONE: dhcp_server should not assume dns_cache is running on the LAN. Add optional dependency notice. dns_cache recipe should also warn if dhcp_server detected on LAN, and how to change domain-name-servers.
+## DONE: upgrade-repo-from-upstream; check for new scripts fails on subsequent runs on other servers. Fixed by looking for script updates in update_local_repo.
 
 ############
 
@@ -248,7 +261,13 @@ get_jail_id_from_name ()
 {
 	# ${1} is jail name
 
-	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id | head -1`
+	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id 2> /dev/null | head -1`
+	if [ "${JAIL_ID_FILE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Could not identify jail id from jail name.\n"
+		JAIL_ID=-1
+		return 1
+	fi
 	JAIL_ID=`cat ${JAIL_ID_FILE}`
 
 }
@@ -470,7 +489,7 @@ test_valid_simple_url ()
 test_valid_ldap_dn ()
 {
 
-	TEST_CASE="${}"
+	TEST_CASE="${1}"
 
 	VALID_LDAP_DN="yes"
 
@@ -924,14 +943,9 @@ upgrade_repo_from_upstream ()
 		question_yes_no "\nIt seems that one or more scripts have been updated in this upgrade.\nWould you like to perform an 'install-scripts' now?"
 		if [ "${ANSWER}" = "yes" ]
 		then
-			# Install scripts to the host
-			install_scripts /
-
-			# Install scripts to the jails
-			for JAIL_DIR in `ls -1 /jls 2> /dev/null`
-			do
-				install_scripts /jls/${JAIL_DIR}/
-			done
+			install_scripts_everywhere
+		else
+			echo -e "${YELL}You may perform an 'install-scripts' later by running the command:${NRML}\n${LBLU}${SCRIPT_NAME} install-scripts${NRML}"
 		fi
 		echo -e ""
 	fi
@@ -1035,33 +1049,6 @@ init_local_repo ()
 
 }
 
-update_local_repo ()
-{
-
-	if [ ! -d "/${REPO_NAME}" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears the local git repo ('/${REPO_NAME}') does not exist!\n       Aborting.\n"
-		exit 12
-	fi
-
-	if [ "${REPO_URI}" = "local" ]
-	then
-		echo -e "\n${YELL}No need to update local repo, there is no remote repo.${NRML}\n"
-	else
-		cd /${REPO_NAME}
-		echo -e "\n${YELL}First, let's update the local git repo...${NRML}\n"
-		git_pull
-		if [ $? -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to update the local git repo."
-			echo -e "       Please use 'git status' to find the cause.\n       Aborting.\n"
-			exit 13
-		fi
-		cd -
-	fi
-
-}
-
 install_scripts ()
 {
 
@@ -1082,6 +1069,18 @@ install_scripts ()
 
 	cd -
 
+}
+
+install_scripts_everywhere ()
+{
+	# Install scripts to the host
+	install_scripts /
+
+	# Install scripts to the jails
+	for JAIL_DIR in `ls -1 /jls 2> /dev/null`
+	do
+		install_scripts /jls/${JAIL_DIR}/
+	done
 }
 
 add_script ()
@@ -1435,6 +1434,67 @@ update_config ()
 
 }
 
+update_local_repo ()
+{
+
+	if [ "${1}" = "--no-check-scripts" ]
+	then
+		CHECK_SCRIPTS="no"
+	else
+		CHECK_SCRIPTS="yes"
+	fi
+
+	if [ ! -d "/${REPO_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears the local git repo ('/${REPO_NAME}') does not exist!\n       Aborting.\n"
+		exit 12
+	fi
+
+	if [ "${REPO_URI}" = "local" ]
+	then
+		echo -e "\n${YELL}No need to update local repo, there is no remote repo.${NRML}\n"
+	else
+		cd /${REPO_NAME}
+
+		# Get the pre-update git commit reference
+		PRE_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
+
+		echo -e "\n${YELL}First, let's update the local git repo...${NRML}\n"
+		git_pull
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to update the local git repo."
+			echo -e "       Please use 'git status' to find the cause.\n       Aborting.\n"
+			exit 13
+		fi
+		# Get the post-update git commit reference
+		POST_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
+
+		if [ "${CHECK_SCRIPTS}" = "yes" ]
+		then
+			# Check if any scripts have been updated in this update cycle
+			echo -e "\n${YELL}Checking if any scripts have been updated in this update...${NRML}\n"
+			git diff-tree --no-commit-id --name-only -r ${PRE_UPDATE_COMMIT_REF} ${POST_UPDATE_COMMIT_REF} | grep "^scripts/"
+
+			if [ ${?} -eq 0 ]
+			then
+				# Ask whether to perform an 'install-scripts'
+				question_yes_no "\nIt seems that one or more scripts have been updated.\nWould you like to perform an 'install-scripts' now?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					install_scripts_everywhere
+				else
+					echo -e "${YELL}You may perform an 'install-scripts' later by running the command:${NRML}\n${LBLU}${SCRIPT_NAME} install-scripts${NRML}"
+				fi
+				echo -e ""
+			fi
+		fi
+
+		cd -
+	fi
+
+}
+
 connect_internet ()
 {
 
@@ -1638,7 +1698,8 @@ connect_internet ()
 
 	# Backup and replace resolv.conf with a generic working copy
 	backup_file /etc/resolv.conf connect-internet
-	echo "nameserver 8.8.8.8" > /etc/resolv.conf
+	echo "nameserver 1.1.1.1" > /etc/resolv.conf
+	echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 
 	# Setup interface and routing
 	echo -e "\n${YELL}Setup WAN interface and routing...${NRML}\n"
@@ -1847,10 +1908,6 @@ init_host ()
 	mkdir configs/${HOST_NAME}
 	install_file_tree config-templates/init-host configs/${HOST_NAME}/
 
-	# Update hostname
-	sed -i "" "s/^hostname\=.*/hostname\=${HOST_NAME}\.${DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
-	hostname ${HOST_NAME}.${DOMAIN_NAME}
-
 	# Get available interfaces and the quantity thereof
 	NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}" | cut -d: -f1`
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
@@ -2041,7 +2098,7 @@ init_host ()
 					if [ "${WAN_SUBNET_B}" = "${FDO_LAN_SUBNET_B}" ]
 					then
 						echo -e "\n${LRED}ERROR:${NRML} In a gateway configuration the WAN interface IP address must not be in"
-						echo -e "       the 192.168.0.0/16 subnet!\n"
+						echo -e "       the '${FDO_LAN_SUBNET_B}.*.*' subnet!\n"
 					else
 						question_yes_no "\nYou have entered '${WAN_IFACE_IP_TEMP}' as the WAN interface IP address.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
@@ -2144,14 +2201,13 @@ init_host ()
 	echo "${LAN_NET_IFACE}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_lan.conf
 	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
 
-	LAN_SUBNET_B="${FDO_LAN_SUBNET_B}"
-	LAN_SUBNET_C="${SERVICES_LAN_SUBNET_C}"
-	LAN_IFACE_NETMASK="${FDO_LAN_SUBNET_NETMASK}"
+	LAN_SUBNET_C="${SERVERS_LAN_SUBNET_C}"
+	LAN_IFACE_NETMASK="${FDO_LAN_SUBNET_MASK}"
 
 	if [ "${WAN_NET_IFACE}" != "NULL" ]
 	then
-		# Assuming this host is a remote or primary_local type server
-		LAN_IFACE_IP="${LAN_SUBNET_C}.1"
+		# ASSUME this host is a remote or primary_local type server
+		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
 		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 		if [ "${USES_PPP}" = "yes" ]
 		then
@@ -2159,7 +2215,7 @@ init_host ()
 			sed -i "" "s/LAN_SUBNET_C/${LAN_SUBNET_C}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 		fi
 	else
-		# Assuming this host is an aux_local type server
+		# ASSUME this host is an aux_local type server
 		question_yes_no "\nDo you want to use DHCP for the LAN interface?"
 		IS_LAN_IFACE_DHCP=${ANSWER}
 		if [ "${IS_LAN_IFACE_DHCP}" = "no" ]
@@ -2202,6 +2258,13 @@ init_host ()
 	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
 	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
+
+	# Update hostname
+	sed -i "" "s/^hostname\=.*/hostname\=${HOST_NAME}\.${DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s/FDO_LAN_IP/${LAN_IFACE_IP}/g" configs/${HOST_NAME}/etc/hosts
+	sed -i "" "s/FDO_HOST_NAME/${HOST_NAME}/g" configs/${HOST_NAME}/etc/hosts
+	sed -i "" "s/FDO_DOMAIN_NAME/${DOMAIN_NAME}/g" configs/${HOST_NAME}/etc/hosts
+	hostname ${HOST_NAME}.${DOMAIN_NAME}
 
 	# END: configure LAN interface
 
@@ -2504,8 +2567,8 @@ setup_vnc_desktop()
 	sed -i "" "s|FDO_USERNAME|${FDO_USERNAME}|" configs/${HOST_NAME}/etc/rc.shutdown.local
 
 	# Uncomment VNC related lines in rc.local and rc.shutdown.local
-	sed -i "" "s/^#//" configs/${HOST_NAME}/etc/rc.local
-	sed -i "" "s/^#//" configs/${HOST_NAME}/etc/rc.shutdown.local
+	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.local
+	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.shutdown.local
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
@@ -2537,12 +2600,46 @@ setup_vnc_desktop()
 		fi
 	fi
 
+	# Get the LAN interface for this host
+	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	LAN_NET_IFACE=""
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
+	for IFACE in ${NET_IFACES}
+	do
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
+		then
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
+		fi
+	done
+
+	# Get the LAN IP address of this host
+	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
+	do
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		HOST_LAN_IP="${IP_ADDRESS}"
+		break
+	done
+
+	# Get the default route IP for accessing this host from outside the LAN
 	DEFAULT_ROUTE_IP=`route -nv get 1 | tail -1 | awk '{print $5}'`
+
+	# Get the default route IP for accessing this host from outside the LAN
+	FULL_HOST_NAME=`hostname -f`
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up a VNC accessible desktop.${NRML}"
 	echo -e "\n${YELL}To access the VNC session use SSVNC Viewer with SSH enabled ${NRML}"
-	echo -e "${YELL}and the following URI:${NRML}"
-	echo -e "${LGRN}${FDO_USERNAME}@${DEFAULT_ROUTE_IP}:10${NRML}\n\n"
+	echo -e "${YELL}and one of the following URIs:${NRML}"
+	echo -e "Remotely:"
+	echo -e "${LGRN}${FDO_USERNAME}@${FULL_HOST_NAME}:10${NRML}"
+	echo -e "${LGRN}${FDO_USERNAME}@${DEFAULT_ROUTE_IP}:10${NRML}"
+	echo -e "Locally:"
+	echo -e "${LGRN}${FDO_USERNAME}@${HOST_NAME}:10${NRML}"
+	echo -e "${LGRN}${FDO_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
 
 	cd -
 
@@ -2629,28 +2726,46 @@ init_hotdesking ()
 		fi
 	done
 
-	# Get IP to use for NIS service.
-	NIS_SERVER_IP=""
-	SERVICE_IP_AVAILABLE=`ifconfig | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}"`
-	NUM_SERVICE_IP=`echo ${SERVICE_IP_AVAILABLE} | wc -w`
-	if [ ${NUM_SERVICE_IP} -lt 1 ]
+	# Get the LAN interface of this host
+	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	LAN_NET_IFACE=""
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
+	for IFACE in ${NET_IFACES}
+	do
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
+		then
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
+		fi
+	done
+
+	# Exit if the LAN subnet interface was not found
+	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${CONFIG_LAN_NET_IFACE}' does not provide a valid '${SERVERS_LAN_SUBNET_C}.*' subnet!\n       Aborting.\n"
 		exit 83
 	fi
-	if [ ${NUM_SERVICE_IP} -lt 2 ]
+
+	# Get IP to use for NIS service.
+	NIS_HOST_IP=""
+	NUM_HOST_LAN_IP=`echo ${HOST_LAN_IP_ADDRESSES} | wc -w`
+	if [ ${NUM_HOST_LAN_IP} -lt 2 ]
 	then
-		NIS_SERVER_IP=${SERVICE_IP_AVAILABLE}
+		NIS_HOST_IP=${HOST_LAN_IP_ADDRESSES}
 	else
-		while [ "${NIS_SERVER_IP}" = "" ]
+		while [ "${NIS_HOST_IP}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${SERVICE_IP_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			NIS_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			NIS_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NIS_SERVER_IP_TEMP}' to use for the NIS server.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NIS_HOST_IP_TEMP}' to use for the NIS server.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				NIS_SERVER_IP="${NIS_SERVER_IP_TEMP}"
+				NIS_HOST_IP="${NIS_HOST_IP_TEMP}"
 			fi
 		done
 	fi
@@ -2665,7 +2780,7 @@ init_hotdesking ()
 	sed -i "" "s/rpcbind_enable=\"NO\"/rpcbind_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/POOL_NAME/${POOL_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/hotdesk-home-zfs-name.conf
 	sed -i "" "s/NIS_DOMAIN_NAME/${NIS_DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/NIS_SERVER_IP/${NIS_SERVER_IP}/" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s/NIS_HOST_IP/${NIS_HOST_IP}/" configs/${HOST_NAME}/etc/rc.conf
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
@@ -2737,7 +2852,7 @@ init_hotdesking ()
 	echo -e "${YELL}Hotdesk user home folder pool name:${NRML} ${POOL_NAME}"
 	echo -e "${YELL}Hotdesk user home folder dataset:${NRML} ${POOL_NAME}/fdo-hotdesk-home"
 	echo -e "${YELL}NIS domain name:${NRML} ${NIS_DOMAIN_NAME}"
-	echo -e "${YELL}NIS server IP address:${NRML} ${NIS_SERVER_IP}\n"
+	echo -e "${YELL}NIS server IP address:${NRML} ${NIS_HOST_IP}\n"
 
 	cd -
 
@@ -2770,21 +2885,26 @@ init_jails ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
  
 	# Get the LAN interface that the jails will run on
+	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
-	NET_IFACES=`ifconfig | egrep "^[a-z].*[0-9]" | cut -d: -f1`
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
 	for IFACE in ${NET_IFACES}
 	do
-		ifconfig ${IFACE} | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}" > /dev/null
-		if [ $? -eq 0 ]
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			LAN_NET_IFACE=${IFACE}
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
 		fi
 	done
 
 	# Exit if the LAN subnet interface was not found
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${CONFIG_LAN_NET_IFACE}' does not provide a valid '${SERVERS_LAN_SUBNET_C}.*' subnet!\n       Aborting.\n"
 		exit 92
 	fi
 
@@ -2814,15 +2934,6 @@ init_jails ()
 		done
 	fi
  
-	# Get host IPs to use for sshd.
-	HOST_IP_ADDRESSES=`ifconfig | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}" | sort`
-	NUM_HOST_IP=`echo ${HOST_IP_ADDRESSES} | wc -w`
-	if [ ${NUM_HOST_IP} -lt 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} No usable host IPs found. Unable to proceed.\n       Aborting.\n"
-		exit 94
-	fi
-
 	# Warn if jail base dataset already exists.
 	zfs list ${POOL_NAME}/jails 2> /dev/null
 	if [ ${?} -eq 0 ]
@@ -2854,7 +2965,7 @@ init_jails ()
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
-			exit 95
+			exit 94
 		fi
 	fi
 
@@ -2863,7 +2974,7 @@ init_jails ()
 	if [ ${PATCH_HOST_RETURN_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n       Aborting.\n"
-		exit 96
+		exit 95
 	fi
 
 	# Get version strings
@@ -2887,7 +2998,7 @@ init_jails ()
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n       Aborting.\n"
-		exit 97
+		exit 96
 	fi
 
 	# Create ZFS datasets for service jail template
@@ -2926,7 +3037,7 @@ init_jails ()
 	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail.\n       Aborting.\n"
-		exit 98
+		exit 97
 	fi
 
 	echo "${POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
@@ -2934,7 +3045,7 @@ init_jails ()
 	sed -i "" "s/^#template/template/" configs/${HOST_NAME}/etc/jail.conf
 
 	# Only run sshd on LAN host (not jail) IPs
-	for IP_ADDRESS in ${HOST_IP_ADDRESSES}
+	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
 	do
 		# Add port forwarding rules to pf and ppp config
 		IS_REPO_CONF="yes" PF_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
@@ -3375,47 +3486,54 @@ create_remote_desktop_template ()
 		exit 113
 	fi
 
-	# Get the LAN interface that the virtualbox guest will use for bridged networking
+	# Get the LAN interface for this host
+	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
-	NET_IFACES=`ifconfig | egrep "^[a-z].*[0-9]" | cut -d: -f1`
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
 	for IFACE in ${NET_IFACES}
 	do
-		ifconfig ${IFACE} | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}" > /dev/null
-		if [ $? -eq 0 ]
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			LAN_NET_IFACE=${IFACE}
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
 		fi
 	done
 
 	# Exit if the LAN subnet interface was not found
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN interface providing the ${SERVICES_LAN_SUBNET_C} subnet was found.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${CONFIG_LAN_NET_IFACE}' does not provide a valid '${SERVERS_LAN_SUBNET_C}.*' subnet!\n       Aborting.\n"
 		exit 114
 	fi
 
+	# Get the LAN IP address of this host
+	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
+	do
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		HOST_LAN_IP="${IP_ADDRESS}"
+		break
+	done
+
 	# Get IP to use for VNC.
-	VNC_SERVER_IP=""
-	SERVICE_IP_AVAILABLE=`ifconfig | egrep "inet.*netmask" | egrep -v "netmask 0xffffffff" | awk '{print $2}' | egrep "${SERVICES_LAN_SUBNET_C}"`
-	NUM_SERVICE_IP=`echo ${SERVICE_IP_AVAILABLE} | wc -w`
-	if [ ${NUM_SERVICE_IP} -lt 1 ]
+	VNC_HOST_IP=""
+	NUM_HOST_LAN_IP=`echo ${HOST_LAN_IP_ADDRESSES} | wc -w`
+	if [ ${NUM_HOST_LAN_IP} -lt 2 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} No LAN service IPs found. Unable to proceed.\n       Aborting.\n"
-		exit 115
-	fi
-	if [ ${NUM_SERVICE_IP} -lt 2 ]
-	then
-		VNC_SERVER_IP=${SERVICE_IP_AVAILABLE}
+		VNC_HOST_IP=${HOST_LAN_IP_ADDRESSES}
 	else
-		while [ "${VNC_SERVER_IP}" = "" ]
+		while [ "${VNC_HOST_IP}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${SERVICE_IP_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			VNC_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${VNC_SERVER_IP_TEMP}' to use for the VNC session.\nIs this correct?"
+			question_yes_no "\nYou have selected '${VNC_HOST_IP_TEMP}' to use for the VNC session.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				VNC_SERVER_IP="${VNC_SERVER_IP_TEMP}"
+				VNC_HOST_IP="${VNC_HOST_IP_TEMP}"
 			fi
 		done
 	fi
@@ -3587,7 +3705,7 @@ create_remote_desktop_template ()
 	su - RemoteDesktop -c "VBoxManage createvm --name 'RemoteDesktop' --register"
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory ${VM_MEM_SIZE_MB} --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
 	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --nictype1 ${VBOX_NIC_TYPE} --cableconnected1 on"
-	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_SERVER_IP} --vrdeproperty VNCPassword=vncpassword"
+	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_HOST_IP} --vrdeproperty VNCPassword=vncpassword"
 	su - RemoteDesktop -c "VBoxManage sharedfolder add RemoteDesktop --name SharedTemp --hostpath /remote-desktops/RemoteDesktop"
 
 	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
@@ -3643,7 +3761,7 @@ create_remote_desktop_template ()
 	fi
 	echo -e "${YELL}Connect to the remote desktop template using a VNC viewer ${NRML}"
 	echo -e "${YELL}(e.g. SSVNC) using the following:${NRML}\n"
-	echo -e "${LGRN}VNC URI:      ${VNC_SERVER_IP}:6000${NRML}"
+	echo -e "${LGRN}VNC URI:      ${VNC_HOST_IP}:6000${NRML}"
 	echo -e "${LGRN}VNC Password: vncpassword\n\n"
 	
 	# Pause for user to finish configuring template.
@@ -3985,10 +4103,10 @@ create_jail ()
 
 	if [ "${JAIL_IP}" = "" ]
 	then
-		FIRST_AVAILABLE_IP=12
+		FIRST_AVAILABLE_IP=51
 		while true
 		do
-			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${SERVICES_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
+			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
 				break
@@ -3996,7 +4114,7 @@ create_jail ()
 				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} +1 ))
 			fi
 		done
-		JAIL_IP="${SERVICES_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
+		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
 	# Create new jail fileststem by cloning from the template jail
@@ -4008,11 +4126,13 @@ create_jail ()
 	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
 	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
 	do
-		FILE_CONTENTS=`cat config-templates/init-jails/${CONFIG_FILE}`
-		if [ "${FILE_CONTENTS}" != "COPY_STATIC_FROM_HOST" ]
+		if [ -f "/jls/template/${CONFIG_FILE}" ]
 		then
-			if [ -f "/jls/template/${CONFIG_FILE}" ]
+			# If the config file is etc/resolv.conf, then copy it directly to the new jail, otherwise add to the registered config files.
+			if [ "${CONFIG_FILE}" = "etc/resolv.conf" ]
 			then
+				cp /jls/template/${CONFIG_FILE} /jls/${JAIL_NAME}/${CONFIG_FILE}
+			else
 				CONFIG_FILE_DIR=`dirname ${CONFIG_FILE}`
 				if [ ! -d ${CONFIG_FILE_DIR} ]
 				then
@@ -4021,7 +4141,6 @@ create_jail ()
 				cp /jls/template/${CONFIG_FILE} configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE}
 			fi
 		fi
-
 	done
 
 	# Save the previous git commit reference to file, for later use in reverting operations
@@ -4100,10 +4219,26 @@ create_jail ()
 
 }
 
+# WARNING: Only for use by developers on a 'local' only repo.
+# Only to be used on last created jail directly afterwards.
+# It does a hard reset of the git repo.
 revert_create_jail ()
 {
 	JAIL_TO_REVERT=${1}
+
+	# Sanity tests
+	egrep "^${JAIL_TO_REVERT} {" /etc/jail.conf > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The jail '${JAIL_TO_REVERT}' does not seem to exist!\n       Aborting.\n"
+		exit 138
+	fi
+
+	# NOTE: commit after create jail is not much use, since we can't remove a previous range
+	#       of commits using 'git revert' with creating conflicts that need manual intervention.
 	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
+	COMMIT_AFTER_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-post-create-jail.commit.inf`
+
 	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
 	then
 		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
@@ -4247,8 +4382,8 @@ create_jail_from_recipe ()
 
 	echo -e "\n\n${YELL}Creating any additional jail recipe datasets...${NRML}\n"
 
-	PRE_RECIPE_TIMESTAMP=`date "+%s"`
 	sleep 1
+	PRE_RECIPE_TIMESTAMP=`date "+%s"`
 
 	# Create additional jail recipe datasets
 	COUNT_DATASETS=0
@@ -4458,14 +4593,37 @@ init_clonezilla_images ()
 		done
 	fi
 
-	# Get the LAN IP address of this host
-	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
-	HOST_IP=`ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask.*" | egrep -v "inet.*netmask 0xffffffff" | head -1 | awk '{print $2}'`
-	if [ "${HOST_IP}" = "" ]
+	# Get the LAN interface that the NFS share will run on
+	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	LAN_NET_IFACE=""
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
+	for IFACE in ${NET_IFACES}
+	do
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
+		then
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
+		fi
+	done
+
+	# Exit if the LAN subnet interface was not found
+	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A LAN IP address for this host could not be found!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${CONFIG_LAN_NET_IFACE}' does not provide a valid '${SERVERS_LAN_SUBNET_C}.*' subnet!\n       Aborting.\n"
 		exit 163
 	fi
+
+	# Get the LAN IP address of the NFS host
+	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
+	do
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		HOST_LAN_IP="${IP_ADDRESS}"
+		break
+	done
 
 	# Warn if Clonezilla images dataset already exists.
 	zfs list ${POOL_NAME}/clonezilla-images 2> /dev/null
@@ -4499,7 +4657,7 @@ init_clonezilla_images ()
 	cat /etc/exports | egrep "^/usr/home/partimag " > /dev/null 2>&1
 	if  [ ${?} -ne 0 ]
 	then
-		echo "/usr/home/partimag -maproot=root -network 192.168.10 -mask 255.255.0.0" >> /etc/exports
+		echo "/usr/home/partimag -maproot=root -network ${FDO_LAN_SUBNET_B}.0.0 -mask ${FDO_LAN_SUBNET_MASK}" >> /etc/exports
 		echo -e ""
 		service mountd reload
 	fi
@@ -4522,7 +4680,7 @@ init_clonezilla_images ()
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up an NFS share for Clonezilla${NRML}"
 	echo -e "${LGRN}images.${NRML}\n"
 	echo -e "${YELL}Clonezilla images NFS version:      3${NRML}"
-	echo -e "${YELL}Clonezilla images host address:     ${HOST_IP}${NRML}"
+	echo -e "${YELL}Clonezilla images host address:     ${HOST_LAN_IP}${NRML}"
 	echo -e "${YELL}Clonezilla images server directory: /home/partimag${NRML}\n"
 
 	cd -
@@ -4677,7 +4835,7 @@ merge_local_repo_to_remote ()
 	REPO_URI="${REMOTE_REPO_URI}"
 	echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
 	
-	echo -e "\n\n${LGRN}Congratulations! Successfully merged his hosts local repo to the remote repo.${NRML}\n"
+	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
 
 }
 
@@ -4698,9 +4856,8 @@ DOMAIN_NAME=`echo ${FQHN} | sed "s/${HOST_NAME}\.//"`
 if [ "${SUB_CMD}" != "connect-internet" ]
 then
 	fetch_latest_self
+	check_repo_config
 fi
-
-check_repo_config
 
 if [ ${#} -lt 1 ]
 then
@@ -4712,16 +4869,8 @@ fi
 case "${SUB_CMD}" in
 
 	install-scripts)
-		update_local_repo
-
-		# Install scripts to the host
-		install_scripts /
-
-		# Install scripts to the jails
-		for JAIL_DIR in `ls -1 /jls 2> /dev/null`
-		do
-			install_scripts /jls/${JAIL_DIR}/
-		done
+		update_local_repo --no-check-scripts
+		install_scripts_everywhere
 		;;
 
 	add-script)
