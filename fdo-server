@@ -68,48 +68,6 @@ NRML="\033[0;00m"
 CARRIAGE_RETURN="
 "
 
-### TODOs ###
-
-## TODO: consider making a subcommand to setup/enable sshfsd (Requires: fusefs-sshfs package. fuse_load="YES" in loader.conf. client key added to servers' authorized_keys).
-## TODO: remove commented out entries from /etc/devfs.rules in init-host templates, replace with better sed to add entries.
-## TODO: make a read inbuilt command replacement that supports password input and preset (suggested) text
-## TODO: add support for running jail config edit scripts (e.g. fdo-<service>-edit) from the host or within jail.
-
-# Remote Desktops sub-system
-## TODO: Remote Desktops should allow option for using VNC or RDP, perhaps choice made at init-remote-desktops stage.
-## TODO: create-remote-desktop-instance should add NAT port redirection to ppp.conf/pf.conf.
-
-## DONE: init-jails: 'freebsd-update fetch' when out of support window returns 1 which breaks failure check.
-## DONE: manage jail_parallel_start and  jail_list in /etc/rc.conf.
-## DONE: "Enter the git user name:" needs clarification.
-## DONE: improve global bashrc for unlimited, real-time, timestamped history, see Gentoo rollout.
-## DONE: fix TERM variable in bashrc for tmux to work preperly, it should change to 'screen'.
-## DONE: disable log rotation in host and jails. perhaps even all periodic.
-## DONE: convert reserved jail LAN IP addresses in rc.conf to only in jail.conf.
-## DONE: make init-jails idempotent. TEST:(i) destroy when clones exist, (ii) rename of template fs.
-## DONE: do a check_configs in create-jail.
-## DONE: move all (ldap) jail recipes syslog configuration from /etc/syslog.conf to individual /usr/local/etc/syslog.d/ confs.
-## DONE: add "all checks passed" or "one or more failed" to end of check-configs.
-## DONE: disable 'y' prompts for installing packages in init-host/init-jails etc.
-## DONE: track template config files from create-jail to repo.
-## DONE: rename subcommand 'new-host' to 'init-host'.
-## DONE: init-host; change sshd_config ListenAddress addditional line to a substition of the existing line.
-## DONE: create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
-## DONE: jail recipes; use variable JAILS_LAN_SUBNET_C for JAIL_IP and other jail related IPs.
-
-#############
-
-### BUGS ###
-
-## DONE: at the end of upgrade-repo-from-upstream we get "But we were unable to push changes to the private remote repo." when we are a local only repo.
-## DONE: after fail jail creation (ldap_consumer, dhcp_server) and auto-revert, the host has stale /etc/fstab.jail_name in local repo configss/ dir.
-## DONE: setup-vnc-desktop: make rc.local and rc.shutdown.local preparation more robust.
-## DONE: setup-vnc-desktop: init-host needs to add LAN IP and hostname (FQHN, same as 'hostname' command output) to /etc/hosts.
-## DONE: revert-create-jail needs sanity test for when jail name is invalid.
-## DONE: dhcp_server should not assume dns_cache is running on the LAN. Add optional dependency notice. dns_cache recipe should also warn if dhcp_server detected on LAN, and how to change domain-name-servers.
-## DONE: upgrade-repo-from-upstream; check for new scripts fails on subsequent runs on other servers. Fixed by looking for script updates in update_local_repo.
-
-############
 
 usage ()
 {
