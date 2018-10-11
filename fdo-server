@@ -162,12 +162,384 @@ pause_prompt ()
 	echo -e "\n"
 }
 
+## Modern replacement for the 'read' shell inbuilt command.
+## Similar to the bash inbuilt 'read -e'.
+readee ()
+{
+
+	# Test for no arguments
+	if [ ${#} -eq 0 ]
+	then
+		echo -e "readee: arg count"
+		return 2
+	fi
+
+	# Parse arguments
+	READEE_PROMPT_MODE="false"
+	READEE_PROMPT_TEXT=""
+	READEE_VARIABLE=""
+	for ARG in "${@}"
+	do
+		case "${ARG}" in
+			"-e")
+				# For backwards compatibility only
+				continue
+				;;
+			"-s")
+				READEE_SILENT_MODE="true"
+				;;
+			"-p")
+				READEE_PROMPT_MODE="next_arg"
+				;;
+			*)
+				# If in prompt mode 'next_arg', capture the prompt.
+				if [ "${READEE_PROMPT_MODE}" = "next_arg" ]
+				then
+					READEE_PROMPT_TEXT="${ARG}"
+					READEE_PROMPT_MODE="true"
+					continue
+				fi
+
+				# Test for illegal option flags
+				if [ `echo "${ARG}" | cut -c1` = "-" ]
+				then
+					echo -e "readee: Illegal option "`echo "${ARG}" | cut -c1-2`
+					return 2
+				fi
+
+				# Test for variable name validity (try best to copy sh inbuilt: read)
+				IS_SYNTAX_OK=`echo "${ARG}" | sed -r "s/^[a-zA-Z\_]+[a-zA-Z0-9\_]*//" | wc -L`
+				if [ ${IS_SYNTAX_OK}  -ne 0 ]
+				then
+					echo -e "readee: ${ARG}: bad variable name"
+					return 2
+				fi
+				READEE_VARIABLE="${ARG}"
+				break
+				;;
+		esac
+	done
+
+	# Test for missing prompt argument
+	if [ "${READEE_PROMPT_MODE}" = "next_arg" ]
+	then
+		echo -e "readee: No arg for -p option"
+		return 2
+	fi
+
+	# Test for missing variable argument
+	if [ "${READEE_VARIABLE}" = "" ]
+	then
+		echo -e "readee: arg count"
+		return 2
+	fi
+
+	# Variables (re)initialisation:
+	CURS="\033[30;47m"
+	NRML="\033[0;00m"
+	HEX_CARRIAGE_RETURN="%0d"
+	HEX_ESCAPE="%1b"
+	HEX_CTRL_C="%03"
+	HEX_BACKSPACE="%7f"		# ASCII DEL, but actually comes from Backspace Key
+	HEX_DELETE="%33"		# Comes after escape character
+	HEX_HOME="%48"			# Comes after escape character
+	HEX_END="%46"			# Comes after escape character
+	HEX_D="%44"			# LEFT ARROW, comes after escape character
+	HEX_C="%43"			# RIGHT ARROW, comes after escape character
+	TYPED_CHAR=""
+	TYPED_CHAR_HEX=""
+	PRE_CURS_TEXT=""
+	CURS_TEXT=" "
+	POST_CURS_TEXT=""
+	CURSOR_AT_START="true"
+	CURSOR_AT_END="true"
+	READEE_ABORTED="false"
+	CURRENT_TTY_SETTINGS=`stty -g`
+
+	# Prepare the TTY for line editing (no echo, raw input, make cursor invisible)
+	stty -echo raw
+	tput vi
+
+	# Display initial prompt and edit line
+	echo -e "\r${NRML}${READEE_PROMPT_TEXT}${CURS}${CURS_TEXT}${NRML}\c"
+
+	# Loop taking keystrokes until carriage return key is pressed
+	while [ "${TYPED_CHAR_HEX}" != "${HEX_CARRIAGE_RETURN}" ]
+	do
+
+		# Get a 2-byte character from stdin on key press and convert to Hexidecimal value
+		TYPED_CHAR=$(dd bs=2 count=1 2> /dev/null)
+		TYPED_CHAR_HEX=`printf "%%%02x\n" "'${TYPED_CHAR}"`
+
+		# Compare the hexidecimal value of the first character with known ASCII values
+		case "${TYPED_CHAR_HEX}" in
+			"${HEX_CTRL_C}")
+				READEE_ABORTED="true"
+				break
+				;;
+			"${HEX_CARRIAGE_RETURN}")
+				continue
+				;;
+			"${HEX_BACKSPACE}")
+				# Get the length of the text left of cursor
+				PRE_CURS_TEXT_LENGTH=`echo ${#PRE_CURS_TEXT}`
+
+				if [ "${CURSOR_AT_START}" = "true" ]
+				then
+					# If cursor is already at the beginning, do nothing and continue
+					continue
+				fi
+
+				if [ ${PRE_CURS_TEXT_LENGTH} -lt 2 ]
+				then
+					# Cursor reached the first character.
+					# Set new pre-cursor text to empty, since cursor is now at the beginning;
+					NEW_PRE_CURS_TEXT=""
+					NEW_CURSOR_AT_START="true"
+				else
+					# Cursor moves left erasing the right-most character left of cursor.
+					# Truncate the pre-cursor text by one character from the right;
+					NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$((${PRE_CURS_TEXT_LENGTH} -1))`
+					NEW_CURSOR_AT_START="false"
+				fi
+
+				# Set new values:
+				PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
+				CURSOR_AT_START="${NEW_CURSOR_AT_START}"
+				;;
+			"${HEX_ESCAPE}")
+
+				# The first character was the escape character, so let's get a second character and hex value
+				ESCAPED_CHAR=$(dd bs=2 count=1 2> /dev/null)
+				ESCAPED_CHAR_HEX=`printf "%%%02x\n" "'${ESCAPED_CHAR}"`
+
+				# Compare the hex value of second character with known ASCII values
+				# in order to get the extended meaning of the key stroke
+				case "${ESCAPED_CHAR_HEX}" in
+					"${HEX_HOME}")
+						if [ "${CURSOR_AT_START}" = "true" ]
+						then
+							# if cursor is already at the start, do nothing and continue
+							continue
+						fi
+
+						if [ "${CURSOR_AT_END}" = "true" ]
+						then
+							NEW_TEXT="${PRE_CURS_TEXT}"
+						else
+							NEW_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}${POST_CURS_TEXT}"
+						fi
+						NEW_TEXT_LENGTH=${#NEW_TEXT}
+						NEW_CURS_TEXT=`echo "${NEW_TEXT}" | cut -c1`
+						NEW_POST_CURS_TEXT=`echo "${NEW_TEXT}" | cut -c2-${NEW_TEXT_LENGTH}`
+
+						# Set new values:
+						PRE_CURS_TEXT=""
+						CURS_TEXT="${NEW_CURS_TEXT}"
+						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
+						CURSOR_AT_START="true"
+						CURSOR_AT_END="false"
+						;;
+					"${HEX_END}")
+						if [ "${CURSOR_AT_END}" = "true" ]
+						then
+							# if cursor is already at he end, do nothing and continue
+							continue
+						fi
+
+						NEW_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}${POST_CURS_TEXT}"
+
+						# Set new values:
+						PRE_CURS_TEXT="${NEW_TEXT}"
+						CURS_TEXT=" "
+						POST_CURS_TEXT=""
+						CURSOR_AT_START="false"
+						CURSOR_AT_END="true"
+						;;
+					"${HEX_DELETE}")
+						# Get the length of the text right of cursor
+						POST_CURS_TEXT_LENGTH=${#POST_CURS_TEXT}
+
+						if [ "${CURSOR_AT_END}" = "true" ]
+						then
+							# If cursor is already at the end, do nothing and continue
+							continue
+						fi
+
+						if [ ${POST_CURS_TEXT_LENGTH} -lt 1 ]
+						then
+							# Cursor reached the last character.
+							# Set new cursor character to whitespace so we can still see it;
+							NEW_CURS_TEXT=" "
+							# Set new post-cursor text to empty, since we are at the end;
+							NEW_POST_CURS_TEXT=""
+							NEW_CURSOR_AT_END="true"
+						else
+							# Cursor erases it's character and becomes the left-most character right of cursor.
+							# Set cursor text to the left-most character of post-cursor text;
+							NEW_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c1`
+							# Truncate the post-cursor text by one character from the left;
+							NEW_POST_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c2-${POST_CURS_TEXT_LENGTH}`
+							NEW_CURSOR_AT_END="false"
+						fi
+
+						# Set new values:
+						CURS_TEXT="${NEW_CURS_TEXT}"
+						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
+						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
+						;;
+					"${HEX_D}")	# LEFT ARROW
+						# Get the length of the text left of cursor
+						PRE_CURS_TEXT_LENGTH=`echo ${#PRE_CURS_TEXT}`
+
+						if [ "${CURSOR_AT_START}" = "true" ]
+						then
+							# If cursor is already at the beginning, do nothing and continue
+							continue
+						fi
+
+						if [ ${PRE_CURS_TEXT_LENGTH} -lt 2 ]
+						then
+							# Cursor reached the first character.
+							# Set new pre-cursor text to empty, since cursor is now at the beginning;
+							NEW_PRE_CURS_TEXT=""
+							NEW_CURSOR_AT_START="true"
+							NEW_CURSOR_AT_END="false"
+						else
+							# Cursor is moving left.
+							# Set new pre-cursor text to current pre-cursor text truncated by one character from the right;
+							NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$((${PRE_CURS_TEXT_LENGTH} -1))`
+							NEW_CURSOR_AT_START="false"
+							NEW_CURSOR_AT_END="false"
+						fi
+
+						# Set new cursor character to character left of current cursor;
+						NEW_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c${#PRE_CURS_TEXT}`
+						if [ "${CURSOR_AT_END}" = "true" ]
+						then
+							# Cursor was at end, so new post-cursor text is same as before;
+							NEW_POST_CURS_TEXT="${POST_CURS_TEXT}"
+						else
+							# Set new post-cursor text to current cursor character concatenated with current post-cursor text;
+							NEW_POST_CURS_TEXT="${CURS_TEXT}${POST_CURS_TEXT}"
+						fi
+
+						# Set new values:
+						PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
+						CURS_TEXT="${NEW_CURS_TEXT}"
+						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
+						CURSOR_AT_START="${NEW_CURSOR_AT_START}"
+						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
+						;;
+					"${HEX_C}")	# RIGHT ARROW
+						# Get the length of the text right of cursor
+						POST_CURS_TEXT_LENGTH=${#POST_CURS_TEXT}
+
+						if [ "${CURSOR_AT_END}" = "true" ]
+						then
+							# If cursor is already at the end, do nothing and continue
+							continue
+						fi
+
+						if [ ${POST_CURS_TEXT_LENGTH} -lt 1 ]
+						then
+							# Cursor reached past last character.
+							# Set new cursor character to whitespace so we can still see it;
+							NEW_CURS_TEXT=" "
+							# Set new post-cursor text to empty, since we are at the end;
+							NEW_POST_CURS_TEXT=""
+							NEW_CURSOR_AT_START="false"
+							NEW_CURSOR_AT_END="true"
+						else
+							# Cursor is moving right.
+							# Set new cursor character to first character of current post-cursor text;
+							NEW_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c1`
+							# Set new post-cursor text to current post-cursor text truncated by one character from the left;
+							NEW_POST_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c2-${POST_CURS_TEXT_LENGTH}`
+							NEW_CURSOR_AT_START="false"
+							NEW_CURSOR_AT_END="false"
+						fi
+
+						# Set new pre-cursor text to current pre-cursor text concatenated with current cursor character;
+						NEW_PRE_CURS_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}"
+
+						# Set new values:
+						PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
+						CURS_TEXT="${NEW_CURS_TEXT}"
+						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
+						CURSOR_AT_START="${NEW_CURSOR_AT_START}"
+						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
+						;;
+					*)
+						# For any other character, do nothing
+						continue
+						;;
+
+				esac
+				;;
+
+			*)
+				# Character is actual input
+				PRE_CURS_TEXT="${PRE_CURS_TEXT}${TYPED_CHAR}"
+				CURSOR_AT_START="false"
+				;;
+		esac
+
+		# If in silent mode, hide displayed text
+		if [ "${READEE_SILENT_MODE}" = "true" ]
+		then
+			DISPLAY_LINE="${NRML}${READEE_PROMPT_TEXT}"`echo "${PRE_CURS_TEXT}" | sed "s/./\*/g"`
+			DISPLAY_LINE="${DISPLAY_LINE}${CURS}"`echo "${CURS_TEXT}" | sed "s/[^ ]/\*/g"`
+			DISPLAY_LINE="${DISPLAY_LINE}${NRML}"`echo "${POST_CURS_TEXT}" | sed "s/./\*/g"`
+		else
+			DISPLAY_LINE="${NRML}${READEE_PROMPT_TEXT}${PRE_CURS_TEXT}${CURS}${CURS_TEXT}${NRML}${POST_CURS_TEXT}"
+		fi
+
+		# Echo display text to screen
+		echo -e "\r${DISPLAY_LINE} \c"
+
+	done
+
+	# Put tty text and cursor back to how they were before
+	stty ${CURRENT_TTY_SETTINGS}
+	tput ve
+
+	# Compile the whole entered text line from component parts
+	if [ "${CURSOR_AT_END}" = "true" ]
+	then
+		READEE_ENTERED_TEXT="${PRE_CURS_TEXT}${POST_CURS_TEXT}"
+	else
+		READEE_ENTERED_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}${POST_CURS_TEXT}"
+	fi
+
+	# If in silent mode, hide final entered text once more
+	if [ "${READEE_SILENT_MODE}" = "true" ]
+	then
+		DISPLAY_LINE="${READEE_PROMPT_TEXT}"`echo "${READEE_ENTERED_TEXT}" | sed "s/./\*/g"`
+	else
+		DISPLAY_LINE="${READEE_PROMPT_TEXT}${READEE_ENTERED_TEXT}"
+	fi
+
+	# Now output final text
+	if [ "${READEE_ABORTED}" = "true" ]
+	then
+		echo -e "\r${DISPLAY_LINE}^C"
+		return 130
+	else
+		echo -e "\r${DISPLAY_LINE} "
+	fi
+
+	# Lastly, set the input variable that was passed as an argument
+	eval "${READEE_VARIABLE}=\"${READEE_ENTERED_TEXT}\""
+
+} ## END: readee ()
+
 question_yes_no ()
 {
 	while true
-		do
-		echo -e "${LCYN}${1} (yes/no): ${NRML}\c"
-		read ANSWER
+	do
+		echo -e "${LCYN}${1}${NRML}"
+		readee -p "${LCYN}(yes/no): ${NRML}" ANSWER
 		if [ "${ANSWER}" = "yes" ] || [ "${ANSWER}" = "no" ]
 		then
 			break
@@ -179,9 +551,9 @@ question_yes_no ()
 question_yes ()
 {
 	while true
-		do
-		echo -e "${LCYN}${1} (yes): ${NRML}\c"
-		read ANSWER
+	do
+		echo -e "${LCYN}${1}${NRML}"
+		readee -p "${LCYN}(yes): ${NRML}" ANSWER
 		if [ "${ANSWER}" = "yes" ]
 		then
 			break
@@ -570,8 +942,7 @@ check_repo_config ()
 		do
 			echo -e "\n${LCYN}Would you like to use an existing remote git repo (recommended, if available),${NRML}"
 			echo -e "${LCYN}or start with a local repo (not backed up remotely, no central management)?${NRML}"
-			echo -e "${LCYN}(remote/local): ${NRML}\c"
-			read REPO_TYPE_TEMP
+			readee -p "${LCYN}(remote/local): ${NRML}" REPO_TYPE_TEMP
 			# Check input validation.
 			if [ "${REPO_TYPE_TEMP}" = "remote" ] || [ "${REPO_TYPE_TEMP}" = "local" ]
 			then
@@ -594,7 +965,7 @@ check_repo_config ()
 			while [ "${REMOTE_REPO_URI}" = "" ]
 			do
 				echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
-				read REMOTE_REPO_URI_TEMP
+				readee REMOTE_REPO_URI_TEMP
 				# Allow use to change their mind about type of repo
 				if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
 				then
@@ -604,7 +975,7 @@ check_repo_config ()
 				test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
 				if [ "${VALID_URL}" = "yes" ]
 				then
-					question_yes_no "\nYou have entered '${REMOTE_REPO_URI_TEMP}'\nas the remote git repo URI.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}
@@ -762,19 +1133,19 @@ init_git_config ()
 	then
 		while [ "${GIT_USER_NAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the git user name (e.g. John Doe): ${NRML}\c"
-			read GIT_USER_NAME_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter the git user name (e.g. John Doe): ${NRML}" GIT_USER_NAME_TEMP
 			# Check that the git user name only contains letters numbers and spaces.
 			test_valid_person_name "${GIT_USER_NAME_TEMP}"
 			if [ "${VALID_PERSON_NAME}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${GIT_USER_NAME_TEMP}' as the git user name.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${GIT_USER_NAME_TEMP}${LCYN}' as the git user name.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					GIT_USER_NAME=${GIT_USER_NAME_TEMP}
 				fi
 			else
-				echo -e "\n${LRED}ERROR:${NRML} The name can not be '${GIT_USER_NAME}'."
+				echo -e "\n${LRED}ERROR:${NRML} The name can not be '${NRML}${GIT_USER_NAME}${LCYN}'."
 				echo -e "       It must contain only letters, numbers and spaces.\n"
 			fi
 		done
@@ -786,13 +1157,13 @@ init_git_config ()
 	then
 		while [ "${GIT_USER_EMAIL}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the git user email address: ${NRML}\c"
-			read GIT_USER_EMAIL_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter the git user email address: ${NRML}" GIT_USER_EMAIL_TEMP
 			# Check that the git user email only contains letters, numbers, periods, pluses, hyphens, underscores and one @.
 			test_valid_email_address "${GIT_USER_EMAIL_TEMP}"
 			if [ "${VALID_EMAIL_ADDRESS}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${GIT_USER_EMAIL_TEMP}' as the git user email.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${GIT_USER_EMAIL_TEMP}${LCYN}' as the git user email.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					GIT_USER_EMAIL=${GIT_USER_EMAIL_TEMP}
@@ -1109,8 +1480,8 @@ update_script ()
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file 'scripts${SCRIPT_PATH}' does not exist.\n       Aborting.\n"
 		exit 21
 	else
-		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
-		read CHANGE_MESSAGE
+		echo -e ""
+		readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
 		cp ${SCRIPT_PATH} scripts${SCRIPT_PATH}
 		if [ $? -ne 0 ]
 		then
@@ -1353,8 +1724,8 @@ update_config ()
 	else
 		if [ ! -n "${CHANGE_MESSAGE}" ]
 		then
-			echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}\c"
-			read CHANGE_MESSAGE
+			echo -e ""
+			readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
 		fi
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ $? -ne 0 ]
@@ -1489,7 +1860,7 @@ connect_internet ()
 			dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 			WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${WAN_NET_IFACE_TEMP}${LCYN}' as the WAN interface for this host.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
@@ -1508,8 +1879,8 @@ connect_internet ()
 		then
 			while [ "${VLAN_ID}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
-				read VLAN_ID_TEMP
+				echo -e ""
+				readee -p "${LCYN}Enter VLAN ID (tag): ${NRML}" VLAN_ID_TEMP
 				# Check that the VLAN ID only contains numbers being a minimum of 1 and maximum of 4096.
 				test_valid_integer "${VLAN_ID_TEMP}" 1 4096
 				if [ "${VALID_INTEGER}" = "no" ]
@@ -1517,7 +1888,7 @@ connect_internet ()
 					echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
 					echo -e "       It must be a number between 1 and 4096.\n"
 				else
-					question_yes_no "\nYou have entered '${VLAN_ID_TEMP}' as the VLAN ID.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${VLAN_ID_TEMP}${LCYN}' as the VLAN ID.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						VLAN_ID=${VLAN_ID_TEMP}
@@ -1529,14 +1900,13 @@ connect_internet ()
 		# Get PPP authname
 		while [ "${PPP_AUTHNAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter PPP authname (dialing username): ${NRML}\c"
-			read PPP_AUTHNAME_TEMP
-			
+			echo -e ""
+			readee -p "${LCYN}Enter PPP authname (dialing username): ${NRML}" PPP_AUTHNAME_TEMP
 			if [ "${PPP_AUTHNAME_TEMP}" = "" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Authname empty, try again!\n"
 			else
-				question_yes_no "\nYou have entered '${PPP_AUTHNAME_TEMP}' as the PPP authname.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${PPP_AUTHNAME_TEMP}${LCYN}' as the PPP authname.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					PPP_AUTHNAME=${PPP_AUTHNAME_TEMP}
@@ -1547,10 +1917,9 @@ connect_internet ()
 		# Get PPP authkey
 		while [ "${PPP_AUTHKEY}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter PPP authkey (dialing password): ${NRML}\c"
-			read PPP_AUTHKEY_TEMP1
-			echo -e "${LCYN}Re-enter PPP authkey                : ${NRML}\c"
-			read PPP_AUTHKEY_TEMP2
+			echo -e ""
+			readee -s -p "${LCYN}Enter PPP authkey (dialing password): ${NRML}" PPP_AUTHKEY_TEMP1
+			readee -s -p "${LCYN}Re-enter PPP authkey                : ${NRML}" PPP_AUTHKEY_TEMP2
 			
 			if [ "${PPP_AUTHKEY_TEMP1}" != "${PPP_AUTHKEY_TEMP2}" ]
 			then
@@ -1576,12 +1945,12 @@ connect_internet ()
 		# Set up static IP and netmask for WAN interface
 		while [ "${WAN_IFACE_IP}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter static IP for WAN interface: ${NRML}\c"
-			read WAN_IFACE_IP_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter static IP for WAN interface: ${NRML}" WAN_IFACE_IP_TEMP
 			test_valid_inet_address "${WAN_IFACE_IP_TEMP}"
 			if [ "${VALID_INET_ADDRESS}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${WAN_IFACE_IP_TEMP}' as the WAN interface IP address.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${WAN_IFACE_IP_TEMP}${LCYN}' as the WAN interface IP address.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_IFACE_IP=${WAN_IFACE_IP_TEMP}
@@ -1593,12 +1962,12 @@ connect_internet ()
 
 		while [ "${WAN_IFACE_NETMASK}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
-			read WAN_IFACE_NETMASK_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter netmask for WAN interface: ${NRML}" WAN_IFACE_NETMASK_TEMP
 			test_valid_inet_address "${WAN_IFACE_NETMASK_TEMP}"
 			if [ "${VALID_INET_ADDRESS}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${WAN_IFACE_NETMASK_TEMP}' as the WAN interface netmask.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${WAN_IFACE_NETMASK_TEMP}${LCYN}' as the WAN interface netmask.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_IFACE_NETMASK=${WAN_IFACE_NETMASK_TEMP}
@@ -1611,12 +1980,12 @@ connect_internet ()
 		# Set default router
 		while [ "${WAN_ROUTER_IP}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the default router IP address for this host: ${NRML}\c"
-			read WAN_ROUTER_IP_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter the default router IP address for this host: ${NRML}" WAN_ROUTER_IP_TEMP
 			test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
 			if [ "${VALID_INET_ADDRESS}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${WAN_ROUTER_IP_TEMP}' as the default router.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${WAN_ROUTER_IP_TEMP}${LCYN}' as the default router.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_ROUTER_IP=${WAN_ROUTER_IP_TEMP}
@@ -1876,7 +2245,6 @@ init_host ()
 		exit 57
 	fi
 
-
 	SERVER_TYPE=""
 	while [ "${SERVER_TYPE}" = "" ]
 	do
@@ -1887,7 +2255,7 @@ init_host ()
 					 2> ${DIALOG_OUT_FILE}
 		SERVER_TYPE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
-		question_yes_no "\nYou have selected '${SERVER_TYPE_TEMP}' as the server type for this host.\nIs this correct?"
+		question_yes_no "\nYou have selected '${NRML}${SERVER_TYPE_TEMP}${LCYN}' as the server type for this host.\nIs this correct?"
 		if [ "${ANSWER}" = "yes" ]
 		then
 			SERVER_TYPE="${SERVER_TYPE_TEMP}"
@@ -1941,7 +2309,7 @@ init_host ()
 				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				echo -e "\n"
-				question_yes_no "\nYou have selected '${WAN_NET_IFACE_TEMP}' as the WAN interface for this host.\nIs this correct?"
+				question_yes_no "\nYou have selected '${NRML}${WAN_NET_IFACE_TEMP}${LCYN}' as the WAN interface for this host.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
@@ -1962,8 +2330,8 @@ init_host ()
 			then
 				while [ "${VLAN_ID}" = "" ]
 				do
-					echo -e "\n${LCYN}Enter VLAN ID (tag): ${NRML}\c"
-					read VLAN_ID_TEMP
+					echo -e ""
+					readee -p "${LCYN}Enter VLAN ID (tag): ${NRML}" VLAN_ID_TEMP
 					# Check that the VLAN ID only contains numbers being a minimum of 1 and maximum of 4096.
 					test_valid_integer "${VLAN_ID_TEMP}" 1 4096
 					if [ "${VALID_INTEGER}" = "no" ]
@@ -1971,7 +2339,7 @@ init_host ()
 						echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${VLAN_ID}'."
 						echo -e "       It must be a number between 1 and 4096.\n"
 					else
-						question_yes_no "\nYou have entered '${VLAN_ID_TEMP}' as the VLAN ID.\nIs this correct?"
+						question_yes_no "\nYou have entered '${NRML}${VLAN_ID_TEMP}${LCYN}' as the VLAN ID.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
 							VLAN_ID=${VLAN_ID_TEMP}
@@ -1989,14 +2357,14 @@ init_host ()
 			# Get PPP authname
 			while [ "${PPP_AUTHNAME}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter PPP authname (dialing username): ${NRML}\c"
-				read PPP_AUTHNAME_TEMP
+				echo -e ""
+				readee -p "${LCYN}Enter PPP authname (dialing username): ${NRML}" PPP_AUTHNAME_TEMP
 				
 				if [ "${PPP_AUTHNAME_TEMP}" = "" ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Authname empty, try again!\n"
 				else
-					question_yes_no "\nYou have entered '${PPP_AUTHNAME_TEMP}' as the PPP authname.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${PPP_AUTHNAME_TEMP}${LCYN}' as the PPP authname.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						PPP_AUTHNAME=${PPP_AUTHNAME_TEMP}
@@ -2007,11 +2375,10 @@ init_host ()
 			# Get PPP authkey
 			while [ "${PPP_AUTHKEY}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter PPP authkey (dialing password): ${NRML}\c"
-				read PPP_AUTHKEY_TEMP1
-				echo -e "${LCYN}Re-enter PPP authkey                : ${NRML}\c"
-				read PPP_AUTHKEY_TEMP2
-				
+				echo -e ""
+				readee -s -p "${LCYN}Enter PPP authkey (dialing password): ${NRML}" PPP_AUTHKEY_TEMP1
+				readee -s -p "${LCYN}Re-enter PPP authkey                : ${NRML}" PPP_AUTHKEY_TEMP2
+
 				if [ "${PPP_AUTHKEY_TEMP1}" != "${PPP_AUTHKEY_TEMP2}" ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Authkey mismatch, try again!\n"
@@ -2024,7 +2391,7 @@ init_host ()
 			done
 
 			echo -e ""
-	
+
 			sed -i "" "s/isp_username/${PPP_AUTHNAME}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 			sed -i "" "s/isp_password/${PPP_AUTHKEY}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 			sed -i "" "s/ppp_enable=\"NO\"/ppp_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -2044,8 +2411,8 @@ init_host ()
 			# Set up static IP and netmask for WAN interface
 			while [ "${WAN_IFACE_IP}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter static IP for WAN interface: ${NRML}\c"
-				read WAN_IFACE_IP_TEMP
+				echo -e ""
+				readee -p "${LCYN}Enter static IP for WAN interface: ${NRML}" WAN_IFACE_IP_TEMP
 				test_valid_inet_address "${WAN_IFACE_IP_TEMP}"
 				if [ "${VALID_INET_ADDRESS}" = "yes" ]
 				then
@@ -2058,7 +2425,7 @@ init_host ()
 						echo -e "\n${LRED}ERROR:${NRML} In a gateway configuration the WAN interface IP address must not be in"
 						echo -e "       the '${FDO_LAN_SUBNET_B}.*.*' subnet!\n"
 					else
-						question_yes_no "\nYou have entered '${WAN_IFACE_IP_TEMP}' as the WAN interface IP address.\nIs this correct?"
+						question_yes_no "\nYou have entered '${NRML}${WAN_IFACE_IP_TEMP}${LCYN}' as the WAN interface IP address.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
 							WAN_IFACE_IP=${WAN_IFACE_IP_TEMP}
@@ -2071,12 +2438,12 @@ init_host ()
 
 			while [ "${WAN_IFACE_NETMASK}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter netmask for WAN interface: ${NRML}\c"
-				read WAN_IFACE_NETMASK_TEMP
+				echo -e ""
+				readee -p "${LCYN}Enter netmask for WAN interface: ${NRML}" WAN_IFACE_NETMASK_TEMP
 				test_valid_inet_address "${WAN_IFACE_NETMASK_TEMP}"
 				if [ "${VALID_INET_ADDRESS}" = "yes" ]
 				then
-					question_yes_no "\nYou have entered '${WAN_IFACE_NETMASK_TEMP}' as the WAN interface netmask.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${WAN_IFACE_NETMASK_TEMP}${LCYN}' as the WAN interface netmask.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						WAN_IFACE_NETMASK=${WAN_IFACE_NETMASK_TEMP}
@@ -2089,12 +2456,12 @@ init_host ()
 			# Set default router
 			while [ "${WAN_ROUTER_IP}" = "" ]
 			do
-				echo -e "\n${LCYN}Enter the default router IP address for this host: ${NRML}\c"
-				read WAN_ROUTER_IP_TEMP
+				echo -e ""
+				readee -p "${LCYN}Enter the default router IP address for this host: ${NRML}" WAN_ROUTER_IP_TEMP
 				test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
 				if [ "${VALID_INET_ADDRESS}" = "yes" ]
 				then
-					question_yes_no "\nYou have entered '${WAN_ROUTER_IP_TEMP}' as the default router.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${WAN_ROUTER_IP_TEMP}${LCYN}' as the default router.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						WAN_ROUTER_IP=${WAN_ROUTER_IP_TEMP}
@@ -2143,7 +2510,7 @@ init_host ()
 				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${REMAINING_NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				LAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				echo -e "\n"
-				question_yes_no "\nYou have selected '${LAN_NET_IFACE_TEMP}' as the LAN interface for this host.\nIs this correct?"
+				question_yes_no "\nYou have selected '${NRML}${LAN_NET_IFACE_TEMP}${LCYN}' as the LAN interface for this host.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					LAN_NET_IFACE="${LAN_NET_IFACE_TEMP}"
@@ -2198,7 +2565,7 @@ init_host ()
 					pause_prompt 5
 				else
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${LAN_IFACE_IP_TEMP}' as the LAN interface IP address.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${LAN_IFACE_IP_TEMP}${LCYN}' as the LAN interface IP address.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						LAN_IFACE_IP=${LAN_IFACE_IP_TEMP}
@@ -2274,8 +2641,8 @@ init_host ()
 	FDO_USERNAME=""
 	while [ "${FDO_USERNAME}" = "" ]
 	do
-		echo -e "\n${LCYN}Enter login account username: ${NRML}\c"
-		read FDO_USERNAME_TEMP
+		echo -e ""
+		readee -p "${LCYN}Enter login account username: ${NRML}" FDO_USERNAME_TEMP
 		# Check that the username only contains letters, numbers, periods, underscores and hyphens with a minimum of 3 characters.
 		TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
 		if [ ${TEST} -ne 0 ] || [ "${FDO_USERNAME_TEMP}" = "" ]
@@ -2284,7 +2651,7 @@ init_host ()
 			echo -e "       It must be at least three characters and only contain lower case"
 			echo -e "       letters, numbers, periods, underscores and hyphens.\n"
 		else
-			question_yes_no "\nYou have entered '${FDO_USERNAME_TEMP}' as the login account username.\nIs this correct?"
+			question_yes_no "\nYou have entered '${NRML}${FDO_USERNAME_TEMP}${LCYN}' as the login account username.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				FDO_USERNAME=${FDO_USERNAME_TEMP}
@@ -2304,8 +2671,8 @@ init_host ()
 	echo ${FDO_USERNAME} > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf
 
 	# Timezone setup
-	echo -e "\n${LCYN}Let's perform the hosts timezone setup. Press enter to proceed... ${NRML}\c"
-	read ENTER_PRESSED
+	echo -e ""
+	readee -p "${LCYN}Let's perform the hosts timezone setup. Press enter to proceed... ${NRML}" ENTER_PRESSED
 	tzsetup
 	TZ_AVAILABLE=`cat /usr/share/zoneinfo/zone.tab | egrep -v "^#" | awk '{print $3}' | sort`
 	TZ=""
@@ -2314,7 +2681,7 @@ init_host ()
 		dialog --no-cancel --no-items --menu "Select timezone for the hosts TZ environment variable:" 30 60 26 ${TZ_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 		TZ_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
-		question_yes_no "\nYou have selected '${TZ_TEMP}' for the TZ for this host.\nIs this correct?"
+		question_yes_no "\nYou have selected '${NRML}${TZ_TEMP}${LCYN}' for the TZ for this host.\nIs this correct?"
 		if [ "${ANSWER}" = "yes" ]
 		then
 			TZ="${TZ_TEMP}"
@@ -2340,7 +2707,7 @@ init_host ()
 			dialog --no-cancel --no-items --menu "Select the locale for the host:" 30 60 26 ${LOCALE_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			LOCALE_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${LOCALE_TEMP}' for the locale for this host.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${LOCALE_TEMP}${LCYN}' for the locale for this host.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				LOCALE="${LOCALE_TEMP}"
@@ -2398,7 +2765,7 @@ init_host ()
 
 	cd -
 
-} ## END: init_host()
+} ## END: init_host ()
 
 patch_host()
 {
@@ -2647,7 +3014,7 @@ init_hotdesking ()
 			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the hotdesk users home folders.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the hotdesk users home folders.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -2666,13 +3033,13 @@ init_hotdesking ()
 	NIS_DOMAIN_NAME=""
 	while [ "${NIS_DOMAIN_NAME}" = "" ]
 	do
-		echo -e "\n${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}\c"
-		read NIS_DOMAIN_NAME_TEMP
+		echo -e ""
+		readee -p "${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}" NIS_DOMAIN_NAME_TEMP
 		# Check that the nisdomainname is a valid domain name.
 		test_valid_fqhn "${NIS_DOMAIN_NAME_TEMP}"
 		if [ "${VALID_FQHN}" = "yes" ]
 		then
-			question_yes_no "\nYou have entered '${NIS_DOMAIN_NAME_TEMP}' as the NIS domain name.\nIs this correct?"
+			question_yes_no "\nYou have entered '${NRML}${NIS_DOMAIN_NAME_TEMP}${LCYN}' as the NIS domain name.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				NIS_DOMAIN_NAME=${NIS_DOMAIN_NAME_TEMP}
@@ -2720,7 +3087,7 @@ init_hotdesking ()
 			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 			NIS_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NIS_HOST_IP_TEMP}' to use for the NIS server.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${NIS_HOST_IP_TEMP}${LCYN}' to use for the NIS server.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				NIS_HOST_IP="${NIS_HOST_IP_TEMP}"
@@ -2884,7 +3251,7 @@ init_jails ()
 			dialog --no-items --no-cancel --menu "Select pool to use for jails datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the service jails.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -3172,7 +3539,7 @@ init_remote_desktops ()
 			dialog --no-items --no-cancel --menu "Select pool to use for remote desktop datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the remote desktops.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the remote desktops.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -3234,13 +3601,13 @@ init_remote_desktops ()
 		RD_DB_HOST_NAME=""
 		while [ "${RD_DB_HOST_NAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the hostname of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
-			read RD_DB_HOST_NAME_TEMP
+			echo -e "\n${LCYN}Enter the hostname of the auto-screen-resize database for this${NRML}"
+			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_HOST_NAME_TEMP
 			# Check that the db hostname is a valid fully qualified host name.
 			test_valid_fqhn "${RD_DB_HOST_NAME_TEMP}"
 			if [ "${VALID_FQHN}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${RD_DB_HOST_NAME_TEMP}' as the auto-screen-resize db hostname.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${RD_DB_HOST_NAME_TEMP}${LCYN}' as the auto-screen-resize db hostname.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					RD_DB_HOST_NAME=${RD_DB_HOST_NAME_TEMP}
@@ -3257,13 +3624,13 @@ init_remote_desktops ()
 		RD_DB_NAME=""
 		while [ "${RD_DB_NAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the dB name of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
-			read RD_DB_NAME_TEMP
+			echo -e "\n${LCYN}Enter the dB name of the auto-screen-resize database for this${NRML}"
+			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_NAME_TEMP
 			# Check that the db name is valid.
 			TEST=`echo "${RD_DB_NAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
 			if [ ${TEST} -eq 0 ] && [ "${RD_DB_NAME_TEMP}" != "" ]
 			then
-				question_yes_no "\nYou have entered '${RD_DB_NAME_TEMP}' as the auto-screen-resize dB name.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${RD_DB_NAME_TEMP}${LCYN}' as the auto-screen-resize dB name.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					RD_DB_NAME=${RD_DB_NAME_TEMP}
@@ -3281,13 +3648,13 @@ init_remote_desktops ()
 		RD_DB_USERNAME=""
 		while [ "${RD_DB_USERNAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the username of the auto-screen-resize database for this\nremote-desktops host: ${NRML}\c"
-			read RD_DB_USERNAME_TEMP
+			echo -e "\n${LCYN}Enter the username of the auto-screen-resize database for this${NRML}"
+			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_USERNAME_TEMP
 			# Check that the db username is valid.
 			TEST=`echo "${RD_DB_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
 			if [ ${TEST} -eq 0 ] && [ "${RD_DB_USERNAME_TEMP}" != "" ]
 			then
-				question_yes_no "\nYou have entered '${RD_DB_USERNAME_TEMP}' as the auto-screen-resize db username.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${RD_DB_USERNAME_TEMP}${LCYN}' as the auto-screen-resize db username.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					RD_DB_USERNAME=${RD_DB_USERNAME_TEMP}
@@ -3305,10 +3672,9 @@ init_remote_desktops ()
 		RD_DB_USER_PASSWORD=""
 		while [ "${RD_DB_USER_PASSWORD}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter dB user password:    ${NRML}\c"
-			read RD_DB_USER_PASSWORD_TEMP1
-			echo -e "${LCYN}Re-enter dB user password: ${NRML}\c"
-			read RD_DB_USER_PASSWORD_TEMP2
+			echo -e ""
+			readee -s -p "${LCYN}Enter dB user password:    ${NRML}" RD_DB_USER_PASSWORD_TEMP1
+			readee -s -p "${LCYN}Re-enter dB user password: ${NRML}" RD_DB_USER_PASSWORD_TEMP2
 
 			if [ "${RD_DB_USER_PASSWORD_TEMP1}" != "${RD_DB_USER_PASSWORD_TEMP2}" ]
 			then
@@ -3325,13 +3691,13 @@ init_remote_desktops ()
 		RD_HOST_NAME=""
 		while [ "${RD_HOST_NAME}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the remote-desktops hostname for this host\n(may differ from the server hostname): ${NRML}\c"
-			read RD_HOST_NAME_TEMP
+			echo -e "\n${LCYN}Enter the remote-desktops hostname for this host${NRML}"
+			readee -p "(may differ from the server hostname): ${NRML}" RD_HOST_NAME_TEMP
 			# Check that the remote-desktops hostname is a valid fully qualified host name.
 			test_valid_fqhn "${RD_HOST_NAME_TEMP}"
 			if [ "${VALID_FQHN}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${RD_HOST_NAME_TEMP}' as the remote-desktops hostname.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${RD_HOST_NAME_TEMP}${LCYN}' as the remote-desktops hostname.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					RD_HOST_NAME=${RD_HOST_NAME_TEMP}
@@ -3488,7 +3854,7 @@ create_remote_desktop_template ()
 			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 			VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${VNC_HOST_IP_TEMP}' to use for the VNC session.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VNC_HOST_IP="${VNC_HOST_IP_TEMP}"
@@ -3520,13 +3886,13 @@ create_remote_desktop_template ()
 	VM_MEM_SIZE_MB=""
 	while [ "${VM_MEM_SIZE_MB}" = "" ]
 	do
-		echo -e "\n${LCYN}Enter the memory size in MB of the VM template: ${NRML}\c"
-		read VM_MEM_SIZE_MB_TEMP
+		echo -e ""
+		readee -p "${LCYN}Enter the memory size in MB of the VM template: ${NRML}" VM_MEM_SIZE_MB_TEMP
 		# Check that the VM memory size contains only numbers.
 		test_valid_integer "${VM_MEM_SIZE_MB_TEMP}" 100 1000000
 		if [ "${VALID_INTEGER}" = "yes" ]
 		then
-			question_yes_no "\nYou have entered '${VM_MEM_SIZE_MB_TEMP}' as the VM memory size.\nIs this correct?"
+			question_yes_no "\nYou have entered '${NRML}${VM_MEM_SIZE_MB_TEMP}${LCYN}' as the VM memory size.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB_TEMP}
@@ -3541,8 +3907,8 @@ create_remote_desktop_template ()
 	INSTALL_OR_COPY_VDI=""
 	while [ "${INSTALL_OR_COPY_VDI}" = "" ]
 	do
-		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing VDI image?\n(install|copy): \c"
-		read INSTALL_OR_COPY_VDI_TEMP
+		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing VDI image?${NRML}"
+		readee -p "${LCYN}(install|copy): ${NRML}" INSTALL_OR_COPY_VDI_TEMP
 		# Check input validation.
 		if [ "${INSTALL_OR_COPY_VDI_TEMP}" = "install" ] || [ "${INSTALL_OR_COPY_VDI_TEMP}" = "copy" ]
 		then
@@ -3558,13 +3924,13 @@ create_remote_desktop_template ()
 		VM_HDD_SIZE_MB=""
 		while [ "${VM_HDD_SIZE_MB}" = "" ]
 		do
-			echo -e "\n${LCYN}Enter the maximum size in MB of the VDI (VBox HDD): ${NRML}\c"
-			read VM_HDD_SIZE_MB_TEMP
+			echo -e ""
+			readee -p "${LCYN}Enter the maximum size in MB of the VDI (VBox HDD): ${NRML}" VM_HDD_SIZE_MB_TEMP
 			# Check that the VM HDD size contains only numbers.
 			test_valid_integer "${VM_HDD_SIZE_MB_TEMP}" 100 1000000
 			if [ "${VALID_INTEGER}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${VM_HDD_SIZE_MB_TEMP}' as the max VDI size.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${VM_HDD_SIZE_MB_TEMP}${LCYN}' as the max VDI size.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
 					VM_HDD_SIZE_MB=${VM_HDD_SIZE_MB_TEMP}
@@ -3588,7 +3954,7 @@ create_remote_desktop_template ()
 				if [ ${?} -eq 0 ]
 				then
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${OS_INSTALLER_ISO_TEMP}' as the OS installer ISO.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${OS_INSTALLER_ISO_TEMP}${LCYN}' as the OS installer ISO.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
@@ -3619,7 +3985,7 @@ create_remote_desktop_template ()
 				if [ ${?} -eq 0 ]
 				then
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${EXISTING_VDI_PATH_TEMP}' as the existing VDI file.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${EXISTING_VDI_PATH_TEMP}${LCYN}' as the existing VDI file.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						EXISTING_VDI_PATH="${EXISTING_VDI_PATH_TEMP}"
@@ -3761,8 +4127,7 @@ create_remote_desktop_template ()
 		while true
 			do
 			echo -e "${LCYN}Would you like to insert a DVD ISO into the remote desktop template ${NRML}"
-			echo -e "${LCYN}or have you finished setting up the template (insert/finish): ${NRML}\c"
-			read ANSWER
+			readee -p "${LCYN}or have you finished setting up the template (insert/finish): ${NRML}" ANSWER
 			if [ "${ANSWER}" = "insert" ] || [ "${ANSWER}" = "finish" ]
 			then
 				break
@@ -4543,7 +4908,7 @@ init_clonezilla_images ()
 			dialog --no-items --no-cancel --menu "Select pool for Clonezilla images:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${POOL_NAME_TEMP}' to store the Clonezilla images.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the Clonezilla images.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				POOL_NAME="${POOL_NAME_TEMP}"
@@ -4664,7 +5029,7 @@ merge_local_repo_to_remote ()
 	while [ "${REMOTE_REPO_URI}" = "" ]
 	do
 		echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
-		read REMOTE_REPO_URI_TEMP
+		readee REMOTE_REPO_URI_TEMP
 		# Allow use to change their mind about type of repo
 		if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
 		then
@@ -4674,7 +5039,7 @@ merge_local_repo_to_remote ()
 		test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
 		if [ "${VALID_URL}" = "yes" ]
 		then
-			question_yes_no "\nYou have entered '${REMOTE_REPO_URI_TEMP}'\nas the remote git repo URI.\nIs this correct?"
+			question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}

@@ -7,7 +7,6 @@ TODO
 
 - Consider making a subcommand to setup/enable ``sshfsd`` (Requires: ``fusefs-sshfs`` package. ``fuse_load="YES"`` in ``loader.conf``. client key added to servers' ``authorized_keys``).
 - Remove commented out entries from ``/etc/devfs.rules`` in ``init-host`` templates, replace with better sed to add entries.
-- Make a read inbuilt command replacement that supports password input and preset (suggested) text.
 - Remote Desktops sub-system:
 
   - Remote Desktops should allow option for using VNC or RDP, perhaps choice made at ``init-remote-desktops`` stage.
@@ -35,3 +34,5 @@ DONE
 - Create a script to add and remove ppp-nat/pf-nat port redirections and replace port forwarding variable substitutions.
 - Jail recipes: use variable ``JAILS_LAN_SUBNET_C`` for ``JAIL_IP`` and other jail related IPs.
 - All scripts: host/jail execution support and tests added or made consistent. (i) Exit with error if not run in host. (ii) Seemlessly work from inside or outside relevant jail.
+- Change input confirmation prompt colours to make value stand out.
+- Make a read inbuilt command replacement that supports password input and preset (suggested) text.
