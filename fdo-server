@@ -244,8 +244,8 @@ readee ()
 	HEX_DELETE="%33"		# Comes after escape character
 	HEX_HOME="%48"			# Comes after escape character
 	HEX_END="%46"			# Comes after escape character
-	HEX_D="%44"			# LEFT ARROW, comes after escape character
-	HEX_C="%43"			# RIGHT ARROW, comes after escape character
+	HEX_D="%44"				# LEFT ARROW, comes after escape character
+	HEX_C="%43"				# RIGHT ARROW, comes after escape character
 	TYPED_CHAR=""
 	TYPED_CHAR_HEX=""
 	PRE_CURS_TEXT=""
