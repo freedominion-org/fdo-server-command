@@ -3584,7 +3584,16 @@ init_remote_desktops ()
 	fi
 
 	sed -i "" "s/vboxnet_enable=\"NO\"/vboxnet_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/^#\(add path .* vboxusers\)/\1/" configs/${HOST_NAME}/etc/devfs.rules
+	DEV_PATHS="uhid\* ugen\* usb\/\*"
+	for DEV_PATH in ${DEV_PATHS}
+	do
+		NEW_DEVFS_RULE="add path '${DEV_PATH}' mode 0660 group vboxusers"
+		cat configs/${HOST_NAME}/etc/devfs.rules | grep "${NEW_DEVFS_RULE}" > /dev/null 2>&1
+		if [ ${?} -ne 0 ]
+		then
+			sed -i "" "s/^\(\[host_ruleset=1\].*\)/\1\\${CARRIAGE_RETURN}${NEW_DEVFS_RULE}/" configs/${HOST_NAME}/etc/devfs.rules
+		fi
+	done
 	echo "${POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote_desktops_pool.conf
 
 	# Copy init-remote-desktops template configs to this hosts' repo profile

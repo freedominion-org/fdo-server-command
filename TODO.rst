@@ -6,7 +6,6 @@ TODO
 ----
 
 - Consider making a subcommand to setup/enable ``sshfsd`` (Requires: ``fusefs-sshfs`` package. ``fuse_load="YES"`` in ``loader.conf``. client key added to servers' ``authorized_keys``).
-- Remove commented out entries from ``/etc/devfs.rules`` in ``init-host`` templates, replace with better sed to add entries.
 - Remote Desktops sub-system:
 
   - Remote Desktops should allow option for using VNC or RDP, perhaps choice made at ``init-remote-desktops`` stage.
@@ -36,3 +35,4 @@ DONE
 - All scripts: host/jail execution support and tests added or made consistent. (i) Exit with error if not run in host. (ii) Seemlessly work from inside or outside relevant jail.
 - Change input confirmation prompt colours to make value stand out.
 - Make a read inbuilt command replacement that supports password input and preset (suggested) text.
+- Remove commented out entries from ``/etc/devfs.rules`` in ``init-host`` templates, replace with better sed to add entries.
