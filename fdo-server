@@ -1085,29 +1085,29 @@ compare_file_tree ()
 		then
 			if [ ! -d ${DEST_FILE_PATH} ]
 			then
-				echo -e "${ORNG}WARNING:${NRML} The following directory ${LRED}DOES NOT EXIST${NRML}: ${DEST_FILE_PATH}"
+				echo -e "${ORNG}WARNING${NRML}: The following directory is  ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
 				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 			fi
 		else
 			if [ ! -f ${DEST_FILE_PATH} ]
 			then
-				echo -e "${ORNG}WARNING:${NRML} The following file      ${LRED}DOES NOT EXIST${NRML}: ${DEST_FILE_PATH}"
+				echo -e "${ORNG}WARNING${NRML}: The following file is       ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
 				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 			else
 				diff ${SOURCE_FILE_PATH} ${DEST_FILE_PATH} > /dev/null 2>&1
 				if [ $? -eq 0 ]
 				then
-					echo -e "${LGRN}CHECKED${NRML}: The following file is ${LGRN}IN CHECK${NRML}:       ${DEST_FILE_PATH}"
+					echo -e "${LGRN}CHECKED${NRML}: The following file is      ${LGRN}IN CHECK${NRML}: ${DEST_FILE_PATH}"
 				else
-					echo -e "${ORNG}WARNING${NRML}: The following file is ${ORNG}OUT OF CHECK${NRML}:   ${DEST_FILE_PATH}"
+					echo -e "${ORNG}WARNING${NRML}: The following file is  ${ORNG}OUT OF CHECK${NRML}: ${DEST_FILE_PATH}"
 					COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
 					if [ "${SILENT_MODE}" = "no" ]
 					then
 						echo -e ""
 						question_yes_no "Would you like to see the diff for ${DEST_FILE_PATH} ?"
+						echo -e ""
 						if [ "${ANSWER}" = "yes" ]
 						then
-							echo -e ""
 							diff -u ${SOURCE_FILE_PATH} ${DEST_FILE_PATH}
 							echo -e ""
 							question_yes "Continue?"
