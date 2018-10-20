@@ -36,6 +36,7 @@ ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts cpdup curl
 ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts cpdup curl portmaster rsync tree unrar unzip zip vim-console"
 REMOTE_DESKTOP_PACKAGES="virtualbox-ose py27-daemon py27-psycopg2"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
+SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
 DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
 AUX_LOCAL_SERVER_IP_MIN=2
@@ -3461,6 +3462,103 @@ init_jails ()
 
 }
 
+init_sshfs_daemon ()
+{
+	cd /${REPO_NAME}
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the 'init-host' subcommand first."
+		echo -e "       Aborting.\n"
+		exit 190
+	fi
+
+	# Check for unsaved registered host config files
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use 'update-config' to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
+		exit 191
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	SUM_EXIT_CODE=0
+
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	pkg update -f
+	pkg install -y ${SSHFS_DAEMON_PACKAGES}
+
+	kldstat | grep fuse.ko > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload fuse 2> /dev/null
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
+		exit 192
+	fi
+
+	cat configs/${HOST_NAME}/boot/loader.conf | egrep "^fuse_load=\"(YES|NO)\"" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		sed -i "" "s/fuse_load=\"NO\"/fuse_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	else
+		echo "fuse_load=\"YES\"" >> configs/${HOST_NAME}/boot/loader.conf
+	fi
+
+	cat configs/${HOST_NAME}/etc/rc.conf | egrep "^sshfsd_enable=\"(YES|NO)\"" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		sed -i "" "s/sshfsd_enable=\"NO\"/sshfsd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+	else
+		echo "sshfsd_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
+	fi
+
+	# Copy init-sshfs-daemon template configs to this hosts' repo profile
+	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
+
+	# Install host configs to the system
+	install_file_tree configs/${HOST_NAME} /
+
+	echo -e "\n"
+
+	# Start sshfsd service for the first time.
+	service sshfsd onestart
+
+	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+	git add configs/${HOST_NAME}
+	git commit -m "Updating host after 'init-sshfs-daemon'; ${HOST_NAME}."
+
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
+		git_push origin master
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
+			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+		fi
+	fi
+
+	echo -e "\n${LGRN}Congratulations! We have now finished initialising the sshfs daemon subsystem.${NRML}"
+	echo -e "\n${LGRN}To create a sshfs connection, use the command:${NRML}"
+	echo -e "${LBLU}fdo-sshfs-add-connection${NRML}\n"
+
+	cd -
+
+}
+
 init_remote_desktops ()
 {
 
@@ -5356,6 +5454,12 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 3
 		update_local_repo
 		create_remote_desktop_instance "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
+		;;
+
+	init-sshfs-daemon)
+		# Initiaze the sshfs (SFTP) daemon subsystem
+		update_local_repo
+		init_sshfs_daemon
 		;;
 
 	*)

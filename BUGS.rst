@@ -5,7 +5,7 @@ fdo-server BUGS list:
 BUGS
 ----
 
-*Currently there are no known bugs*
+- FDO_LAN_SUBNET_B should be read from /usr/local/etc/fdo/net_iface_lan.conf to make everything dynamic.
 
 
 FIXED
