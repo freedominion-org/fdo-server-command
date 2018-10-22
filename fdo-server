@@ -1688,6 +1688,69 @@ add_config ()
 
 }
 
+remove_config ()
+{
+
+	CONFIG_FULL_PATH="${1}"
+
+	cd /${REPO_NAME}
+
+	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		# config file belongs to a jail
+		JAIL_NAME=`echo ${CONFIG_FULL_PATH}  | cut -d/ -f3`
+		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
+		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
+	else
+		# config file belongs to the host
+		CONFIG_REPO_ROOT=configs/${HOST_NAME}
+		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
+	fi
+
+	if [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}' does not exist.\n       Aborting.\n"
+		exit 60
+	else
+		git rm "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to remove '${CONFIG_FULL_PATH}' from local git repo.\n       Aborting.\n"
+			exit 61
+		fi
+		git commit -m "Remove config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to commit removal of '${CONFIG_FULL_PATH}' to local git repo."
+			echo -e "       Please consider manually running 'git reset --hard' to previous commit."
+			echo -e "       Aborting.\n"
+			exit 62
+		fi
+		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
+		then
+			echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
+			git_push origin master
+			if [ $? -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
+				echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+			fi
+		fi
+		echo -e "\n${LGRN}OK, it seems we've successfully removed the config file!${NRML}\n"
+	fi
+
+	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
+	TEST=`ls -A1 "${CONFIG_REPO_DIR}" | wc -l`
+	if [ ${TEST} -eq 0 ]
+	then
+		rmdir ${CONFIG_REPO_DIR}
+	fi
+
+	cd -
+
+}
+
 update_config ()
 {
 
@@ -5357,6 +5420,13 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_config "${SUB_ARG1}"
+		;;
+
+	remove-config)
+		# Update a config file from the system to local and remote git repo.
+		test_num_mandatory_sub_args 1
+		update_local_repo
+		remove_config "${SUB_ARG1}"
 		;;
 
 	connect-internet)
