@@ -5365,10 +5365,22 @@ NUM_SUB_ARGS=$(( ${#} - 1 ))
 HOST_NAME=`hostname -s`
 FQHN=`hostname -f`
 DOMAIN_NAME=`echo ${FQHN} | sed "s/${HOST_NAME}\.//"`
+FETCH_LATEST_SELF=${FETCH_LATEST_SELF:-"yes"}
+CHECK_REPO_CONFIG="yes"
 
-if [ "${SUB_CMD}" != "connect-internet" ]
+if [ "${SUB_CMD}" = "connect-internet" ]
+then
+	FETCH_LATEST_SELF="no"
+	CHECK_REPO_CONFIG="no"
+fi
+
+if [ "${FETCH_LATEST_SELF}" = "yes" ]
 then
 	fetch_latest_self
+fi
+
+if [ "${CHECK_REPO_CONFIG}" = "yes" ]
+then
 	check_repo_config
 fi
 
