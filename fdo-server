@@ -2772,6 +2772,7 @@ init_host ()
 		fi
 	done
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/profile
+	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/csh.login
 
 	# Set correct time/date from ntp.org
 	echo -e "\n${YELL}Setting correct time and date from ntp.org...${NRML}\n"
@@ -2784,7 +2785,7 @@ init_host ()
 	question_yes_no "\nWould you like to configure the locale for this host?"
 	if [ "${ANSWER}" = "yes" ]
 	then
-		LOCALE_AVAILABLE=`ls -1 /usr/share/locale/ | egrep -v "^UTF-8" | sort`
+		LOCALE_AVAILABLE=`ls -1 /usr/share/locale/ | egrep -v "^UTF-8" | sed "s|/$||" | sort`
 		LOCALE=""
 		while [ "${LOCALE}" = "" ]
 		do
@@ -2797,7 +2798,16 @@ init_host ()
 				LOCALE="${LOCALE_TEMP}"
 			fi
 		done
+		LOCALE_CHARSET=$(echo ${LOCALE} | cut -d. -f2)
 		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/etc/profile
+		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/etc/profile
+		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/etc/csh.login
+		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/etc/csh.login
+	else
+		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/profile
+		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/etc/profile
+		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
+		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
 	fi
 
 	#### CONFIG PROFILE FINISHED ####
