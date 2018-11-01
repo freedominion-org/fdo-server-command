@@ -196,6 +196,7 @@ readee ()
 	fi
 
 	# Parse arguments
+	READEE_SILENT_MODE="false"
 	READEE_PROMPT_MODE="false"
 	READEE_PROMPT_TEXT=""
 	READEE_VARIABLE=""
@@ -5349,7 +5350,7 @@ merge_local_repo_to_remote ()
 		exit 187
 	fi
 
-	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" ="yes" ]
+	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" = "yes" ]
 	then
 		# Align the master branch on both local and remote repo.
 		git branch --set-upstream-to=origin/master master > /dev/null 2>&1
