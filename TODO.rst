@@ -5,6 +5,7 @@ fdo-server TODO list:
 TODO
 ----
 
+- Move proceventd and notifierd back to scripts and fix "service -e" message.
 - Remote Desktops sub-system:
 
   - Remote Desktops should allow option for using VNC or RDP, perhaps choice made at ``init-remote-desktops`` stage.
@@ -35,7 +36,8 @@ DONE
 - Change input confirmation prompt colours to make value stand out.
 - Make a read inbuilt command replacement that supports password input and preset (suggested) text.
 - Remove commented out entries from ``/etc/devfs.rules`` in ``init-host`` templates, replace with better sed to add entries.
-- subsystem=sshfs-daemon: Consider making a subcommand to setup/enable ``sshfsd`` (Requires: ``fusefs-sshfs`` package. ``fuse_load="YES"`` in ``loader.conf``. client key added to servers' ``authorized_keys``).
+- subsystem=sshfs-daemon: Consider making a subcommand to setup/enable ``sshfsd``
+  (Requires: ``fusefs-sshfs`` package. ``fuse_load="YES"`` in ``loader.conf``. client key added to servers' ``authorized_keys``).
 - Implement subcommand ``remove-config``.
 - Add command usage entries for ``init-sshfs-daemon`` and ``remove_config``.
 - Disable ``fetch_latest_self`` from scripts when calling ``fdo-server`` externally.

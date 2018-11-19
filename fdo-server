@@ -4661,7 +4661,7 @@ create_jail ()
 		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
-	# Create new jail fileststem by cloning from the template jail
+	# Create new jail filesystem by cloning from the template jail
 	zfs clone ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} ${POOL_NAME}/jails/${JAIL_NAME}
 
 	# Install template jails' configs to new jails' config repo directory
