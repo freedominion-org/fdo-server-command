@@ -2894,7 +2894,7 @@ patch_host()
 	PAGER=cat freebsd-update fetch > /tmp/fdo-freebsd-update-output.host.fetch.${NOW}
 	if [ ${?} -ne 0 ]
 	then
-		tail -4 /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | egrep "WARNING: FreeBSD .*-RELEASE HAS PASSED ITS END-OF-LIFE DATE" > /dev/null
+		tail -4 /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | egrep "WARNING: FreeBSD .*-RELEASE-.* HAS PASSED ITS END-OF-LIFE DATE" > /dev/null
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The 'freebsd-update fetch' operation failed!"
