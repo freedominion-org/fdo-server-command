@@ -6,6 +6,11 @@ TODO
 ----
 
 - Move proceventd and notifierd back to scripts and fix "service -e" message.
+- Copy ACL management scripts from beastie2@potensol.com and modify to suit fdo script coding style
+- Improve jlogin to allow better selection of similar named jails
+- Update all prompts and verification messages to new style (use single quotes and white on cyan text)
+- Change template jail IP from 10.0.10.11 to 10.0.11.1
+- Change create-jail dataset creation from clone to send/recv.
 - Remote Desktops sub-system:
 
   - Remote Desktops should allow option for using VNC or RDP, perhaps choice made at ``init-remote-desktops`` stage.

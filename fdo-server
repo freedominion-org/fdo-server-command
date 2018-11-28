@@ -2726,6 +2726,14 @@ init_host ()
 	backup_file /etc/sysctl.conf init-host
 	backup_file /boot/loader.conf init-host
 
+	# Remove any cloud provider init
+	if [ -e /usr/local/etc/rc.d/digitalocean ]
+	then
+		zfs set compression=on zroot
+		chmod -x /usr/local/etc/rc.d/digitalocean
+		chmod -x /usr/local/etc/rc.d/digitaloceanpre
+	fi
+
 	# Install init-host configs to the system so that FDO user has a useful profile
 	install_file_tree configs/${HOST_NAME} /
 
