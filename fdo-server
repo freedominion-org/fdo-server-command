@@ -50,7 +50,7 @@ if [ ${?} -ne 0 ]
 then
 	SET_LAN_SUBNET_B="${DEFAULT_LAN_SUBNET_B}"
 else
-	DETECTED_LAN_SUBNET_B=`ifconfig $CONFIG_LAN_NET_IFACE | grep "inet.*netmask 0xffff0000" | awk '{print $2}' | sort | head -1 | cut -d. -f1,2`
+	DETECTED_LAN_SUBNET_B=`ifconfig ${CONFIG_LAN_NET_IFACE} | grep "inet.*netmask 0xffff0000" | awk '{print $2}' | sort | head -1 | cut -d. -f1,2`
 	if [ "${DETECTED_LAN_SUBNET_B}" = "" ]
 	then
 		SET_LAN_SUBNET_B="${DEFAULT_LAN_SUBNET_B}"
@@ -63,9 +63,9 @@ FDO_LAN_SUBNET_MASK="255.255.0.0"
 SERVERS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.10"
 JAILS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.11"
 WORKSTATIONS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.20"
-HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.25"
-MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.30"
-GUESTS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
+HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
+MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.50"
+GUESTS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.60"
 FDO_LAN_GATEWAY_IP="${SERVERS_LAN_SUBNET_C}.1"
 
 TERM="xterm"
@@ -2686,7 +2686,7 @@ init_host ()
 	# END: if WAN_NET_IFACE != NULL
 
 	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
+	sed -i "" "s|JAILS_LAN_SUBNET_C|${JAILS_LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
 	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
 
 	# Update hostname
@@ -2997,7 +2997,7 @@ setup_vnc_desktop()
 	FDO_USERNAME=`cat configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf`
 
 	# Copy setup-vnc-desktop template configs to this hosts' repo profile
-	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/ ${FDO_USERNAME} ${FDO_USERNAME}
+	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/
 
 	# Rename FDO_USERNAME home folder in host config profile
 	if [ -d configs/${HOST_NAME}/home/${FDO_USERNAME} ]
@@ -3020,6 +3020,9 @@ setup_vnc_desktop()
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
+
+	# Change ownership of the FDO_USERNAME home folder
+	chown -R ${FDO_USERNAME}:${FDO_USERNAME} /home/${FDO_USERNAME}
 
 	# Start dbus
 	service dbus start
@@ -4669,8 +4672,9 @@ create_jail ()
 		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
-	# Create new jail filesystem by cloning from the template jail
-	zfs clone ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} ${POOL_NAME}/jails/${JAIL_NAME}
+	# Create new jail filesystem by zfs send/recv from the template jail snapshot
+	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
+	zfs send -e ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${POOL_NAME}/jails/${JAIL_NAME}
 
 	# Install template jails' configs to new jails' config repo directory
 	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state
@@ -4956,6 +4960,8 @@ create_jail_from_recipe ()
 
 	# Install initial config templates to the new jail
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+
+	question_yes "\nShall we proceed to cook the recipe?"
 
 	echo -e "\n\n${YELL}Cooking '${JAIL_RECIPE_NAME}' recipe for '${JAIL_NAME}'...${NRML}\n"
 
