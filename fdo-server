@@ -1064,18 +1064,23 @@ install_file_tree ()
 
 		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT}/||"`
 		DEST_FILE_PATH="${DEST_FILES_ROOT}${RELATIVE_DEST_FILE_PATH}"
+		FILE_UID=`ls -ldn "${SOURCE_FILE_PATH}" | awk '{print $3}'`
+		FILE_GID=`ls -ldn "${SOURCE_FILE_PATH}" | awk '{print $4}'`
 
 		if [ -d "${SOURCE_FILE_PATH}" ]
 		then
 			if [ ! -d "${DEST_FILE_PATH}" ]
 			then
 				mkdir "${DEST_FILE_PATH}"
+				chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
 			fi
-			FILE_UID=`ls -ldn "${SOURCE_FILE_PATH}" | awk '{print $3}'`
-			FILE_GID=`ls -ldn "${SOURCE_FILE_PATH}" | awk '{print $4}'`
-			chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
 		else
-			cp "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}"
+			diff -q "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}" > /dev/null 2>&1
+			if [ ${?} -ne 0 ]
+			then
+				cp "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}"
+				chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
+			fi
 		fi
 		if [ $? -ne 0 ]
 		then
