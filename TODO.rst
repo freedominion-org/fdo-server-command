@@ -5,16 +5,14 @@ fdo-server TODO list:
 TODO
 ----
 
-- Move proceventd and notifierd back to scripts and fix "service -e" message.
-- Copy ACL management scripts from beastie2@potensol.com and modify to suit fdo script coding style
-- Improve jlogin to allow better selection of similar named jails
-- Update all prompts and verification messages to new style (use single quotes and white on cyan text)
-- Change template jail IP from 10.0.10.11 to 10.0.11.1
-- Change create-jail dataset creation from clone to send/recv.
-- Remote Desktops sub-system:
-
-  - Remote Desktops should allow option for using VNC or RDP, perhaps choice made at ``init-remote-desktops`` stage.
-  - ``create-remote-desktop-instance`` should add NAT port redirection to ``ppp.conf``/``pf.conf``.
+- Update all prompts and verification messages to new style (use single quotes and white on cyan text).
+- Jail recipes with additional filesystems should ask for pool to use (e.g. pxe recipe).
+- fdo-backupz-thin-snapshots must ALWAYS keep the lastest TWO snapshots.
+- fdo-backupz-thin-snapshots and fdo-backupz should both block one another.
+- Replace tightvnc with tigervnc and ask for VNC screen size and password (see create_vm_template).
+- Convert all exit codes to 1 for expected error, 2 for unexpected error and 3 for interupt error.
+- Convert all config files to UCL.
+- Make all sub-commands fully idempotent by adding more check and balances and cleanup function with trap interupt.
 
 
 DONE
@@ -47,3 +45,10 @@ DONE
 - Add command usage entries for ``init-sshfs-daemon`` and ``remove_config``.
 - Disable ``fetch_latest_self`` from scripts when calling ``fdo-server`` externally.
 - Improve output and formatting for scripts; ``fdo-dns_cache|pf|ppp-list-*?*``.
+- Move proceventd and notifierd back to scripts and fix "service -e" message.
+- Copy ACL management scripts from beastie2@potensol.com and modify to suit fdo script coding style.
+- Improve jlogin to allow better selection of similar named jails.
+- Change template jail IP from 10.0.10.11 to 10.0.11.1.
+- Change create-jail dataset creation from clone to send/recv.
+- 'http_gateway': disable upstreaming traffic of invalid/unused host names/IP addresses.
+- All scripts which destroy filesystems should rename the backup pool filesystem, prefix with -DESTROYED (fdo-hotdesk-remove-user).

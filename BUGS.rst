@@ -19,3 +19,6 @@ FIXED
 - ``dhcp_server`` should not assume ``dns_cache`` is running on the LAN. Add optional dependency notice. dns_cache recipe should also warn if ``dhcp_server`` detected on LAN, and how to change ``domain-name-servers``.
 - ``upgrade-repo-from-upstream``: check for new scripts fails on subsequent runs on other servers. Fixed by looking for script updates in ``update_local_repo``.
 - FDO_LAN_SUBNET_B should be read from /usr/local/etc/fdo/net_iface_lan.conf to make everything dynamic.
+- Check why /usr/local/share/pixmaps/FreeBSD-beastie(1440x900).xpm and /usr/home/ are owned by the arbitrary login user.
+- fdo-hotdesk-remove-user: terminal output formatting is broken (escape characters).
+- setup-vnc-desktop: home folder permissions of arbitrary login user gets clobbered to ownership of root:wheel during create-jail-from-recipe.

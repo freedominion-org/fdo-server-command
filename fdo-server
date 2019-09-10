@@ -27,14 +27,37 @@
 ##### GLOBAL STATIC VARIABLE DECLARATIONS ##########
 
 SCRIPT_NAME=`basename $0`
-REPO_NAME="fdo-server"
-FDO_CONFIG_ROOT="/usr/local/etc/fdo"
-FDO_SERVER_SKELETON_REPO="https://github.com/freedominion-org/fdo-server.git"
+DEBUG=${DEBUG:-false}
+REPO_NAME=${REPO_NAME:-"fdo-server"}
+FDO_CONFIG_ROOT=${FDO_CONFIG_ROOT:-"/usr/local/etc/fdo"}
+UCL_CMD="/usr/local/bin/uclcmd"
+FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
-FETCH_LATEST_SELF_URL="http://freedominion.org/"
-ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts cpdup curl dmidecode git p7zip py27-speedtest-cli rsync stress tmux tree unrar unzip zfs-stats-lite zip nmap vim-console"
-ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts cpdup curl portmaster rsync tree unrar unzip zip vim-console"
-REMOTE_DESKTOP_PACKAGES="virtualbox-ose py27-daemon py27-psycopg2"
+FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
+ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py27-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
+ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
+VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
+VMS_CONF_PATH=${VMS_CONF_PATH:-"/usr/local/etc/fdo/vms.conf"}
+VMS_ROOT_FS="fdo-vms"
+VMS_ROOT_PATH="/${VMS_ROOT_FS}"
+VM_RESOURCES_DIRNAME="resources"
+VM_TEMPLATES_DIRNAME="templates"
+VM_INSTANCES_DIRNAME="instances"
+VM_RESOURCES_PATH="${VMS_ROOT_PATH}/${VM_RESOURCES_DIRNAME}"
+VM_NAME_MIN=3
+VM_NAME_MAX=30
+VM_MIN_CORES=1
+VM_MAX_CORES=16
+VM_MIN_MEM_SIZE_MB=128
+VM_MAX_MEM_SIZE_MB=65536
+VM_MIN_IMAGE_SIZE_GB=1
+VM_MAX_IMAGE_SIZE_GB=16384
+VM_DEFAULT_SECTOR_SIZE=4096
+VM_VNC_PORT_NUM_START=6000
+VM_DEFAULT_NIC_DRIVER="e1000"
+VM_DEFAULT_BOOT_LOADER="UEFI"
+VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
 SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
 DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
@@ -155,15 +178,15 @@ usage ()
 	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-jail-from-recipe dns_cache dns-cache dns_cache${NRML}"
 	echo -e ""
 	echo -e ""
-	echo -e "${LCYN}    ---- REMOTE DESKTOP MANAGEMENT ----${NRML}"
+	echo -e "${LCYN}    ---- VM MANAGEMENT ----${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-remote-desktops${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-vms${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-remote-desktop-template template_name${NRML}"
-	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-remote-desktop-template Windows7${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-vm-template template_name${NRML}"
+	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-vm-template Win7${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-remote-desktop-instance template_name vnc_port_offset vnc_password${NRML}"
-	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-remote-desktop-instance Windows7 01 opensesame${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-vm-instance template_name vm_name${NRML}"
+	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-vm-instance Win7 Legacy_Software${NRML}"
 	echo -e ""
 }
 
@@ -223,7 +246,7 @@ readee ()
 				fi
 
 				# Test for illegal option flags
-				if [ `echo "${ARG}" | cut -c1` = "-" ]
+				if [ "`echo ${ARG} | cut -c1`" = "-" ]
 				then
 					echo -e "readee: Illegal option "`echo "${ARG}" | cut -c1-2`
 					return 2
@@ -629,6 +652,12 @@ get_enabled_nat_services ()
 
 }
 
+get_file_size_in_gigabytes ()
+{
+	FILE_SIZE_IN_BYTES=`ls -l ${1} | awk '{print $5}'`
+	FILE_SIZE_IN_GB=`echo "${FILE_SIZE_IN_BYTES} / 1024 / 1024 / 1024" | bc`
+}
+
 get_jail_id_from_name ()
 {
 	# ${1} is jail name
@@ -642,6 +671,47 @@ get_jail_id_from_name ()
 	fi
 	JAIL_ID=`cat ${JAIL_ID_FILE}`
 
+}
+
+get_next_vnc_port_num ()
+{
+
+	VNC_PORT_NUM=-1
+	VNC_PORT_NUM_TEMP=${VM_VNC_PORT_NUM_START}
+	while [ ${VNC_PORT_NUM} -lt 0 ]
+	do
+		RESULT1=`sockstat -Llq -P tcp -p ${VNC_PORT_NUM_TEMP}`
+		RESULT2=0
+
+		INDEX_TEST=0
+		while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${INDEX_TEST}` != "null" ]
+		do
+			PORT_NUM_TEST=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${INDEX_TEST}.vnc_port`
+			if [ "${PORT_NUM_TEST}" = "${VNC_PORT_NUM_TEMP}" ]
+			then
+				RESULT2=$(( ${RESULT2} +1 ))
+			fi
+			INDEX_TEST=$(( ${INDEX_TEST} +1 ))
+		done
+
+		INDEX_TEST=0
+		while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .instances.${INDEX_TEST}` != "null" ]
+		do
+			PORT_NUM_TEST=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .instances.${INDEX_TEST}.vnc_port`
+			if [ "${PORT_NUM_TEST}" = "${VNC_PORT_NUM_TEMP}" ]
+			then
+				RESULT2=$(( ${RESULT2} +1 ))
+			fi
+			INDEX_TEST=$(( ${INDEX_TEST} +1 ))
+		done
+
+		if [ "${RESULT1}" != "" ] || [ ${RESULT2} -gt 0 ]
+		then
+			VNC_PORT_NUM_TEMP=$((VNC_PORT_NUM_TEMP + 1))
+		else
+			VNC_PORT_NUM=${VNC_PORT_NUM_TEMP}
+		fi
+	done
 }
 
 test_num_mandatory_sub_args ()
@@ -858,6 +928,29 @@ test_valid_simple_url ()
 
 }
 
+test_valid_alpha_numeric_string ()
+{
+
+	TEST_CASE="${1}"
+	MIN_VALID_CHARS=${2}
+	MAX_VALID_CHARS=${3}
+
+	VALID_ALPHA_NUMERIC_STRING="yes"
+
+	if [ ${MIN_VALID_CHARS} -eq 0 ] && [ "${TEST_CASE}" = "" ]
+	then
+		return 0
+	fi
+
+	IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed "s/^[a-zA-Z0-9 ]\{${MIN_VALID_CHARS},${MAX_VALID_CHARS}\}//" | wc -L`
+	if [ ${IS_SYNTAX_OK}  -ne 0 ]
+	then
+		VALID_ALPHA_NUMERIC_STRING="no"
+		return 2
+	fi
+
+}
+
 test_valid_ldap_dn ()
 {
 
@@ -878,6 +971,32 @@ test_valid_ldap_dn ()
 		return 2
 	fi
 
+}
+
+test_valid_vm_name ()
+{
+	TEST_CASE="${1}"
+
+	VALID_VM_NAME="yes"
+
+	if [ "${TEST_CASE}" = "null" ] || [ "${TEST_CASE}" = "all" ] || [ "${TEST_CASE}" = "_ALL" ] || [ "${TEST_CASE}" = "" ]
+	then
+		VALID_VM_NAME="no"
+		return 1
+	fi
+
+	if [ ${#TEST_CASE} -gt ${VM_NAME_MAX} ] || [ ${#TEST_CASE} -lt ${VM_NAME_MIN} ]
+	then
+		VALID_VM_NAME="no"
+		return 2
+	fi
+
+	IS_SYNTAX_OK=`echo "${TEST_CASE}" | sed -r "s/^[a-zA-Z0-9]+(_[a-zA-Z0-9]+[a-zA-Z0-9]*)*//" | wc -L`
+	if [ ${IS_SYNTAX_OK}  -ne 0 ]
+	then
+		VALID_VM_NAME="no"
+		return 3
+	fi
 }
 
 fetch_latest_self ()
@@ -976,7 +1095,7 @@ check_repo_config ()
 		echo -e "${YELL}If this is your first host and you don't have a private remote git repo running${NRML}"
 		echo -e "${YELL}yet. Then enter 'local' at the next prompt.${NRML}\n"
 
-		pause_prompt 25
+		pause_prompt 24
 
 		# Prompt for the type of repo to use, remote or local.
 		REPO_TYPE=""
@@ -2253,14 +2372,14 @@ connect_internet ()
 
 init_host_cleanup ()
 {
+	## TODO: replace with 'git reset --hard'; see create_vm_template
 	rm -rf configs/${HOST_NAME}
-	exit 50
 }
 
 init_host ()
 {
 
-	trap 'init_host_cleanup' HUP INT QUIT KILL TERM
+	trap 'init_host_cleanup ; exit 3' HUP INT QUIT KILL TERM
 
 	# NOTE: we have to assume we only have base userland at this point. No local repo either.
 
@@ -2631,7 +2750,7 @@ init_host ()
 
 	if [ "${SERVER_TYPE}" = "remote" ]
 	then
-		sed -i "" "s/^#cloned_interfaces=\"\"/cloned_interfaces=\"${LAN_NET_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+		sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${LAN_NET_IFACE}" > /dev/null 2>&1
 	fi
 	echo "${LAN_NET_IFACE}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_lan.conf
 	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
@@ -2672,7 +2791,7 @@ init_host ()
 				if [ "${LAN_IFACE_IP_TEMP}" = "" ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} No IP address selected! Try again.\n"
-					pause_prompt 5
+					pause_prompt 8
 				else
 					echo -e "\n"
 					question_yes_no "\nYou have selected '${NRML}${LAN_IFACE_IP_TEMP}${LCYN}' as the LAN interface IP address.\nIs this correct?"
@@ -2695,7 +2814,7 @@ init_host ()
 	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
 
 	# Update hostname
-	sed -i "" "s/^hostname\=.*/hostname\=${HOST_NAME}\.${DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s/^hostname\=.*/hostname\=\"${HOST_NAME}\.${DOMAIN_NAME}\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/FDO_LAN_IP/${LAN_IFACE_IP}/g" configs/${HOST_NAME}/etc/hosts
 	sed -i "" "s/FDO_HOST_NAME/${HOST_NAME}/g" configs/${HOST_NAME}/etc/hosts
 	sed -i "" "s/FDO_DOMAIN_NAME/${DOMAIN_NAME}/g" configs/${HOST_NAME}/etc/hosts
@@ -3337,9 +3456,9 @@ init_jails ()
 		echo -e "       Aborting.\n"
 		exit 91
 	fi
- 
+
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
- 
+
 	# Get the LAN interface that the jails will run on
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
@@ -3689,7 +3808,7 @@ init_sshfs_daemon ()
 
 }
 
-init_remote_desktops ()
+init_vms ()
 {
 
 	cd /${REPO_NAME}
@@ -3714,340 +3833,11 @@ init_remote_desktops ()
 		echo -e "       Aborting.\n"
 		exit 101
 	fi
- 
+
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
- 
-	SUM_EXIT_CODE=0
-
-	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
-	pause_prompt 8
-	pkg update -f
-	pkg install -y ${REMOTE_DESKTOP_PACKAGES}
-
-	kldstat | grep vboxdrv.ko > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload vboxdrv 2> /dev/null
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-	kldstat | grep vboxnetflt.ko > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload vboxnetflt 2> /dev/null
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-	kldstat | grep vboxnetadp.ko > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload vboxnetadp 2> /dev/null
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VirtualBox kernel modules.\n       Aborting.\n"
-		exit 102
-	fi
-
-	# Get pool name to use for base of remote desktops datasets.
-	POOL_NAME=""
-	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
-	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
-	if [ ${NUM_POOLS} -lt 1 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-		exit 103
-	fi
-	if [ ${NUM_POOLS} -lt 2 ]
-	then
-		POOL_NAME=${POOLS_AVAILABLE}
-	else
-		while [ "${POOL_NAME}" = "" ]
-		do
-			dialog --no-items --no-cancel --menu "Select pool to use for remote desktop datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the remote desktops.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				POOL_NAME="${POOL_NAME_TEMP}"
-			fi
-		done
-	fi
- 
-	# Create ZFS datasets for remote desktop template
-	echo -e "\n${YELL}Creating ZFS datasets for the template ...${NRML}\n"
-	zfs list ${POOL_NAME}/vboxguests > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		zfs create -o mountpoint=/vboxguests ${POOL_NAME}/vboxguests
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-	zfs list ${POOL_NAME}/vboxguests/RemoteDesktop > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		zfs create ${POOL_NAME}/vboxguests/RemoteDesktop
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-
-	# Mount the datasets if they are not already
-	zfs mount | grep "${POOL_NAME}/vboxguests "
-	if [ ${?} -ne 0 ]
-	then
-		zfs mount ${POOL_NAME}/vboxguests
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-	zfs mount | grep "${POOL_NAME}/vboxguests/RemoteDesktop "
-	if [ ${?} -ne 0 ]
-	then
-		zfs mount ${POOL_NAME}/vboxguests/RemoteDesktop
-	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
-
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS datasets for the remote"
-		echo -e "       desktops.\n       Aborting.\n"
-		exit 104
-	fi
-
-	sed -i "" "s/vboxnet_enable=\"NO\"/vboxnet_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	DEV_PATHS="uhid\* ugen\* usb\/\*"
-	for DEV_PATH in ${DEV_PATHS}
-	do
-		NEW_DEVFS_RULE="add path '${DEV_PATH}' mode 0660 group vboxusers"
-		cat configs/${HOST_NAME}/etc/devfs.rules | grep "${NEW_DEVFS_RULE}" > /dev/null 2>&1
-		if [ ${?} -ne 0 ]
-		then
-			sed -i "" "s/^\(\[host_ruleset=1\].*\)/\1\\${CARRIAGE_RETURN}${NEW_DEVFS_RULE}/" configs/${HOST_NAME}/etc/devfs.rules
-		fi
-	done
-	echo "${POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote_desktops_pool.conf
-
-	# Copy init-remote-desktops template configs to this hosts' repo profile
-	install_file_tree config-templates/init-remote-desktops configs/${HOST_NAME}/
-
-	# Ask if the auto-screen-resize feature is wanted.
-	question_yes_no "\nWould you like to enable the auto-screen-size service for this\nremote-desktops host?"
-	if [ "${ANSWER}" = "yes" ]
-	then
-
-		USES_AUTO_SCREEN_SIZE="yes"
-
-		# Get dB hostname
-		RD_DB_HOST_NAME=""
-		while [ "${RD_DB_HOST_NAME}" = "" ]
-		do
-			echo -e "\n${LCYN}Enter the hostname of the auto-screen-resize database for this${NRML}"
-			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_HOST_NAME_TEMP
-			# Check that the db hostname is a valid fully qualified host name.
-			test_valid_fqhn "${RD_DB_HOST_NAME_TEMP}"
-			if [ "${VALID_FQHN}" = "yes" ]
-			then
-				question_yes_no "\nYou have entered '${NRML}${RD_DB_HOST_NAME_TEMP}${LCYN}' as the auto-screen-resize db hostname.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					RD_DB_HOST_NAME=${RD_DB_HOST_NAME_TEMP}
-				fi
-			else
-				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db hostname can not be"
-				echo -e "       '${RD_DB_HOST_NAME_TEMP}'."
-				echo -e "       It must only contain lower case letters, numbers, periods and hyphens."
-				echo -e "       It must not begin or end with a hyphen or a period.\n"
-			fi
-		done
-
-		# Get dB name (schema)
-		RD_DB_NAME=""
-		while [ "${RD_DB_NAME}" = "" ]
-		do
-			echo -e "\n${LCYN}Enter the dB name of the auto-screen-resize database for this${NRML}"
-			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_NAME_TEMP
-			# Check that the db name is valid.
-			TEST=`echo "${RD_DB_NAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-			if [ ${TEST} -eq 0 ] && [ "${RD_DB_NAME_TEMP}" != "" ]
-			then
-				question_yes_no "\nYou have entered '${NRML}${RD_DB_NAME_TEMP}${LCYN}' as the auto-screen-resize dB name.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					RD_DB_NAME=${RD_DB_NAME_TEMP}
-				fi
-			else
-				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize dB name can not be"
-				echo -e "       '${RD_DB_NAME_TEMP}'."
-				echo -e "       It must only contain lower case letters, numbers, periods, underscores"
-				echo -e "       and hyphens."
-				echo -e "       It must not begin or end with a hyphen or a period.\n"
-			fi
-		done
-
-		# Get dB username
-		RD_DB_USERNAME=""
-		while [ "${RD_DB_USERNAME}" = "" ]
-		do
-			echo -e "\n${LCYN}Enter the username of the auto-screen-resize database for this${NRML}"
-			readee -p "${LCYN}remote-desktops host: ${NRML}" RD_DB_USERNAME_TEMP
-			# Check that the db username is valid.
-			TEST=`echo "${RD_DB_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-			if [ ${TEST} -eq 0 ] && [ "${RD_DB_USERNAME_TEMP}" != "" ]
-			then
-				question_yes_no "\nYou have entered '${NRML}${RD_DB_USERNAME_TEMP}${LCYN}' as the auto-screen-resize db username.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					RD_DB_USERNAME=${RD_DB_USERNAME_TEMP}
-				fi
-			else
-				echo -e "\n${LRED}ERROR:${NRML} The auto-screen-resize db username can not be"
-				echo -e "       '${RD_DB_USERNAME_TEMP}'."
-				echo -e "       It must only contain lower case letters, numbers, periods, underscores"
-				echo -e "       and hyphens."
-				echo -e "       It must not begin or end with a hyphen, underscore or a period.\n"
-			fi
-		done
-
-		# Get dB user password
-		RD_DB_USER_PASSWORD=""
-		while [ "${RD_DB_USER_PASSWORD}" = "" ]
-		do
-			echo -e ""
-			readee -s -p "${LCYN}Enter dB user password:    ${NRML}" RD_DB_USER_PASSWORD_TEMP1
-			readee -s -p "${LCYN}Re-enter dB user password: ${NRML}" RD_DB_USER_PASSWORD_TEMP2
-
-			if [ "${RD_DB_USER_PASSWORD_TEMP1}" != "${RD_DB_USER_PASSWORD_TEMP2}" ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Password mismatch, try again!\n"
-			elif [ "${RD_DB_USER_PASSWORD_TEMP1}" = "" ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Password not entered, try again!\n"
-			else
-				RD_DB_USER_PASSWORD=${RD_DB_USER_PASSWORD_TEMP1}
-			fi
-		done
-
-		# Get remote-desktops hostname
-		RD_HOST_NAME=""
-		while [ "${RD_HOST_NAME}" = "" ]
-		do
-			echo -e "\n${LCYN}Enter the remote-desktops hostname for this host${NRML}"
-			readee -p "(may differ from the server hostname): ${NRML}" RD_HOST_NAME_TEMP
-			# Check that the remote-desktops hostname is a valid fully qualified host name.
-			test_valid_fqhn "${RD_HOST_NAME_TEMP}"
-			if [ "${VALID_FQHN}" = "yes" ]
-			then
-				question_yes_no "\nYou have entered '${NRML}${RD_HOST_NAME_TEMP}${LCYN}' as the remote-desktops hostname.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					RD_HOST_NAME=${RD_HOST_NAME_TEMP}
-				fi
-			else
-				echo -e "\n${LRED}ERROR:${NRML} The remote-desktops hostname can not be"
-				echo -e "       '${RD_HOST_NAME_TEMP}'."
-				echo -e "       It must only contain lower case letters, numbers, periods and hyphens."
-				echo -e "       It must not begin or end with a hyphen or a period.\n"
-			fi
-		done
-
-		# Substitute config variables.
-		sed -i "" "s/DB_HOST/${RD_DB_HOST_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
-		sed -i "" "s/DB_NAME/${RD_DB_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
-		sed -i "" "s/DB_USER_NAME/${RD_DB_USERNAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
-		sed -i "" "s/DB_USER_PASSWORD/${RD_DB_USER_PASSWORD}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
-		sed -i "" "s/RD_HOST/${RD_HOST_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/remote-desktops-rdscreensized-db.conf
-
-		# Enable auto-screen-size service.
-		sed -i "" "s/rdscreensized_enable=\"NO\"/rdscreensized_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-
-	else
-		USES_AUTO_SCREEN_SIZE="no"
-	fi
-
-	# Install host configs to the system
-	install_file_tree configs/${HOST_NAME} /
-
-	echo -e "\n"
-
-	if [ "${USES_AUTO_SCREEN_SIZE}" = "yes" ]
-	then
-		# Start auto-screen-size service for the first time.
-		service rdscreensized onestart
-	fi
-
-	echo -e "\n"
-
-	# Add remote desktop template user
-	pw useradd RemoteDesktop -m -s /usr/local/bin/bash -c "Remote Desktop Template User" -d /vboxguests/RemoteDesktop -G "operator vboxusers"
-
-	# Change ownership of the template VM base directory to the template user
-	chown -R RemoteDesktop:RemoteDesktop /vboxguests/RemoteDesktop
-
-	# Restart devfs
-	service devfs restart
-
-	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
-	git add configs/${HOST_NAME}
-	git commit -m "Updating host after 'init-remote-desktops'; ${HOST_NAME}."
-
-	if [ "${REPO_URI}" != "local" ]
-	then
-		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
-		git_push origin master
-		if [ $? -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
-			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
-		fi
-	fi
-
-	echo -e "\n${LGRN}Congratulations! We have now finished initialising the remote desktop subsystem.${NRML}"
-	echo -e "\n${LGRN}To create a remote desktop template, use the command:${NRML}"
-	echo -e "${LBLU}${SCRIPT_NAME} create-remote-desktop-template${NRML}\n"
-
-	cd -
-
-}
-
-create_remote_desktop_template ()
-{
-
-	RD_TEMPLATE_NAME=${1}
-
-	# Source the recipe
-	if [ "${RD_TEMPLATE_NAME}" = "" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} No template name provided.\n       Aborting.\n"
-		exit 110
-	fi
-
-	cd /${REPO_NAME}
-
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
-		exit 111
-	fi
-
-	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/remote_desktops_pool.conf 2> /dev/null`
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsytem is not initialised."
-		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
-		exit 112
-	fi
-
-	zfs list ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The template '${RD_TEMPLATE_NAME}' already exists.\n"
-		echo -e "       To delete it, use the command:"
-		echo -e "       ${LBLU}zfs destroy ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}${NRML}\n"
-		echo -e "       Aborting.\n"
-		exit 113
-	fi
 
 	# Get the LAN interface for this host
+	## TODO: replace with UCL config file
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -4068,454 +3858,213 @@ create_remote_desktop_template ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${CONFIG_LAN_NET_IFACE}' does not provide a valid '${SERVERS_LAN_SUBNET_C}.*' subnet!\n       Aborting.\n"
-		exit 114
+		exit 1
 	fi
 
-	# Get the LAN IP address of this host
-	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
+	SUM_EXIT_CODE=0
+
+	# Install required packages
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	pkg update -f
+	pkg install -y ${VM_SUBSYSTEM_PACKAGES}
+
+	# Load required kernel modules
+	kldstat -n if_tap > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload if_tap 2> /dev/null
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	kldstat -n if_bridge > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload if_bridge 2> /dev/null
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	kldstat -n bridgestp > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload bridgestp 2> /dev/null
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	kldstat -n vmm > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload vmm 2> /dev/null
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VM subsystem kernel modules.\n       Aborting.\n"
+		exit 102
+	fi
+
+	# Get next available bridge id
+	VM_BRIDGE_ID=-1
+	VM_BRIDGE_ID_TEMP=0
+	while [ ${VM_BRIDGE_ID} -lt 0 ]
 	do
-		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
-		HOST_LAN_IP="${IP_ADDRESS}"
-		break
+		ifconfig "bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "ifconfig_bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			VM_BRIDGE_ID_TEMP=$((VM_BRIDGE_ID_TEMP + 1))
+		else
+			VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
+		fi
 	done
 
-	# Get IP to use for VNC.
-	VNC_HOST_IP=""
-	NUM_HOST_LAN_IP=`echo ${HOST_LAN_IP_ADDRESSES} | wc -w`
-	if [ ${NUM_HOST_LAN_IP} -lt 2 ]
+	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	# Setup initial bridge interface
+	sysctl net.link.tap.up_on_open=1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
 	then
-		VNC_HOST_IP=${HOST_LAN_IP_ADDRESSES}
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n       Aborting.\n"
+		ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
+		ifconfig ${VM_BRIDGE_IFACE} deletem ${LAN_NET_IFACE} > /dev/null 2>&1
+		ifconfig ${VM_BRIDGE_IFACE} destroy > /dev/null 2>&1
+		exit 2
+	fi
+
+	# Get pool name to use for base of VM image datasets.
+	POOL_NAME=""
+	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+	if [ ${NUM_POOLS} -lt 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
+		exit 103
+	fi
+	if [ ${NUM_POOLS} -lt 2 ]
+	then
+		POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${VNC_HOST_IP}" = "" ]
+		while [ "${POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
-			VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			dialog --no-items --no-cancel --menu "Select pool to use for VM image datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the VM image datasets.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				VNC_HOST_IP="${VNC_HOST_IP_TEMP}"
+				POOL_NAME="${POOL_NAME_TEMP}"
 			fi
 		done
 	fi
-
-	question_yes_no "\nIs this template for a 64bit OS?"
-	IS_GUEST_OS_64BIT="${ANSWER}"
-
-	question_yes_no "\nIs this a Windows XP (or older) guest OS?"
+ 
+	question_yes_no "\nShould the VM resources directory be accessible by non-root users [RECOMMENDED]?"
 	if [ "${ANSWER}" = "yes" ]
 	then
-		IS_GUEST_OS_WINXP_OR_OLDER="yes"
-		STORAGE_CTL_NAME="IDE"
-		STORAGE_CTL_TYPE="ide"
-		STORAGE_CTL_CHIPSET="PIIX4"
-		STORAGE_CTL_HOST_IOCACHE="on"
-		VBOX_NIC_TYPE="Am79C973"
-	else
-		IS_GUEST_OS_WINXP_OR_OLDER="no"
-		STORAGE_CTL_NAME="SATA"
-		STORAGE_CTL_TYPE="sata"
-		STORAGE_CTL_CHIPSET="IntelAHCI"
-		STORAGE_CTL_HOST_IOCACHE="off"
-		VBOX_NIC_TYPE="82540EM"
+		chmod 777 "${VMS_ROOT_PATH}/${VM_RESOURCES_DIRNAME}" > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
 	fi
 
-	VM_MEM_SIZE_MB=""
-	while [ "${VM_MEM_SIZE_MB}" = "" ]
-	do
+	# Create ZFS datasets for VM images
+	echo -e "\n${YELL}Creating ZFS datasets for VM images...${NRML}\n"
+	zfs list ${POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${POOL_NAME}/${VMS_ROOT_FS}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create -o recordsize=512k ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	# Mount the datasets if they are not already
+	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS} "
+	if [ ${?} -ne 0 ]
+	then
+		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
+	if [ ${?} -ne 0 ]
+	then
+		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
+	if [ ${?} -ne 0 ]
+	then
+		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
+	if [ ${?} -ne 0 ]
+	then
+		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+	fi
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS datasets for the"
+		echo -e "       VM subsystem.\n       Aborting.\n"
+		exit 104
+	fi
+
+	# Ask if the fdo_vms service should be enabled on startup.
+	question_yes_no "\nWould you like the VM service to be enabled on system startup?"
+	if [ "${ANSWER}" = "yes" ]
+	then
 		echo -e ""
-		readee -p "${LCYN}Enter the memory size in MB of the VM template: ${NRML}" VM_MEM_SIZE_MB_TEMP
-		# Check that the VM memory size contains only numbers.
-		test_valid_integer "${VM_MEM_SIZE_MB_TEMP}" 100 1000000
-		if [ "${VALID_INTEGER}" = "yes" ]
-		then
-			question_yes_no "\nYou have entered '${NRML}${VM_MEM_SIZE_MB_TEMP}${LCYN}' as the VM memory size.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB_TEMP}
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The VM memory size can not be '${VM_MEM_SIZE_MB}'."
-			echo -e "       It must contain only numbers, greater than 100 and less than 1000000.\n"
-		fi
-	done
+		sysrc -f configs/${HOST_NAME}/etc/rc.conf fdo_vms_enable="YES" > /dev/null 2>&1
+	fi
 
-	# Prompt for the method; install or copy from existing VDI image.
-	INSTALL_OR_COPY_VDI=""
-	while [ "${INSTALL_OR_COPY_VDI}" = "" ]
-	do
-		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing VDI image?${NRML}"
-		readee -p "${LCYN}(install|copy): ${NRML}" INSTALL_OR_COPY_VDI_TEMP
-		# Check input validation.
-		if [ "${INSTALL_OR_COPY_VDI_TEMP}" = "install" ] || [ "${INSTALL_OR_COPY_VDI_TEMP}" = "copy" ]
-		then
-			INSTALL_OR_COPY_VDI="${INSTALL_OR_COPY_VDI_TEMP}"
-		fi
-	done
-
+	# Copy init-vms template configs to this hosts' repo profile
+	install_file_tree config-templates/init-vms configs/${HOST_NAME}/
 	echo -e ""
 
-	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
-	then
-		# Get the VMs' HDD size (in MB).
-		VM_HDD_SIZE_MB=""
-		while [ "${VM_HDD_SIZE_MB}" = "" ]
-		do
-			echo -e ""
-			readee -p "${LCYN}Enter the maximum size in MB of the VDI (VBox HDD): ${NRML}" VM_HDD_SIZE_MB_TEMP
-			# Check that the VM HDD size contains only numbers.
-			test_valid_integer "${VM_HDD_SIZE_MB_TEMP}" 100 1000000
-			if [ "${VALID_INTEGER}" = "yes" ]
-			then
-				question_yes_no "\nYou have entered '${NRML}${VM_HDD_SIZE_MB_TEMP}${LCYN}' as the max VDI size.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					VM_HDD_SIZE_MB=${VM_HDD_SIZE_MB_TEMP}
-				fi
-			else
-				echo -e "\n${LRED}ERROR:${NRML} The max VDI size can not be '${VM_HDD_SIZE_MB}'."
-				echo -e "       It must contain only numbers, greater than 100 and less than 1000000.\n"
-			fi
-		done
+	# Set persitent bridge interface configuration
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_tap_load="YES" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf vmm_load="YES" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_BRIDGE_IFACE}" > /dev/null 2>&1
+	sed -i "" "s/^#ifconfig_VM_BRIDGE_IFACE=\"\"/ifconfig_${VM_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s/^#net.link.tap.up_on_open=.*/net.link.tap.up_on_open=1/" configs/${HOST_NAME}/etc/sysctl.conf
 
-		# Get the installer ISO path
-		OS_INSTALLER_ISO=""
-		while [ "${OS_INSTALLER_ISO}" = "" ]
-		do
-			# Ask for installer ISO file
-			dialog --title "Select OS installer ISO" --no-cancel --fselect / 20 80 2> ${DIALOG_OUT_FILE}
-			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
-			if [ -f "${OS_INSTALLER_ISO_TEMP}" ]
-			then
-				file "${OS_INSTALLER_ISO_TEMP}" | grep "ISO 9660" > /dev/null
-				if [ ${?} -eq 0 ]
-				then
-					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${OS_INSTALLER_ISO_TEMP}${LCYN}' as the OS installer ISO.\nIs this correct?"
-					if [ "${ANSWER}" = "yes" ]
-					then
-						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
-					fi
-				else
-					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
-					pause_prompt 5
-				fi
-			else
-				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
-				pause_prompt 5
-			fi
-		done
-	fi
-
-	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
-	then
-		# Get the existing VDI file path
-		EXISTING_VDI_PATH=""
-		while [ "${EXISTING_VDI_PATH}" = "" ]
-		do
-			# Ask for existing VDI image path
-			dialog --title "Select existing VDI image" --no-cancel --fselect / 20 80 2> ${DIALOG_OUT_FILE}
-			EXISTING_VDI_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
-			if [ -f "${EXISTING_VDI_PATH_TEMP}" ]
-			then
-				file "${EXISTING_VDI_PATH_TEMP}" | grep "VirtualBox Disk Image" > /dev/null
-				if [ ${?} -eq 0 ]
-				then
-					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${EXISTING_VDI_PATH_TEMP}${LCYN}' as the existing VDI file.\nIs this correct?"
-					if [ "${ANSWER}" = "yes" ]
-					then
-						EXISTING_VDI_PATH="${EXISTING_VDI_PATH_TEMP}"
-					fi
-				else
-					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not a VDI image!\n"
-					pause_prompt 5
-				fi
-			else
-				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
-				pause_prompt 5
-			fi
-		done
-	fi
-
-	echo -e "\n"
-
-	# Stop and unregister any existing template VM.
-	su - RemoteDesktop -c "VBoxManage list vms" | grep RemoteDesktop > /dev/null
-	if [ ${?} -eq 0 ]
-	then
-		su - RemoteDesktop -c "VBoxManage list runningvms" | awk '{print $1}' | egrep "RemoteDesktop" > /dev/null
-		if [ ${?} -eq 0 ]
-		then
-			service RemoteDesktop onestop
-		fi
-		echo -e "\n${YELL}Destroying existing template VM...${NRML}\n"
-		su - RemoteDesktop -c "VBoxManage unregistervm RemoteDesktop --delete"
-		if [ ${?} -ne 0 ]
-		then
-			sleep 3
-			su - RemoteDesktop -c "VBoxManage startvm RemoteDesktop --type emergencystop"
-			sleep 15
-			echo -e "\n${YELL}Forcibly destroying existing template VM...${NRML}\n"
-			su - RemoteDesktop -c "VBoxManage unregistervm RemoteDesktop --delete"
-		fi
-	fi
-
-	# Create the VM.
-	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
-	su - RemoteDesktop -c "VBoxManage createvm --name 'RemoteDesktop' --register"
-	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --memory ${VM_MEM_SIZE_MB} --acpi on --ioapic on --boot1 dvd --vram 64 --accelerate2dvideo on"
-	su - RemoteDesktop -c "VBoxManage modifyvm RemoteDesktop --nic1 bridged --bridgeadapter1 ${LAN_NET_IFACE} --nictype1 ${VBOX_NIC_TYPE} --cableconnected1 on"
-	su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --vrde on --vrdeport 6000 --vrdeaddress ${VNC_HOST_IP} --vrdeproperty VNCPassword=vncpassword"
-	su - RemoteDesktop -c "VBoxManage sharedfolder add RemoteDesktop --name SharedTemp --hostpath /remote-desktops/RemoteDesktop"
-
-	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
-	then
-		# Create the VMs' HDD.
-		su - RemoteDesktop -c "VBoxManage createhd --filename /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi --size ${VM_HDD_SIZE_MB}"
-	fi
-
-	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
-	then
-		# Copy the existing VDI to the correct path and chown (change UID/GID ownership).
-		echo -e "\n${YELL}Copying existing VDI to template VM path...${NRML}\n"
-		cp "${EXISTING_VDI_PATH}" /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi
-		chown RemoteDesktop:RemoteDesktop /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi
-	fi
-
-	su - RemoteDesktop -c "VBoxManage storagectl 'RemoteDesktop' --name '${STORAGE_CTL_NAME} Controller' --add ${STORAGE_CTL_TYPE} --controller ${STORAGE_CTL_CHIPSET} --hostiocache ${STORAGE_CTL_HOST_IOCACHE} --portcount 2"
-	su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 0 --device 0 --type hdd --medium /vboxguests/RemoteDesktop/VirtualBox\ VMs/RemoteDesktop/RemoteDesktop.vdi"
-
-	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
-	then
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium '${OS_INSTALLER_ISO}'"
-	else
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium emptydrive"
-	fi
-
-	if [ "${IS_GUEST_OS_64BIT}" = "yes" ]
-	then
-		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --longmode on"
-	else
-		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --longmode off"
-	fi
-
-	if [ "${IS_GUEST_OS_WINXP_OR_OLDER}" = "yes" ]
-	then
-		# Do nothing yet.
-	else
-		su - RemoteDesktop -c "VBoxManage modifyvm 'RemoteDesktop' --audiocontroller hda"
-	fi
-
-	# Start template for first time.
-	touch /var/log/RemoteDesktop.log
-	chown RemoteDesktop:RemoteDesktop /var/log/RemoteDesktop.log
-	service RemoteDesktop onestart
-
-	# Inform user that next step is to login via VNC to the template and perfrom the installation / configuration.
-	echo -e "\n${YELL}The remote desktop template VM should now be running.${NRML}"
-	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
-	then
-		echo -e "${YELL}The OS installer ISO should also be attached and booted into ${NRML}"
-		echo -e "${YELL}the installation environment.${NRML}"
-		echo -e "${YELL}You should now install the guest OS and reboot it when finished.${NRML}\n"
-	fi
-	echo -e "${YELL}Connect to the remote desktop template using a VNC viewer ${NRML}"
-	echo -e "${YELL}(e.g. SSVNC) using the following:${NRML}\n"
-	echo -e "${LGRN}VNC URI:      ${VNC_HOST_IP}:6000${NRML}"
-	echo -e "${LGRN}VNC Password: vncpassword\n\n"
-	
-	# Pause for user to finish configuring template.
-	if [ "${INSTALL_OR_COPY_VDI}" = "install" ]
-	then
-		question_yes "\nAre you finished installing the guest OS for this remote desktop template?"
-	fi
-
-	if [ "${INSTALL_OR_COPY_VDI}" = "copy" ]
-	then
-		question_yes "\nAre you finished setting up the guest OS for this remote desktop template?"
-		question_yes "\nHave you considered uninstalling any previous VirtualBox guest additions\nfrom this guest before proceeding?"
-	fi
-
-	# Optionally install guest additions.
-	question_yes_no "\nWould you like to install guest additions into the remote desktop template? [RECOMMENDED]"
-	if [ "${ANSWER}" = "yes" ]
-	then
-		VBOX_VERSION=`pkg info virtualbox-ose | head -1 | cut -d_ -f 1 | cut -d- -f3`
-		GUEST_ADDITIONS_ISO="VBoxGuestAdditions_${VBOX_VERSION}.iso"
-
-		echo -e "\n${YELL}Downloading guest additions DVD ISO...${NRML}\n"
-		fetch -o /vboxguests/${GUEST_ADDITIONS_ISO} http://download.virtualbox.org/virtualbox/${VBOX_VERSION}/${GUEST_ADDITIONS_ISO}
-
-		su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl '${STORAGE_CTL_NAME} Controller' --port 1 --device 0 --type dvddrive --medium /vboxguests/${GUEST_ADDITIONS_ISO}"
-
-		echo -e "\n${YELL}The guest additions DVD ISO should now be available in the guest OS.${NRML}"
-		echo -e "${YELL}Please install the guest additions and reboot the guest OS.${NRML}\n\n"
-		question_yes "Finished installing guest additions and rebooted the guest OS?"
-		su - RemoteDesktop -c "VBoxManage controlvm 'RemoteDesktop' setvideomodehint 1272 700 32"
-	fi
-
-	echo -e "\n${YELL}Now you may configure and install software as necessary into the ${NRML}"
-	echo -e "${YELL}remote desktop template. Reboot when done...${NRML}\n"
-
-	STILL_CONFIGURING="yes"
-	while [ "${STILL_CONFIGURING}" = "yes" ]
-	do
-		while true
-			do
-			echo -e "${LCYN}Would you like to insert a DVD ISO into the remote desktop template ${NRML}"
-			readee -p "${LCYN}or have you finished setting up the template (insert/finish): ${NRML}" ANSWER
-			if [ "${ANSWER}" = "insert" ] || [ "${ANSWER}" = "finish" ]
-			then
-				break
-			fi
-			echo -e ""
-		done
-	
-		if [ "${ANSWER}" = "finish" ]
-		then
-			STILL_CONFIGURING="no"
-		else
-			# Ask for DVD ISO file to insert
-			dialog --fselect / 20 80 2> ${DIALOG_OUT_FILE}
-			SELECTED_FILE=`cat ${DIALOG_OUT_FILE}`
-			if [ -f "${SELECTED_FILE}" ]
-			then
-				file ${SELECTED_FILE} | grep "ISO 9660" > /dev/null
-				if [ ${?} -eq 0 ]
-				then
-					su - RemoteDesktop -c "VBoxManage storageattach 'RemoteDesktop' --storagectl 'IDE Controller' --port 1 --device 0 --type dvddrive --medium ${SELECTED_FILE}"
-					echo -e "\n\n${YELL}The selected ISO should now be inserted and available in the guest OS.${NRML}\n"
-				else
-					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
-					pause_prompt 5
-				fi
-			else
-				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
-				pause_prompt 5
-			fi
-		fi
-	done
-
-	service RemoteDesktop onestop
-	zfs snapshot ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME}
-
-	echo -e "\n${LGRN}Congratulations! The remote desktop template '${RD_TEMPLATE_NAME}'${NRML}"
-	echo -e "${LGRN}is ready to use.${NRML}\n"
-	echo -e "${LGRN}To setup a new remote desktop, use the command:${NRML}"
-	echo -e "${LBLU}${SCRIPT_NAME} create-remote-desktop-instance${NRML}\n"
-
-	cd -
-
-}
-
-create_remote_desktop_instance ()
-{
-
-	RD_TEMPLATE_NAME=$1
-	VNC_OFFSET=$2
-	VNC_PASSWORD=$3
-	RD_NAME=${RD_TEMPLATE_NAME}${VNC_OFFSET}
-
-	cd /${REPO_NAME}
-
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the 'init-host' subcommand first."
-		echo -e "       Aborting.\n"
-		exit 120
-	fi
-
-	# Check that the remote desktops subsystem is initialised and therefore we know the pool name.
-	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/remote_desktops_pool.conf 2> /dev/null`
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears that the remote desktops subsystem is not initialised."
-		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-remote-desktops${NRML}\n       Aborting.\n"
-		exit 121
-	fi
-
-	# Check that the template exists
-	zfs list ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The remote desktop template '${RD_TEMPLATE_NAME}' does not exist!"
-		echo -e "       Please use the 'create-remote-desktop-template' subcommand first."
-		echo -e "       Aborting.\n"
-		exit 122
-	fi
-
-	# Check that the VNC offset is not already in use
-	PREVIOUS_IFS=${IFS}
-	IFS=${CARRIAGE_RETURN}
-	VBOX_CONFIGS=`ls /vboxguests/*/VirtualBox\ VMs/*/*.vbox`
-	PORT_USED_COUNT=0
-	for VBOX_CONFIG in ${VBOX_CONFIGS} ; do egrep "name=\"TCP\/Ports\" value=\"60${VNC_OFFSET}\"" "${VBOX_CONFIG}" > /dev/null ; if [ ${?} -eq 0 ] ; then PORT_USED_COUNT=$(( ${PORT_USED_COUNT} + 1 )) ; fi ;done
-	if [ ${PORT_USED_COUNT} -gt 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The VNC port offset is already in use!\n       Aborting.\n"
-		exit 123
-	fi
-	IFS=${PREVIOUS_IFS}
-
-	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
-	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the 'update-config' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
-		exit 124
-	fi
-
-	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
-
-	zfs clone ${POOL_NAME}/vboxguests/RemoteDesktop@${RD_TEMPLATE_NAME} ${POOL_NAME}/vboxguests/${RD_NAME}
-
-	mv "/vboxguests/${RD_NAME}/VirtualBox VMs/RemoteDesktop" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}"
-	mv "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/RemoteDesktop.vbox" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/${RD_NAME}.vbox"
-	mv "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/RemoteDesktop.vbox-prev" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/${RD_NAME}.vbox-prev"
-	mv "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/RemoteDesktop.vdi" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/${RD_NAME}.vdi"
-
-	sed -i "" "s/RemoteDesktop/${RD_NAME}/g" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/${RD_NAME}.vbox"
-	sed -i "" "s/RemoteDesktop/${RD_NAME}/g" "/vboxguests/${RD_NAME}/VirtualBox VMs/${RD_NAME}/${RD_NAME}.vbox-prev"
-
-	find /vboxguests/${RD_NAME}/.kde -exec sed -i "" "s/RemoteDesktop/${RD_NAME}/g" {} \; 2> /dev/null
-	find /vboxguests/${RD_NAME}/.kde4 -exec sed -i "" "s/RemoteDesktop/${RD_NAME}/g" {} \; 2> /dev/null
-	find /vboxguests/${RD_NAME}/.config -exec sed -i "" "s/RemoteDesktop/${RD_NAME}/g" {} \; 2> /dev/null
-	find /vboxguests/${RD_NAME}/.VirtualBox -exec sed -i "" "s/RemoteDesktop/${RD_NAME}/g" {} \; 2> /dev/null
-
-	cpdup /usr/local/etc/rc.d/RemoteDesktop /usr/local/etc/rc.d/${RD_NAME}
-	sed -i "" "s/RemoteDesktop/${RD_NAME}/g" /usr/local/etc/rc.d/${RD_NAME}
-
-	pw useradd -n ${RD_NAME} -c "Remote Desktop ${VNC_OFFSET}" -d /vboxguests/${RD_NAME} -G vboxusers -s /usr/local/bin/bash
-	chown -R ${RD_NAME}:${RD_NAME} /vboxguests/${RD_NAME}
-
-	su - ${RD_NAME} -c "/usr/local/bin/VBoxManage setproperty vrdeextpack VNC"
-	su - ${RD_NAME} -c "/usr/local/bin/VBoxManage modifyvm ${RD_NAME} --vrdeport 60${VNC_OFFSET}"
-	su - ${RD_NAME} -c "/usr/local/bin/VBoxManage modifyvm ${RD_NAME} --vrdeproperty VNCPassword=${VNC_PASSWORD}"
-	su - ${RD_NAME} -c "/usr/local/bin/VBoxManage modifyvm ${RD_NAME} --macaddress1 auto"
-
-	cat configs/${HOST_NAME}/etc/rc.conf | grep ${RD_NAME}
-	if [ $? != 0 ]
-	then
-		echo "${RD_NAME}_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
-	fi
-
-	touch /var/log/${RD_NAME}.log
-	chown ${RD_NAME}:${RD_NAME} /var/log/${RD_NAME}.log
+	# Store subsystem configuration details
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.pool_name "${POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_id "${VM_BRIDGE_ID}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_net_iface "${LAN_NET_IFACE}"
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
-	git commit -m "Updating host after 'create-remote-desktop-instance' for '${RD_NAME}'; ${HOST_NAME}."
+	git commit -m "Updating host after 'init-vms'; ${HOST_NAME}."
 
 	if [ "${REPO_URI}" != "local" ]
 	then
@@ -4528,9 +4077,1821 @@ create_remote_desktop_instance ()
 		fi
 	fi
 
-	echo -e "\n${LGRN}Congratulations! We have now finished creating the remote desktop '${RD_NAME}'.${NRML}"
-	echo -e "\n${LGRN}To start the remote desktop, use the command:${NRML}"
-	echo -e "${LBLU}service ${RD_NAME} start${NRML}\n"
+	echo -e "\n${LGRN}Congratulations! We have now finished initialising the VM subsystem.${NRML}"
+	echo -e "\n${LGRN}To create a template VM, use the command:${NRML}"
+	echo -e "${LBLU}${SCRIPT_NAME} create-vm-template${NRML}\n"
+
+	cd -
+
+}
+
+create_vm_template_cleanup ()
+{
+	if [ ${CREATE_VM_TEMPLATE_MODIFIED} = true ]
+	then
+		SUM_EXIT_CODE=0
+
+		# Stop the template VM.
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+		# Undo temporary network configuration.
+		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+		# Destroy any ZFS filesystems that were created.
+		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "`git status -s`" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_CREATE_VM_TEMPLATE}
+			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		fi
+
+		if [ ${SUM_EXIT_CODE} -gt 0 ]
+		then
+			echo -e "\n${ORGN}WARNING: ${NRML}there was an error during cleanup of create-vm-template!\n"
+		fi
+	fi
+
+	echo -e "\n${ORNG}Aborting.${NRML}\n"
+}
+
+create_vm_instance_cleanup ()
+{
+	if [ ${CREATE_VM_INSTANCE_MODIFIED} = true ]
+	then
+		SUM_EXIT_CODE=0
+
+		# Stop the instance VM.
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+		# Undo temporary network configuration.
+		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+		# Destroy any ZFS filesystems that were created.
+		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "`git status -s`" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_CREATE_VM_INSTANCE}
+			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		fi
+
+		if [ ${SUM_EXIT_CODE} -gt 0 ]
+		then
+			echo -e "\n${ORGN}WARNING: ${NRML}there was an error during cleanup of create-vm-instance!\n"
+		fi
+	fi
+
+	echo -e "\n${ORNG}Aborting.${NRML}\n"
+}
+
+create_vm_image_handler ()
+{
+	VM_IMAGES_FINISHED=false
+	while [ ${VM_IMAGES_FINISHED} = false ]
+	do
+		SUM_EXIT_CODE=0
+		while true
+		do
+			echo -e "\n${YELL}! You may now prepare the VM ${VM_TYPE} '${VM_NAME}' !${NRML}\n"
+			echo -e "${LCYN}Choose from the following options:${NRML}\n"
+			echo -e "${LCYN}  restart - Restart the VM (stop / start).${NRML}"
+			echo -e "${LCYN}  insert  - Attach an additional ISO image (CD/DVD/USB).${NRML}"
+			echo -e "${LCYN}  eject   - Eject an ISO image (CD/DVD/USB).${NRML}"
+			echo -e "${LCYN}  attach  - Attach an additional disk image.${NRML}"
+			echo -e "${LCYN}  detach  - Detach an additional disk image.${NRML}"
+			echo -e "${LCYN}  list    - List additional images.${NRML}"
+			echo -e "${LCYN}  finish  - When ${VM_TYPE} configuration is finished.${NRML}"
+			echo -e "${LCYN}  abort   - Abort the create ${VM_TYPE} operation.${NRML}\n"
+			readee -p "${LCYN}Choose action (restart|insert|eject|attach|detach|list|finish|abort): ${NRML}" ANSWER
+			if [ "${ANSWER}" = "restart" ] \
+			|| [ "${ANSWER}" = "insert" ] \
+			|| [ "${ANSWER}" = "eject" ] \
+			|| [ "${ANSWER}" = "attach" ] \
+			|| [ "${ANSWER}" = "detach" ] \
+			|| [ "${ANSWER}" = "list" ] \
+			|| [ "${ANSWER}" = "finish" ] \
+			|| [ "${ANSWER}" = "abort" ]
+			then
+				break
+			fi
+			echo -e ""
+		done
+
+
+		if [ "${ANSWER}" = "abort" ]
+		then
+			question_yes_no "\nAre you sure you want to abort? All changes will be lost."
+			if [ "${ANSWER}" = "yes" ]
+			then
+				CREATE_VM_CLEANUP_FUNC="create_vm_${VM_TYPE}_cleanup"
+				${CREATE_VM_CLEANUP_FUNC}
+				exit 1
+			fi
+		fi
+
+
+		if [ "${ANSWER}" = "finish" ]
+		then
+			question_yes_no "\nAre you sure you are finished preparing the VM ${VM_TYPE}?\nThe next step is to shutdown and save the ${VM_TYPE} for use."
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_IMAGES_FINISHED=true
+			fi
+		fi
+
+
+		if [ "${ANSWER}" = "restart" ]
+		then
+			echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
+			question_yes "Proceed?"
+
+			# Stop the VM.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+			# Pause for 4 seconds, to allow I/O to settle.
+			sleep 4
+
+			# Start the VM.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+		fi
+
+
+		if [ "${ANSWER}" = "list" ]
+		then
+
+			# Retrieve existing image types (assume 'null' is empty slot).
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			IMAGE_2_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize`
+
+			echo -e ""
+			echo -e "${LGRN}Images:${NRML}"
+			echo -e ""
+			echo -e "${GREY}==============================================================================${NRML}"
+			echo -e "${NRML}Slot Type  Sector-size Filename                                               ${NRML}"
+			echo -e "${GREY}==============================================================================${NRML}"
+
+			case "${IMAGE_1_TYPE}" in
+				ahci-cd)
+					printf "%-5s%-6s%-12s%-55s\n" "1" "ISO" "N/A" "${IMAGE_1_FILENAME}"
+					;;
+				ahci-hd)
+					printf "%-5s%-6s%-12s%-55s\n" "1" "Disk" "${IMAGE_1_SECTOR_SIZE}" "${IMAGE_1_FILENAME}"
+					;;
+				null)
+					printf "%-5s%-6s%-12s%-55s\n" "1" "Empty" "" ""
+					;;
+			esac
+
+			echo -e "${GREY}------------------------------------------------------------------------------${NRML}"
+
+			case "${IMAGE_2_TYPE}" in
+				ahci-cd)
+					printf "%-5s%-6s%-12s%-55s\n" "2" "ISO" "N/A" "${IMAGE_2_FILENAME}"
+					;;
+				ahci-hd)
+					printf "%-5s%-6s%-12s%-55s\n" "2" "Disk" "${IMAGE_2_SECTOR_SIZE}" "${IMAGE_2_FILENAME}"
+					;;
+				null)
+					printf "%-5s%-6s%-12s%-55s\n" "2" "Empty" "" ""
+					;;
+			esac
+
+			echo -e "${GREY}------------------------------------------------------------------------------${NRML}\n"
+
+			pause_prompt 16
+
+		fi
+
+
+		if [ "${ANSWER}" = "attach" ]
+		then
+			# Retrieve existing image types (assume 'null' is empty slot).
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+
+			# Check that we have an available slot.
+			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} There are no available slots.\n       Consider detaching a disk image or ejecting an ISO image.\n"
+				continue
+			fi
+
+			# Ask if the newly attached image is a new disk or existing disk.
+			question_yes_no "\nDoes the disk image already exist? (Answer 'no' to create new disk)."
+			if [ "${ANSWER}" = "yes" ]
+			then
+				ATTACH_EXISTING_IMAGE=true
+
+				# Ask for next disk image file to attach.
+				ATTACH_IMAGE_FILE=""
+				while [ "${ATTACH_IMAGE_FILE}" = "" ]
+				do
+					dialog --title "Select disk image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+					ATTACH_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
+					if [ -e "${ATTACH_IMAGE_FILE_TEMP}" ]
+					then
+						file "${ATTACH_IMAGE_FILE_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+						if [ ${?} -ne 0 ]
+						then
+							echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid disk image!\n"
+							pause_prompt 8
+						fi
+						echo -e "\n"
+						question_yes_no "\nYou have selected '${NRML}${ATTACH_IMAGE_FILE_TEMP}${LCYN}' as the next disk image to attach.\nIs this correct?"
+						if [ "${ANSWER}" = "yes" ]
+						then
+							ATTACH_IMAGE_FILE="${ATTACH_IMAGE_FILE_TEMP}"
+						fi
+					else
+						echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+						question_yes_no "\nWould you like to try again?"
+						if [ "${ANSWER}" = "no" ]
+						then
+							echo -e "\n${ORNG}Insert disk image cancelled.${NRML}\n"
+							break
+						fi
+						echo -e ""
+					fi
+				done
+			else
+				ATTACH_EXISTING_IMAGE=false
+
+				# Ask for size of new disk image.
+				ATTACH_IMAGE_SIZE_GB=0
+				while [ ${ATTACH_IMAGE_SIZE_GB} -eq 0 ]
+				do
+					echo -e ""
+					readee -p "${LCYN}Enter the size in GB of the new disk image: ${NRML}" ATTACH_IMAGE_SIZE_GB_TEMP
+					# Check that the VM disk size contains only numbers.
+					test_valid_integer "${ATTACH_IMAGE_SIZE_GB_TEMP}" ${VM_MIN_IMAGE_SIZE_GB} ${VM_MAX_IMAGE_SIZE_GB}
+					if [ "${VALID_INTEGER}" = "yes" ]
+					then
+						question_yes_no "\nYou have entered '${NRML}${ATTACH_IMAGE_SIZE_GB_TEMP}${LCYN}' GB as the disk image size.\nIs this correct?"
+						if [ "${ANSWER}" = "yes" ]
+						then
+							ATTACH_IMAGE_SIZE_GB=${ATTACH_IMAGE_SIZE_GB_TEMP}
+						fi
+					else
+						echo -e "\n${LRED}ERROR:${NRML} The disk image size can not be '${ATTACH_IMAGE_SIZE_GB_TEMP}'."
+						echo -e "       It must contain only numbers of value between ${VM_MIN_IMAGE_SIZE_GB} and ${VM_MAX_IMAGE_SIZE_GB}.\n"
+					fi
+				done
+			fi
+
+			if [ "${ATTACH_IMAGE_FILE}" != "" ] || [ ${ATTACH_EXISTING_IMAGE} = false ]
+			then
+				## TODO: ask or test for next disk sectorsize.
+				IMAGE_SECTOR_SIZE=${VM_DEFAULT_SECTOR_SIZE}
+
+				# Ask for image filename.
+				IMAGE_NAME=""
+				while [ "${IMAGE_NAME}" = "" ]
+				do
+					echo -e ""
+					readee -p "${LCYN}Enter the name of the disk image: ${NRML}" IMAGE_NAME_TEMP
+
+					# Check that the disk image name is not already in use.
+					zfs list -H ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME_TEMP} > /dev/null 2>&1
+					if [ ${?} -eq 0 ]
+					then
+						echo -e "\n${LRED}ERROR:${NRML} The disk image name is already in use.\n"
+						continue
+					fi
+
+					# Check that the disk image name contains only valid characters.
+					test_valid_vm_name "${IMAGE_NAME_TEMP}"
+					if [ "${VALID_VM_NAME}" = "yes" ]
+					then
+						question_yes_no "\nYou have entered:\n'${NRML}${IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
+						if [ "${ANSWER}" = "yes" ]
+						then
+							IMAGE_NAME=${IMAGE_NAME_TEMP}
+						fi
+					else
+						echo -e "\n${LRED}ERROR:${NRML} The disk image name is not valid."
+						echo -e "       It must only contain letters, numbers and underscores."
+						echo -e "       It must not begin or end with an underscore."
+						echo -e "       It must be between 3 and 30 characters in length.\n"
+					fi
+				done
+
+				# Image filename is concatenation of its filesystem/directory <IMAGE_NAME> and file name <IMAGE_NAME>.img
+				IMAGE_FILENAME="${IMAGE_NAME}/${IMAGE_NAME}.img"
+
+				echo -e "\n${YELL}Creating additional disk image filesystem...${NRML}\n"
+				zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} 2> /dev/null
+				if [ ${?} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Failed to create the additional disk image filesystem!\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				if [ ${ATTACH_EXISTING_IMAGE} = true ]
+				then
+					# Copy next disk image to VM directory.
+					echo -e "\n${YELL}Copying additional disk image to its filesystem...${NRML}\n"
+					cp "${ATTACH_IMAGE_FILE}" "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the disk image to its filesystem!\n"
+						zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						# Skip to top of this while loop, we don't want to do anything else.
+						continue
+					fi
+				else
+					# Create new disk image.
+					echo -e "\n${YELL}Creating additional disk image in its filesystem...${NRML}\n"
+					truncate -s "${ATTACH_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n${ORNG}WARNING:${NRML} There was a problem creating the disk image in its filesystem!\n"
+						zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						# Skip to top of this while loop, we don't want to do anything else.
+						continue
+					fi
+				fi
+
+				# Add the disk image as an ahci-hd device in the vms.conf file.
+				# Prefer to use first empty slot.
+				if [ "${IMAGE_1_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-hd\"; }"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				elif [ "${IMAGE_2_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-hd\"; }"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				else
+					echo -e "\n${ORNG}WARNING: ${NRML}No available image slots left.\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				if [ ${SUM_EXIT_CODE} -ne 0 ]
+				then
+					echo -e "\n${ORNG}WARNING: ${NRML}Something went wrong preparing next ISO image.\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
+				question_yes "Proceed?"
+
+				# Stop the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+				# Pause for 4 seconds, to allow I/O to settle.
+				sleep 4
+
+				# Start the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+			fi
+		fi
+
+
+		if [ "${ANSWER}" = "detach" ]
+		then
+			IMAGE_ITEMS=""
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+
+			CURRENT_IFS="${IFS}"
+			IFS="	"
+
+			if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
+			then
+				IMAGE_ITEMS="${IMAGE_ITEMS}	1	${IMAGE_1_FILENAME}"
+			fi
+			if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
+			then
+				IMAGE_ITEMS="${IMAGE_ITEMS}	2	${IMAGE_2_FILENAME}"
+			fi
+			if [ "${IMAGE_ITEMS}" = "" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} There are no additional disk images to detach!\n"
+				continue
+			fi
+
+			IMAGE_INDEX=-1
+			while [ ${IMAGE_INDEX} -lt 0 ]
+			do
+				dialog --menu "Select the disk image to detach:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
+				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
+				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
+				if [ -e "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME_TEMP}" ]
+				then
+					file "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid disk image!\n"
+						pause_prompt 8
+					fi
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the disk image to detach.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
+						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
+						IMAGE_NAME=`echo ${IMAGE_FILENAME} | cut -d/ -f1`
+					fi
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+					question_yes_no "\nWould you like to try again?"
+					if [ "${ANSWER}" = "no" ]
+					then
+						echo -e "\n${ORNG}Insert disk image cancelled.${NRML}\n"
+						break
+					fi
+					echo -e ""
+				fi
+			done
+
+			IFS="${CURRENT_IFS}"
+
+			if [ ${IMAGE_INDEX} -ge 0 ]
+			then
+				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
+				question_yes "Proceed?"
+
+				# Stop the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+				# Allow archiving of the detached disk image.
+				question_yes_no "\nWould you like to keep a copy of the detached disk image?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					# Ask for archive file name.
+					ARCHIVE_IMAGE_NAME=""
+					while [ "${ARCHIVE_IMAGE_NAME}" = "" ]
+					do
+						echo -e ""
+						readee -p "${LCYN}Enter the name for the archived disk image: ${NRML}" ARCHIVE_IMAGE_NAME_TEMP
+
+						# Check that the disk image name is not already in use.
+						if [ -e "${VM_RESOURCES_PATH}/${ARCHIVE_IMAGE_NAME_TEMP}.img" ]
+						then
+							echo -e "\n${LRED}ERROR:${NRML} A file already exists in the resources directory with the name:\n'${ARCHIVE_IMAGE_NAME_TEMP}.img'.\n"
+							continue
+						fi
+
+						# Check that the disk image name contains only valid characters.
+						test_valid_vm_name "${ARCHIVE_IMAGE_NAME_TEMP}"
+						if [ "${VALID_VM_NAME}" = "yes" ]
+						then
+							question_yes_no "\nYou have entered:\n'${NRML}${ARCHIVE_IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
+							if [ "${ANSWER}" = "yes" ]
+							then
+								ARCHIVE_IMAGE_NAME=${ARCHIVE_IMAGE_NAME_TEMP}
+							fi
+						else
+							echo -e "\n${LRED}ERROR:${NRML} The archive disk image name is not valid."
+							echo -e "       It must only contain letters, numbers and underscores."
+							echo -e "       It must not begin or end with an underscore."
+							echo -e "       It must be between 3 and 30 characters in length.\n"
+						fi
+					done
+
+					# Copy the detached disk image to the archive image name in the resources directory.
+					echo -e "\n${YELL}Copying detached disk image as archive to the resources directory...${NRML}\n"
+					cp "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" "${VM_RESOURCES_PATH}/${ARCHIVE_IMAGE_NAME}.img" > /dev/null 2>&1
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n${LRED}ERROR:${NRML} Failed to archive the additional disk image to the resources directory!\n"
+						# Skip to top of this while loop, we don't want to do anything else.
+						continue
+					fi
+				fi
+
+				echo -e "\n${YELL}Destroying disk image filesystem...${NRML}\n"
+				zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+				if [ ${?} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Failed to destroy the additional disk image filesystem!\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				# Remove the disk image in the vms.conf file.
+				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
+				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+				# Pause for 4 seconds, to allow I/O to settle.
+				sleep 4
+
+				# Start the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+
+			fi
+
+		fi
+
+
+		if [ "${ANSWER}" = "insert" ]
+		then
+			# Retrieve existing image types (assume 'null' is empty slot).
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+
+			# Check that we have an available slot.
+			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} There are no available slots.\n       Consider detaching a disk image or ejecting an ISO image.\n"
+				continue
+			fi
+
+			# Ask for next ISO image file to insert.
+			INSERT_IMAGE_FILE=""
+			while [ "${INSERT_IMAGE_FILE}" = "" ]
+			do
+				dialog --title "Select ISO image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+				INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
+				if [ -e "${INSERT_IMAGE_FILE_TEMP}" ]
+				then
+					file "${INSERT_IMAGE_FILE_TEMP}" | grep "ISO 9660" > /dev/null
+					if [ ${?} -eq 0 ]
+					then
+						echo -e "\n"
+						question_yes_no "\nYou have selected '${NRML}${INSERT_IMAGE_FILE_TEMP}${LCYN}' as the next ISO image to insert.\nIs this correct?"
+						if [ "${ANSWER}" = "yes" ]
+						then
+							INSERT_IMAGE_FILE="${INSERT_IMAGE_FILE_TEMP}"
+						fi
+					else
+						echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
+						pause_prompt 8
+					fi
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+					question_yes_no "\nWould you like to try again?"
+					if [ "${ANSWER}" = "no" ]
+					then
+						echo -e "\n${ORNG}Insert ISO image cancelled.${NRML}\n"
+						break
+					fi
+					echo -e ""
+				fi
+			done
+
+			if [ "${INSERT_IMAGE_FILE}" != "" ]
+			then
+				# Copy next ISO image to VM resources directory.
+				IMAGE_FILENAME=`basename "${INSERT_IMAGE_FILE}"`
+				if [ "${INSERT_IMAGE_FILE}" != "${VM_RESOURCES_PATH}/${IMAGE_FILENAME}" ]
+				then
+					echo -e "\n${YELL}Copying ISO image to the resources directory...${NRML}\n"
+					cp "${INSERT_IMAGE_FILE}" "${VM_RESOURCES_PATH}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the ISO image\n         to the resources filesystem!\n"
+						# Skip to top of this while loop, we don't want to do anything else.
+						continue
+					fi
+				fi
+
+				# Add the ISO image as an ahci-cd device in the vms.conf file.
+				# Prefer to use first empty slot, otherwise last ahci-cd slot.
+				if [ "${IMAGE_1_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				elif [ "${IMAGE_2_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-cd\"; }"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				elif [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				elif [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				else
+					echo -e "\n${ORNG}WARNING: ${NRML}No available image slots left.\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				if [ ${SUM_EXIT_CODE} -ne 0 ]
+				then
+					echo -e "\n${ORNG}WARNING: ${NRML}Something went wrong preparing next ISO image.\n"
+					# Skip to top of this while loop, we don't want to do anything else.
+					continue
+				fi
+
+				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
+				question_yes "Proceed?"
+
+				# Stop the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+				# Pause for 4 seconds, to allow I/O to settle.
+				sleep 4
+
+				# Start the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+			fi
+		fi
+
+
+		if [ "${ANSWER}" = "eject" ]
+		then
+			IMAGE_ITEMS=""
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+
+			CURRENT_IFS="${IFS}"
+			IFS="	"
+
+			if [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
+			then
+				IMAGE_ITEMS="${IMAGE_ITEMS}	1	${IMAGE_1_FILENAME}"
+			fi
+			if [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
+			then
+				IMAGE_ITEMS="${IMAGE_ITEMS}	2	${IMAGE_2_FILENAME}"
+			fi
+			if [ "${IMAGE_ITEMS}" = "" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} There are no ISO images to eject!\n"
+				continue
+			fi
+
+			IMAGE_INDEX=-1
+			while [ ${IMAGE_INDEX} -lt 0 ]
+			do
+				dialog --menu "Select the ISO image to detach:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
+				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
+				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
+				if [ -e "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" ]
+				then
+					file "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" | grep "ISO 9660" > /dev/null
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid ISO image!\n"
+						pause_prompt 8
+					fi
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the ISO image to detach.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
+						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
+					fi
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+					question_yes_no "\nWould you like to try again?"
+					if [ "${ANSWER}" = "no" ]
+					then
+						echo -e "\n${ORNG}Insert ISO image cancelled.${NRML}\n"
+						break
+					fi
+					echo -e ""
+				fi
+			done
+
+			IFS="${CURRENT_IFS}"
+
+			if [ ${IMAGE_INDEX} -ge 0 ]
+			then
+				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
+				question_yes "Proceed?"
+
+				# Stop the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+				# Remove the disk image in the vms.conf file.
+				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
+				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+				# Pause for 4 seconds, to allow I/O to settle.
+				sleep 4
+
+				# Start the VM.
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+
+			fi
+
+		fi
+
+	done
+}
+
+create_vm_template ()
+{
+
+	VM_NAME="${1}"
+	VM_TYPE="template"
+	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
+	CREATE_VM_TEMPLATE_MODIFIED=false
+	SUM_EXIT_CODE=0
+	cd /${REPO_NAME}
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	trap 'create_vm_template_cleanup ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_CREATE_VM_TEMPLATE=`git log --format=format:%H -1`
+
+	# Check that the template name is valid.
+	test_valid_vm_name "${VM_NAME}"
+	if [ "${VALID_VM_NAME}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The template name can not be '${VM_NAME}'."
+		echo -e "       It must only contain letters, numbers and underscores."
+		echo -e "       It must not begin or end with an underscore."
+		echo -e "       It must be between 3 and 30 characters in length."
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	# Check that the template name is not already used.
+	VM_INDEX=0
+	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}` != "null" ]
+	do
+		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}.name`
+		if [ "${VM_NAME}" = "${TEST_TEMPLATE_NAME}" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The template '${VM_NAME}' already exists.\n"
+			echo -e "       To delete it, use the command:"
+			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-template ${VM_NAME}${NRML}\n"
+			echo -e "       Aborting.\n"
+			exit 1
+		fi
+		VM_INDEX=$(( ${VM_INDEX} +1 ))
+	done
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Check for unsaved registered host config files
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use 'update-config' to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the VM subsystem has been initialised on this host.
+	POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
+	if [ ${?} -ne 0 ] || [ "${POOL_NAME}" = "null" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Get the bridge id and it's net interface name set in init-vms
+	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
+	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
+
+	# Get the network interface used for the bridge interface
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
+
+	# Exit if the bridge network interface has no IP addresses.
+	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The bridge network interface '${VM_BRIDGE_NET_IFACE}' does not have any IP addresses!\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Get the IP address of the bridge network interface.
+	for IP_ADDRESS in ${VM_BRIDGE_IFACE_IP_ADDRESSES}
+	do
+		# Let's ASSUME that the first and lowest (numerically) IP is the chosen one.
+		VM_BRIDGE_IFACE_IP="${IP_ADDRESS}"
+		break
+	done
+
+	# Get the VM description.
+	VM_DESCRIPTION="null"
+	while [ "${VM_DESCRIPTION}" = "null" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the description for the template VM: ${NRML}" VM_DESCRIPTION_TEMP
+		# Check that the VM description contains only valid characters.
+		test_valid_alpha_numeric_string "${VM_DESCRIPTION_TEMP}" 0 150
+		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_DESCRIPTION_TEMP}" != "null" ]
+		then
+			question_yes_no "\nYou have entered:\n'${NRML}${VM_DESCRIPTION_TEMP}${LCYN}'\nas the description of this template VM.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_DESCRIPTION=${VM_DESCRIPTION_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM description is not valid."
+			echo -e "       It must contain only letters, numbers and spaces of length between 0 and 150."
+			echo -e "       It must not be 'null'.\n"
+		fi
+	done
+
+	# Get the VM core count.
+	VM_NUM_CORES=0
+	while [ ${VM_NUM_CORES} -eq 0 ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the number of cores for the template VM: ${NRML}" VM_NUM_CORES_TEMP
+		# Check that the VM core count contains only valid numbers.
+		test_valid_integer "${VM_NUM_CORES_TEMP}" ${VM_MIN_CORES} ${VM_MAX_CORES}
+		if [ "${VALID_INTEGER}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${VM_NUM_CORES_TEMP}${LCYN}' as the number of cores to give the VM.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_NUM_CORES=${VM_NUM_CORES_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${VM_NUM_CORES}'."
+			echo -e "       It must contain only numbers of value between ${VM_MIN_CORES} and ${VM_MAX_CORES}.\n"
+		fi
+	done
+
+	# Get the VM memory size in MegaBytes.
+	VM_MEM_SIZE_MB=0
+	while [ ${VM_MEM_SIZE_MB} -eq 0 ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the memory size in MB of the template VM: ${NRML}" VM_MEM_SIZE_MB_TEMP
+		# Check that the VM memory size contains only valid numbers.
+		test_valid_integer "${VM_MEM_SIZE_MB_TEMP}" ${VM_MIN_MEM_SIZE_MB} ${VM_MAX_MEM_SIZE_MB}
+		if [ "${VALID_INTEGER}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${VM_MEM_SIZE_MB_TEMP}${LCYN}' MB as the VM memory size.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM memory size can not be '${VM_MEM_SIZE_MB_TEMP}'."
+			echo -e "       It must contain only numbers of value between ${VM_MIN_MEM_SIZE_MB} and ${VM_MAX_MEM_SIZE_MB}.\n"
+		fi
+	done
+
+	## TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
+
+	## TODO: get VM_BOOT_LOADER (UEFI|grub)
+	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
+
+	# Ask if the older standard HDD sector size is required.
+	question_yes_no "\nDoes the OS disk require a 512 byte sector size? (e.g. Windows 7) [DEFAULT=no]"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		OS_DISK_SECTOR_SIZE="512"
+	else
+		OS_DISK_SECTOR_SIZE=${VM_DEFAULT_SECTOR_SIZE}
+	fi
+
+	# Prompt for the method; install or copy from existing VM image.
+	INSTALL_OR_COPY_IMAGE=""
+	while [ "${INSTALL_OR_COPY_IMAGE}" = "" ]
+	do
+		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing image?${NRML}"
+		readee -p "${LCYN}(install|copy): ${NRML}" INSTALL_OR_COPY_IMAGE_TEMP
+		# Check input validation.
+		if [ "${INSTALL_OR_COPY_IMAGE_TEMP}" = "install" ] || [ "${INSTALL_OR_COPY_IMAGE_TEMP}" = "copy" ]
+		then
+			INSTALL_OR_COPY_IMAGE="${INSTALL_OR_COPY_IMAGE_TEMP}"
+		fi
+	done
+
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	then
+		# Get the VMs' disk size in GigaBytes.
+		VM_IMAGE_SIZE_GB=0
+		while [ ${VM_IMAGE_SIZE_GB} -eq 0 ]
+		do
+			echo -e ""
+			readee -p "${LCYN}Enter the size in GB of the OS disk image: ${NRML}" VM_IMAGE_SIZE_GB_TEMP
+			# Check that the VM disk size contains only numbers.
+			test_valid_integer "${VM_IMAGE_SIZE_GB_TEMP}" ${VM_MIN_IMAGE_SIZE_GB} ${VM_MAX_IMAGE_SIZE_GB}
+			if [ "${VALID_INTEGER}" = "yes" ]
+			then
+				question_yes_no "\nYou have entered '${NRML}${VM_IMAGE_SIZE_GB_TEMP}${LCYN}' GB as the disk image size.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_IMAGE_SIZE_GB=${VM_IMAGE_SIZE_GB_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The disk image size can not be '${VM_IMAGE_SIZE_GB_TEMP}'."
+				echo -e "       It must contain only numbers of value between ${VM_MIN_IMAGE_SIZE_GB} and ${VM_MAX_IMAGE_SIZE_GB}.\n"
+			fi
+		done
+
+		# Get the installer ISO path
+		OS_INSTALLER_ISO=""
+		while [ "${OS_INSTALLER_ISO}" = "" ]
+		do
+			# Ask for installer ISO file
+			dialog --title "Select OS installer ISO" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -e "${OS_INSTALLER_ISO_TEMP}" ]
+			then
+				file "${OS_INSTALLER_ISO_TEMP}" | grep "ISO 9660" > /dev/null
+				if [ ${?} -eq 0 ]
+				then
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${NRML}${OS_INSTALLER_ISO_TEMP}${LCYN}' as the OS installer ISO.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
+						VM_OS_INSTALL_ISO_FILE=`basename "${OS_INSTALLER_ISO}"`
+					fi
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
+					pause_prompt 8
+				fi
+			else
+				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+				question_yes_no "\nWould you like to try again?"
+				if [ "${ANSWER}" = "no" ]
+				then
+					echo -e "\n${ORNG}Aborting.${NRML}\n"
+					exit 1
+				fi
+				echo -e ""
+			fi
+		done
+	fi
+
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
+	then
+		# Get the existing VM OS image file path
+		EXISTING_IMAGE_PATH=""
+		while [ "${EXISTING_IMAGE_PATH}" = "" ]
+		do
+			# Ask for existing disk image path
+			dialog --title "Select existing disk image (raw)" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+			EXISTING_IMAGE_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -e "${EXISTING_IMAGE_PATH_TEMP}" ]
+			then
+				get_file_size_in_gigabytes "${EXISTING_IMAGE_PATH_TEMP}"
+				VM_IMAGE_SIZE_GB=${FILE_SIZE_IN_GB}
+				if [ ${VM_IMAGE_SIZE_GB} -gt 0 ]
+				then
+					file "${EXISTING_IMAGE_PATH_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+					if [ ${?} -ne 0 ]
+					then
+						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid OS disk image!\n"
+						pause_prompt 8
+					fi
+					echo -e "\n"
+					question_yes_no "\nYou have selected '${NRML}${EXISTING_IMAGE_PATH_TEMP}${LCYN}' as the existing image file.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						EXISTING_IMAGE_PATH="${EXISTING_IMAGE_PATH_TEMP}"
+					fi
+				else
+					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is less than 1GB, too small!\n"
+					pause_prompt 8
+				fi
+			else
+				echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
+				question_yes_no "\nWould you like to try again?"
+				if [ "${ANSWER}" = "no" ]
+				then
+					echo -e "\n${ORNG}Aborting.${NRML}\n"
+					exit 1
+				fi
+				echo -e ""
+			fi
+		done
+	fi
+
+	# Get IP to use for VNC.
+	VM_VNC_HOST_IP=""
+	NUM_HOST_IP=`echo ${VM_BRIDGE_IFACE_IP_ADDRESSES} | wc -w`
+	if [ ${NUM_HOST_IP} -lt 2 ]
+	then
+		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
+	else
+		while [ "${VM_VNC_HOST_IP}" = "" ]
+		do
+			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+			fi
+		done
+	fi
+
+	# Get next available VNC port
+	get_next_vnc_port_num
+	VM_VNC_PORT=${VNC_PORT_NUM}
+
+	# Get next available tap interface id
+	VM_TAP_ID=-1
+	VM_TAP_ID_TEMP=0
+	while [ ${VM_TAP_ID} -lt 0 ]
+	do
+		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "cloned_interfaces" | egrep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			VM_TAP_ID_TEMP=$((VM_TAP_ID_TEMP + 1))
+		else
+			VM_TAP_ID=${VM_TAP_ID_TEMP}
+		fi
+	done
+
+	# Get VNC screen size (resolution) to use for the VM.
+	VM_VNC_SCREEN_SIZE=""
+	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
+	do
+		dialog --no-items --no-cancel --menu "Select VNC screen size (if unsure, use 1024x768):" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+		fi
+	done
+
+	# Get the VMs' VNC password.
+	VM_VNC_PASSWORD="null"
+	while [ "${VM_VNC_PASSWORD}" = "null" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the password for the VMs' VNC session: ${NRML}" VM_VNC_PASSWORD_TEMP
+		# Check that the VMs' VNC password contains only valid characters.
+		test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
+		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
+		then
+			question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this template VM.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
+			echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
+			echo -e "       It must not be 'null'.\n"
+		fi
+	done
+
+	VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
+	VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
+	VM_TAP_IFACE="tap${VM_TAP_ID}"
+	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	## DEBUG info.
+	if [ ${DEBUG} = true ]
+	then
+		echo -e "VM_NAME=${VM_NAME}"
+		echo -e "VM_TEMPLATE_DESCRIPTION=${VM_TEMPLATE_DESCRIPTION}"
+		echo -e "VM_INDEX=${VM_INDEX}"
+		echo -e "VM_TAP_IFACE=${VM_TAP_IFACE}"
+		echo -e "VM_BRIDGE_IFACE=${VM_BRIDGE_IFACE}"
+		echo -e "VM_NUM_CORES=${VM_NUM_CORES}"
+		echo -e "VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB}"
+		echo -e "VM_IMAGE_SIZE_GB=${VM_IMAGE_SIZE_GB}"
+		echo -e "OS_DISK_SECTOR_SIZE=${OS_DISK_SECTOR_SIZE}"
+		echo -e "VM_BRIDGE_IFACE_IP=${VM_BRIDGE_IFACE_IP}"
+		echo -e "VM_VNC_HOST_IP=${VM_VNC_HOST_IP}"
+		echo -e "VM_VNC_PORT=${VM_VNC_PORT}"
+		echo -e "VM_VNC_SCREEN_WIDTH=${VM_VNC_SCREEN_WIDTH}"
+		echo -e "VM_VNC_SCREEN_HEIGHT=${VM_VNC_SCREEN_HEIGHT}"
+		echo -e "VM_VNC_PASSWORD=${VM_VNC_PASSWORD}"
+	fi
+
+	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
+	CREATE_VM_TEMPLATE_MODIFIED=true
+
+	# Create new tap interface and add it to the VM bridge
+	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n       Aborting.\n"
+		create_vm_template_cleanup
+		exit 2
+	fi
+
+	# Create ZFS filesystem for VM images
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	if [ ${?} -ne 0 ]
+	then
+		# ZFS filesystem doesn't yet exist, so let's create it.
+		echo -e "\n${YELL}Creating ZFS filesystem for the template VM OS image...${NRML}\n"
+		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	else
+		echo -e "\n${YELL}ZFS filesystem for the template VM image already exists...${NRML}\n"
+	fi
+
+	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
+	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
+	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
+	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
+	fi
+
+	# Add VM network configuration to '/etc/rc.conf'.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	# Add VM configuration to 'vms.conf'.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.cores "${VM_NUM_CORES}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.description "${VM_DESCRIPTION}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_enabled "enabled"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"ahci-hd\"; } ]"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.sectorsize  "${OS_DISK_SECTOR_SIZE}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	# Prepare OS disk images.
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	then
+		# Create the new VMs' disk image.
+		truncate -s "${VM_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/os_disk.img"
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		if [ "${OS_INSTALLER_ISO}" != "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" ]
+		then
+			cp "${OS_INSTALLER_ISO}" "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" > /dev/null 2>&1
+			if [ ${?} -ne 0 ]
+			then
+				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the OS installer ISO\n         to the resources filesystem!\n"
+			fi
+		fi
+
+		# Add the installer ISO image as an ahci-cd device in the vms.conf file.
+		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.1.filename  "${VM_OS_INSTALL_ISO_FILE}"
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	fi
+
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
+	then
+		# Copy the existing template VM OS image to the template VM filesystem.
+		echo -e "\n${YELL}Copying existing VM OS image to the template VM filesystem...${NRML}\n"
+		cp "${EXISTING_IMAGE_PATH}" "${VM_FS_MOUNTPOINT}/os_disk.img"
+		if [ ${?} -ne 0 ]
+		then
+			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+			echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the existing VM OS image\n         to the template VM filesystem!\n"
+		fi
+	fi
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR: ${NRML}Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
+		create_vm_template_cleanup
+		exit 2
+	fi
+
+	# Start template VM for the first time.
+	echo -e "\n${YELL}Starting template VM '${VM_NAME}' for the first time...${NRML}\n"
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+
+	# Inform user that next step is to login via VNC to the template and perform the installation / configuration.
+	echo -e "\n${YELL}The template VM should now be running.${NRML}"
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	then
+		echo -e "${YELL}The OS installer ISO should also be attached and ready to boot ${NRML}"
+		echo -e "${YELL}into the installation environment.${NRML}"
+		echo -e "${YELL}You should now connect via VNC and install the VM OS, $NRML}"
+		echo -e "${YELL}then reboot it when finished.${NRML}\n"
+	fi
+	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
+	then
+		echo -e "${YELL}The OS disk image should be copied and ready to boot. ${NRML}"
+		echo -e "${YELL}You should now connect via VNC and configure the VM OS, ${NRML}"
+		echo -e "${YELL}then reboot it when finished.${NRML}\n"
+	fi
+	echo -e "${YELL}Connect to the template VM using a VNC viewer ${NRML}"
+	echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
+	echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
+	echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
+
+	pause_prompt 16
+
+	# Recursive ISO and disk image handler, for use in preparing the VM.
+	create_vm_image_handler
+
+	# The template VM preparation is finished, let's shutdown and save the template for use.
+	echo -e "${YELL}\nPlease try to shutdown the VM gracefully, if possible.${NRML}\n"
+	question_yes "Proceed?"
+
+	# Stop the template VM.
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+	# Snapshot the template VM for use by 'create-vm-instance'.
+	zfs snapshot -r ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR: ${NRML}Something went wrong trying to snapshot the template VM filesystem!\n       Aborting.\n"
+		create_vm_template_cleanup
+		exit 2
+	fi
+
+	# Install host configs to the system
+	install_file_tree configs/${HOST_NAME} /
+
+	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+	git add configs/${HOST_NAME}
+	git commit -m "Updating host after 'create-vm-template ${VM_NAME}'; ${HOST_NAME}."
+
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
+		git_push origin master
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
+			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+		fi
+	fi
+
+	echo -e "\n${LGRN}Congratulations! The template VM '${VM_NAME}'${NRML}"
+	echo -e "${LGRN}is ready to use.${NRML}\n"
+	echo -e "${LGRN}To create a new VM, use the command:${NRML}"
+	echo -e "${LBLU}${SCRIPT_NAME} create-vm-instance${NRML}\n"
+
+	cd -
+
+}
+
+create_vm_instance ()
+{
+
+	VM_TEMPLATE_NAME="${1}"
+	VM_NAME="${2}"
+	VM_TYPE="instance"
+	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
+	CREATE_VM_INSTANCE_MODIFIED=false
+	SUM_EXIT_CODE=0
+	cd /${REPO_NAME}
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	trap 'create_vm_instance_cleanup ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_CREATE_VM_INSTANCE=`git log --format=format:%H -1`
+
+	# Check that the template exists.
+	VM_TEMPLATE_EXISTS=false
+	VM_TEMPLATE_INDEX=0
+	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}` != "null" ]
+	do
+		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}.name`
+		if [ "${VM_TEMPLATE_NAME}" = "${TEST_TEMPLATE_NAME}" ]
+		then
+			VM_TEMPLATE_EXISTS=true
+			# We don't want to iterate VM_TEMPLATE_INDEX anymore.
+			break
+		fi
+		VM_TEMPLATE_INDEX=$(( ${VM_TEMPLATE_INDEX} +1 ))
+	done
+	if [ ${VM_TEMPLATE_EXISTS} = false ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The template '${VM_TEMPLATE_NAME}' does not exist on this host.\n"
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	# Check that the instance name is valid.
+	test_valid_vm_name "${VM_NAME}"
+	if [ "${VALID_VM_NAME}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The instance name can not be '${VM_NAME}'."
+		echo -e "       It must only contain letters, numbers and underscores."
+		echo -e "       It must not begin or end with an underscore."
+		echo -e "       It must be between 3 and 30 characters in length."
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	# Check that the instance name is not already used.
+	VM_INDEX=0
+	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .instances.${VM_INDEX}` != "null" ]
+	do
+		TEST_INSTANCE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .instances.${VM_INDEX}.name`
+		if [ "${VM_NAME}" = "${TEST_INSTANCE_NAME}" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The instance '${VM_NAME}' already exists.\n"
+			echo -e "       To delete it, use the command:"
+			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-instance ${VM_NAME}${NRML}\n"
+			echo -e "       Aborting.\n"
+			exit 1
+		fi
+		VM_INDEX=$(( ${VM_INDEX} +1 ))
+	done
+
+	# Check that the template ZFS filesystem exists.
+	zfs list -H ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The template VM filesystem: "
+		echo -e "       '${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}'"
+		echo -e "       does not exist!"
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	# Check that the instance ZFS filesystem does not already exist.
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The instance VM filesystem: "
+		echo -e "       '${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}'"
+		echo -e "       already exists. To delete it, use the command:\n"
+		echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-instance ${VM_NAME}${NRML}\n"
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the 'init-host' subcommand first.\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Check for unsaved registered host config files
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use 'update-config' to keep the repo up-to-date."
+		echo -e "       Aborting.\n"
+		exit 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the VM subsystem has been initialised on this host.
+	POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
+	if [ ${?} -ne 0 ] || [ "${POOL_NAME}" = "null" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Get the bridge id and it's net interface name set in init-vms
+	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
+	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
+
+	# Get the network interface used for the bridge interface
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
+
+	# Exit if the bridge network interface has no IP addresses.
+	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The bridge network interface '${VM_BRIDGE_NET_IFACE}' does not have any IP addresses!\n       Aborting.\n"
+		exit 1
+	fi
+
+	# Get the IP address of the bridge network interface.
+	for IP_ADDRESS in ${VM_BRIDGE_IFACE_IP_ADDRESSES}
+	do
+		# Let's ASSUME that the first and lowest (numerically) IP is the chosen one.
+		VM_BRIDGE_IFACE_IP="${IP_ADDRESS}"
+		break
+	done
+
+	# Get the VM description.
+	VM_DESCRIPTION="null"
+	while [ "${VM_DESCRIPTION}" = "null" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the description for the VM instance: ${NRML}" VM_DESCRIPTION_TEMP
+		# Check that the VM description contains only valid characters.
+		test_valid_alpha_numeric_string "${VM_DESCRIPTION_TEMP}" 0 150
+		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_DESCRIPTION_TEMP}" != "null" ]
+		then
+			question_yes_no "\nYou have entered:\n'${NRML}${VM_DESCRIPTION_TEMP}${LCYN}'\nas the description of this VM instance.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_DESCRIPTION=${VM_DESCRIPTION_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM description is not valid."
+			echo -e "       It must contain only letters, numbers and spaces of length between 0 and 150."
+			echo -e "       It must not be 'null'.\n"
+		fi
+	done
+	
+	# Get the VM core count.
+	VM_NUM_CORES=0
+	while [ ${VM_NUM_CORES} -eq 0 ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the number of cores for the VM instance: ${NRML}" VM_NUM_CORES_TEMP
+		# Check that the VM core count contains only valid numbers.
+		test_valid_integer "${VM_NUM_CORES_TEMP}" ${VM_MIN_CORES} ${VM_MAX_CORES}
+		if [ "${VALID_INTEGER}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${VM_NUM_CORES_TEMP}${LCYN}' as the number of cores to give the VM.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_NUM_CORES=${VM_NUM_CORES_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${VM_NUM_CORES}'."
+			echo -e "       It must contain only numbers of value between ${VM_MIN_CORES} and ${VM_MAX_CORES}.\n"
+		fi
+	done
+
+	# Get the VM memory size in MegaBytes.
+	VM_MEM_SIZE_MB=0
+	while [ ${VM_MEM_SIZE_MB} -eq 0 ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the memory size in MB of the VM instance: ${NRML}" VM_MEM_SIZE_MB_TEMP
+		# Check that the VM memory size contains only valid numbers.
+		test_valid_integer "${VM_MEM_SIZE_MB_TEMP}" ${VM_MIN_MEM_SIZE_MB} ${VM_MAX_MEM_SIZE_MB}
+		if [ "${VALID_INTEGER}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${VM_MEM_SIZE_MB_TEMP}${LCYN}' MB as the VM memory size.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VM memory size can not be '${VM_MEM_SIZE_MB_TEMP}'."
+			echo -e "       It must contain only numbers of value between ${VM_MIN_MEM_SIZE_MB} and ${VM_MAX_MEM_SIZE_MB}.\n"
+		fi
+	done
+
+	## TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
+
+	## TODO: get VM_BOOT_LOADER (UEFI|grub)
+	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
+
+	# Get IP to use for VNC.
+	VM_VNC_HOST_IP=""
+	NUM_HOST_IP=`echo ${VM_BRIDGE_IFACE_IP_ADDRESSES} | wc -w`
+	if [ ${NUM_HOST_IP} -lt 2 ]
+	then
+		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
+	else
+		while [ "${VM_VNC_HOST_IP}" = "" ]
+		do
+			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+			fi
+		done
+	fi
+
+	# Get next available VNC port
+	get_next_vnc_port_num
+	VM_VNC_PORT=${VNC_PORT_NUM}
+
+	# Get next available tap interface id
+	VM_TAP_ID=-1
+	VM_TAP_ID_TEMP=0
+	while [ ${VM_TAP_ID} -lt 0 ]
+	do
+		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "cloned_interfaces" | egrep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			VM_TAP_ID_TEMP=$((VM_TAP_ID_TEMP + 1))
+		else
+			VM_TAP_ID=${VM_TAP_ID_TEMP}
+		fi
+	done
+
+	# Get VNC screen size (resolution) to use for the VM.
+	VM_VNC_SCREEN_SIZE=""
+	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
+	do
+		dialog --no-items --no-cancel --menu "Select VNC screen size (if unsure, use 1024x768):" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+		fi
+	done
+
+	# Get the VMs' VNC password.
+	VM_VNC_PASSWORD="null"
+	while [ "${VM_VNC_PASSWORD}" = "null" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the password for the VMs' VNC session: ${NRML}" VM_VNC_PASSWORD_TEMP
+		# Check that the VMs' VNC password contains only valid characters.
+		test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
+		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
+		then
+			question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this instance VM.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
+			echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
+			echo -e "       It must not be 'null'.\n"
+		fi
+	done
+
+	VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
+	VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
+	VM_TAP_IFACE="tap${VM_TAP_ID}"
+	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	## DEBUG info.
+	if [ ${DEBUG} = true ]
+	then
+		echo -e "VM_NAME=${VM_NAME}"
+		echo -e "VM_TEMPLATE_NAME=${VM_TEMPLATE_NAME}"
+		echo -e "VM_DESCRIPTION=${VM_DESCRIPTION}"
+		echo -e "VM_INDEX=${VM_INDEX}"
+		echo -e "VM_TEMPLATE_INDEX=${VM_TEMPLATE_INDEX}"
+		echo -e "VM_TAP_IFACE=${VM_TAP_IFACE}"
+		echo -e "VM_BRIDGE_IFACE=${VM_BRIDGE_IFACE}"
+		echo -e "VM_NUM_CORES=${VM_NUM_CORES}"
+		echo -e "VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB}"
+		echo -e "VM_BRIDGE_IFACE_IP=${VM_BRIDGE_IFACE_IP}"
+		echo -e "VM_VNC_HOST_IP=${VM_VNC_HOST_IP}"
+		echo -e "VM_VNC_PORT=${VM_VNC_PORT}"
+		echo -e "VM_VNC_SCREEN_WIDTH=${VM_VNC_SCREEN_WIDTH}"
+		echo -e "VM_VNC_SCREEN_HEIGHT=${VM_VNC_SCREEN_HEIGHT}"
+		echo -e "VM_VNC_PASSWORD=${VM_VNC_PASSWORD}"
+	fi
+
+	# Make sure the template VM is shutdown first.
+	VM_TEMPLATE_RUN_STATE=`fdo-vms-list --concise --type=template | egrep "${VM_TEMPLATE_NAME}" | awk '{print $2}'`
+	if [ "${VM_TEMPLATE_RUN_STATE}" != "stopped" ]
+	then
+		# Prompt to shutdown template VM gracefully.
+		echo -e "${YELL}\nPlease try to shutdown the template VM gracefully, if possible.${NRML}\n"
+		question_yes "Proceed?"
+
+		# Stop the template VM.
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_TEMPLATE_NAME}" --force
+	fi
+
+	echo -e "\n${YELL}Creating new instance VM...${NRML}\n"
+	CREATE_VM_INSTANCE_MODIFIED=true
+
+	# Create new tap interface and add it to the VM bridge
+	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n       Aborting.\n"
+		create_vm_instance_cleanup
+		exit 2
+	fi
+
+	# Create instance VM filesystem by cloning from it's template VM.
+	echo -e "\n${YELL}Creating ZFS filesystem for the instance VM OS image...${NRML}\n"
+	zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}@latest ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
+	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
+	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
+	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
+	fi
+
+	# Add VM network configuration to '/etc/rc.conf'.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	# Add VM configuration to 'vms.conf'.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.cores "${VM_NUM_CORES}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.description "${VM_DESCRIPTION}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "enabled"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+	EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${EXISTING_IMAGES_UCL}"
+	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+
+
+	IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+	IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+	IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+	IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+
+	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
+	then
+		IMAGE_NAME=`echo ${IMAGE_1_FILENAME} | cut -d/ -f1`
+		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
+		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	fi
+
+	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
+	then
+		IMAGE_NAME=`echo ${IMAGE_2_FILENAME} | cut -d/ -f1`
+		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
+		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	fi
+
+	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR: ${NRML}Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
+		create_vm_instance_cleanup
+		exit 2
+	fi
+
+	# Start instance VM for the first time.
+	echo -e "\n${YELL}Starting instance VM '${VM_NAME}' for the first time...${NRML}\n"
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+
+	# Inform user that next step is to login via VNC to the instance VM and perform configuration.
+	echo -e "\n${YELL}The instance VM should now be running and ready to boot.${NRML}"
+	echo -e "${YELL}You should now connect via VNC and configure the VM, $NRML}"
+	echo -e "${YELL}then reboot it when finished.${NRML}\n"
+	echo -e "${YELL}Connect to the instance VM using a VNC viewer ${NRML}"
+	echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
+	echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
+	echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
+
+	pause_prompt 16
+
+	# Recursive ISO and disk image handler, for use in preparing the VM.
+	create_vm_image_handler
+
+	# The instance VM preparation is finished, let's shutdown and save the instance for use.
+	echo -e "${YELL}\nPlease try to shutdown the VM gracefully, if possible.${NRML}\n"
+	question_yes "Proceed?"
+
+	# Stop the instance VM.
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+
+	# Ask whether to disable VNC for production use.
+	question_yes_no "Would you like to disable VNC on this VM for production use?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "disabled"
+		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	fi
+
+	# Snapshot the instance VM for later maintenance.
+	zfs snapshot -r ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@initial
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR: ${NRML}Something went wrong trying to snapshot the instance VM filesystem!\n       Aborting.\n"
+		create_vm_instance_cleanup
+		exit 2
+	fi
+
+	# Install host configs to the system
+	install_file_tree configs/${HOST_NAME} /
+
+	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+	git add configs/${HOST_NAME}
+	git commit -m "Updating host after 'create-vm-instance ${VM_NAME}'; ${HOST_NAME}."
+
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to ${REPO_NAME} remote repo...${NRML}\n"
+		git_push origin master
+		if [ $? -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to remote git repo."
+			echo -e "       Please consider manually running 'git push' from within /${REPO_NAME}.\n"
+		fi
+	fi
+
+	echo -e "\n${LGRN}Congratulations! The instance VM '${VM_NAME}'${NRML}"
+	echo -e "${LGRN}is ready to use.${NRML}\n"
+	echo -e "${LGRN}To start the new VM, use the command:${NRML}\n"
+	echo -e "${LBLU}fdo-vms-start ${VM_NAME}${NRML}\n"
 
 	cd -
 
@@ -4796,7 +6157,7 @@ revert_create_jail ()
 	fi
 
 	# NOTE: commit after create jail is not much use, since we can't remove a previous range
-	#       of commits using 'git revert' with creating conflicts that need manual intervention.
+	#       of commits using 'git revert' without creating conflicts that need manual intervention.
 	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
 	COMMIT_AFTER_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-post-create-jail.commit.inf`
 
@@ -4865,7 +6226,7 @@ revert_create_jail ()
 		done
 	done
 
-	echo -e "\n${YELL}Finished reverting jail creation! Exiting.${NRML}\n"
+	echo -e "\n${YELL}Finished reverting jail creation! Aborting.${NRML}\n"
 	exit 139
 
 }
@@ -5588,24 +6949,24 @@ case "${SUB_CMD}" in
 		revert_create_jail "${SUB_ARG1}"
 		;;
 
-	init-remote-desktops)
-		# Initialise the FDo remote desktop subsystem (currently based on VirtualBox).
+	init-vms)
+		# Initialise the FDo Virtual Machine subsystem (currently based on bhyve).
 		update_local_repo
-		init_remote_desktops
+		init_vms
 		;;
 
-	create-remote-desktop-template)
-		# Create a template (uses ZFS snapshots) for a particular type of remote desktop.
+	create-vm-template)
+		# Create a template VM for a particular use case.
 		test_num_mandatory_sub_args 1
 		update_local_repo
-		create_remote_desktop_template "${SUB_ARG1}"
+		create_vm_template "${SUB_ARG1}"
 		;;
 
-	create-remote-desktop-instance)
-		# Create a VM instance from a remote desktop template (uses ZFS snapshots).
-		test_num_mandatory_sub_args 3
+	create-vm-instance)
+		# Create a VM instance from a template (uses ZFS snapshots).
+		test_num_mandatory_sub_args 2
 		update_local_repo
-		create_remote_desktop_instance "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
+		create_vm_instance "${SUB_ARG1}" "${SUB_ARG2}"
 		;;
 
 	init-sshfs-daemon)
