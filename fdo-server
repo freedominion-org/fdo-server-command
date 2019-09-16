@@ -91,6 +91,8 @@ MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.50"
 GUESTS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.60"
 FDO_LAN_GATEWAY_IP="${SERVERS_LAN_SUBNET_C}.1"
 NET_CONNECT_TIMEOUT_SECS=${NET_CONNECT_TIMEOUT_SECS:-16}
+INET_TEST_IPV4="8.8.8.8"
+INET_TEST_HOSTNAME="freedominion.org"
 
 TERM="xterm"
 LRED="\033[1;31m"
@@ -2362,7 +2364,7 @@ connect_internet ()
 		sleep ${NET_CONNECT_TIMEOUT_SECS}
 
 		# Test internet connection
-		test_ping_host 8.8.8.8
+		test_ping_host "${INET_TEST_IPV4}"
 		if [ "${VALID_HOST_PING}" = "yes" ]
 		then
 			IS_IP_WORKING="yes"
@@ -2373,7 +2375,7 @@ connect_internet ()
 
 	if [ "${IS_IP_WORKING}" = "no" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} IP connection failed! Unable to ping 8.8.8.8.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} IP connection failed! Unable to ping ${INET_TEST_IPV4}.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -2391,7 +2393,7 @@ connect_internet ()
 		fi
 
 		# Test DNS
-		host google.com > /dev/null 2>&1
+		host "${INET_TEST_HOSTNAME}" > /dev/null 2>&1
 		if [ ${?} -eq 0 ]
 		then
 			IS_DNS_WORKING="yes"
