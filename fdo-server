@@ -1230,10 +1230,13 @@ install_file_tree ()
 compare_file_tree ()
 {
 
+	# NOTE: return code is 2 if any file/dir is missing, 1 if any file is OUT OF CHECK, 0 if everything is IN CHECK
 	SOURCE_FILES_ROOT=${1}
 	DEST_FILES_ROOT=${2}
 	SILENT_MODE="no"
 	COMPARE_FILE_ERROR_COUNT=0
+	COMPARE_FILE_OUT_OF_CHECK=false
+	COMPARE_FILE_MISSING=false
 
 	if [ "${3}" = "--silent" ]
 	then
@@ -1252,12 +1255,14 @@ compare_file_tree ()
 			then
 				echo -e "The following dir  is      ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
 				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+				COMPARE_FILE_MISSING=true
 			fi
 		else
 			if [ ! -f ${DEST_FILE_PATH} ]
 			then
 				echo -e "The following file is      ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
 				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+				COMPARE_FILE_MISSING=true
 			else
 				diff ${SOURCE_FILE_PATH} ${DEST_FILE_PATH} > /dev/null 2>&1
 				if [ ${?} -eq 0 ]
@@ -1266,6 +1271,7 @@ compare_file_tree ()
 				else
 					echo -e "The following file is ${ORNG}OUT OF CHECK${NRML}: ${DEST_FILE_PATH}"
 					COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+					COMPARE_FILE_OUT_OF_CHECK=true
 					if [ "${SILENT_MODE}" = "no" ]
 					then
 						echo -e ""
@@ -1283,6 +1289,16 @@ compare_file_tree ()
 			fi
 		fi
 	done
+
+	if [ ${COMPARE_FILE_MISSING} = true ]
+	then
+		return 2
+	elif [ ${COMPARE_FILE_OUT_OF_CHECK} = true ]
+	then
+		return 1
+	else
+		return 0
+	fi
 
 }
 
@@ -1750,8 +1766,9 @@ check_configs ()
 	fi
 
 	compare_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH} ${3}
-
+	RETURN_CODE=${?}
 	cd -
+	return ${RETURN_CODE}
 
 }
 
@@ -1763,6 +1780,8 @@ check_all_configs ()
 	# Check configs for the host.
 	echo -e "\n${YELL}Checking configs for the host...${NRML}\n"
 	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
+	RETURN_CODE=${?}
+
 	CHECK_ALL_CONFIGS_ERROR_COUNT=$((CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
 
 	# Check configs for the jails.
@@ -1771,17 +1790,27 @@ check_all_configs ()
 	do
 		echo -e "\n${YELL}Checking configs for the '${NRML}${JAIL_NAME}${YELL}' jail...${NRML}\n"
 		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
-		CHECK_ALL_CONFIGS_ERROR_COUNT=$((CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
+		if [ ${?} -gt ${RETURN_CODE} ]
+		then
+			RETURN_CODE=${?}
+		fi
+		CHECK_ALL_CONFIGS_ERROR_COUNT=$(( CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
 	done
 
-	if [ ${CHECK_ALL_CONFIGS_ERROR_COUNT} -eq 0 ]
+	# Display meaningful aggregated results.
+	if [ ${CHECK_ALL_CONFIGS_ERROR_COUNT} -lt 1 ]
 	then
 		echo -e "\n${LGRN}It seems the configs tracked by the repo are all IN CHECK!${NRML}\n"
-	else
-		echo -e "\n${ORNG}It seems at least one config tracked by the repo is missing or OUT OF CHECK!${NRML}\n"
+	elif [ ${CHECK_ALL_CONFIGS_ERROR_COUNT} -eq 1 ]
+	then
+		echo -e "\n${ORNG}It seems that '${NRML}1${ORNG}' file tracked by the repo is MISSING or OUT OF CHECK!${NRML}\n"
+	elif [ ${CHECK_ALL_CONFIGS_ERROR_COUNT} -gt 1 ]
+	then
+		echo -e "\n${ORNG}It seems that '${NRML}${CHECK_ALL_CONFIGS_ERROR_COUNT}${ORNG}' files tracked by the repo are MISSING or OUT OF CHECK!${NRML}\n"
 	fi
 
 	cd -
+	return ${RETURN_CODE}
 
 }
 
@@ -3117,10 +3146,11 @@ setup_vnc_desktop()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
@@ -3265,10 +3295,11 @@ init_hotdesking ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
@@ -3477,12 +3508,12 @@ init_jails ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -3755,10 +3786,11 @@ init_sshfs_daemon ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
@@ -3852,12 +3884,12 @@ init_vms ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -4893,12 +4925,12 @@ create_vm_template ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -5528,12 +5560,12 @@ create_vm_instance ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -5993,10 +6025,11 @@ create_jail ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommannd to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
@@ -6519,12 +6552,12 @@ init_clonezilla_images ()
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent | grep "OUT OF CHECK"
-	if [ ${?} -eq 0 ]
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date."
-		echo -e "       Aborting.\n"
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
 		exit 1
 	fi
 
@@ -6896,6 +6929,7 @@ case "${SUB_CMD}" in
 	check-configs)
 		update_local_repo
 		check_all_configs
+		exit ${?}
 		;;
 
 	add-config)
