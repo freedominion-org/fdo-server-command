@@ -3588,18 +3588,18 @@ init_jails ()
 	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 
-	SUM_EXIT_CODE=0
+	ERROR_COUNT=0
 
 	# Download relevant base system tarballs
 	echo -e "\n${YELL}Downloading FreeBSD base system tarballs...${NRML}\n"
 	fetch -o /tmp/jail-base.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fetch -o /tmp/jail-lib32.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fetch -o /tmp/jail-src.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n       Aborting.\n"
 		exit 1
@@ -3610,10 +3610,10 @@ init_jails ()
 	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
 	then
 		zfs create -o mountpoint=/jls ${POOL_NAME}/jails
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	zfs create ${POOL_NAME}/jails/template
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Mount the datasets if they are not already
 	zfs mount | grep "${POOL_NAME}/jails "
@@ -3621,24 +3621,24 @@ init_jails ()
 	then
 		zfs mount ${POOL_NAME}/jails
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${POOL_NAME}/jails/template "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${POOL_NAME}/jails/template
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install base system tarballs into the template jail directory
 	echo -e "\n${YELL}Extracting FreeBSD base system tarballs into template jail...${NRML}\n"
 	tar -JxC /jls/template/ -f /tmp/jail-base.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	tar -JxC /jls/template/ -f /tmp/jail-lib32.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	tar -JxC /jls/template/ -f /tmp/jail-src.txz
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail.\n       Aborting.\n"
 		exit 2
@@ -3765,7 +3765,7 @@ init_sshfs_daemon ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	SUM_EXIT_CODE=0
+	ERROR_COUNT=0
 
 	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
 	pause_prompt 8
@@ -3777,9 +3777,9 @@ init_sshfs_daemon ()
 	then
 		kldload fuse 2> /dev/null
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
 		exit 2
@@ -3888,7 +3888,7 @@ init_vms ()
 		exit 1
 	fi
 
-	SUM_EXIT_CODE=0
+	ERROR_COUNT=0
 
 	# Install required packages
 	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
@@ -3902,28 +3902,28 @@ init_vms ()
 	then
 		kldload if_tap 2> /dev/null
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	kldstat -n if_bridge > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		kldload if_bridge 2> /dev/null
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	kldstat -n bridgestp > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		kldload bridgestp 2> /dev/null
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	kldstat -n vmm > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		kldload vmm 2> /dev/null
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VM subsystem kernel modules.\n       Aborting.\n"
 		exit 2
@@ -3950,15 +3950,15 @@ init_vms ()
 
 	# Setup initial bridge interface
 	sysctl net.link.tap.up_on_open=1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n       Aborting.\n"
 		ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
@@ -3997,7 +3997,7 @@ init_vms ()
 	if [ "${ANSWER}" = "yes" ]
 	then
 		chmod 777 "${VMS_ROOT_PATH}/${VM_RESOURCES_DIRNAME}" > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Create ZFS datasets for VM images
@@ -4007,25 +4007,25 @@ init_vms ()
 	then
 		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${POOL_NAME}/${VMS_ROOT_FS}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		zfs create -o recordsize=512k ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Mount the datasets if they are not already
 	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS} "
@@ -4033,27 +4033,27 @@ init_vms ()
 	then
 		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
 	fi
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS datasets for the"
 		echo -e "       VM subsystem.\n       Aborting.\n"
@@ -4116,29 +4116,29 @@ create_vm_template_cleanup ()
 {
 	if [ ${CREATE_VM_TEMPLATE_MODIFIED} = true ]
 	then
-		SUM_EXIT_CODE=0
+		ERROR_COUNT=0
 
 		# Stop the template VM.
 		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
 
 		# Undo temporary network configuration.
 		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Destroy any ZFS filesystems that were created.
 		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
 		if [ "`git status -s`" != "" ]
 		then
 			git reset --hard ${COMMIT_BEFORE_CREATE_VM_TEMPLATE}
-			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${SUM_EXIT_CODE} -gt 0 ]
+		if [ ${ERROR_COUNT} -gt 0 ]
 		then
 			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-template!\n"
 		fi
@@ -4151,29 +4151,29 @@ create_vm_instance_cleanup ()
 {
 	if [ ${CREATE_VM_INSTANCE_MODIFIED} = true ]
 	then
-		SUM_EXIT_CODE=0
+		ERROR_COUNT=0
 
 		# Stop the instance VM.
 		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
 
 		# Undo temporary network configuration.
 		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Destroy any ZFS filesystems that were created.
 		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
 		if [ "`git status -s`" != "" ]
 		then
 			git reset --hard ${COMMIT_BEFORE_CREATE_VM_INSTANCE}
-			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${SUM_EXIT_CODE} -gt 0 ]
+		if [ ${ERROR_COUNT} -gt 0 ]
 		then
 			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-instance!\n"
 		fi
@@ -4187,7 +4187,7 @@ create_vm_image_handler ()
 	VM_IMAGES_FINISHED=false
 	while [ ${VM_IMAGES_FINISHED} = false ]
 	do
-		SUM_EXIT_CODE=0
+		ERROR_COUNT=0
 		while true
 		do
 			echo -e "\n${YELL}! You may now prepare the ${VM_TYPE} VM '${NRML}${VM_NAME}${YELL}'!${NRML}\n"
@@ -4459,26 +4459,26 @@ create_vm_image_handler ()
 				if [ "${IMAGE_1_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-hd\"; }"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize  "${IMAGE_SECTOR_SIZE}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-hd\"; }"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize  "${IMAGE_SECTOR_SIZE}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
 					# Skip to top of this while loop, we don't want to do anything else.
 					continue
 				fi
 
-				if [ ${SUM_EXIT_CODE} -ne 0 ]
+				if [ ${ERROR_COUNT} -ne 0 ]
 				then
 					echo -e "\n${ORNG}WARNING:${NRML} Something went wrong attaching the disk image.\n"
 					# Skip to top of this while loop, we don't want to do anything else.
@@ -4627,7 +4627,7 @@ create_vm_image_handler ()
 
 				# Remove the disk image in the vms.conf file.
 				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
-				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
@@ -4707,30 +4707,30 @@ create_vm_image_handler ()
 				if [ "${IMAGE_1_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-cd\"; }"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
-					SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
 					# Skip to top of this while loop, we don't want to do anything else.
 					continue
 				fi
 
-				if [ ${SUM_EXIT_CODE} -ne 0 ]
+				if [ ${ERROR_COUNT} -ne 0 ]
 				then
 					echo -e "\n${ORNG}WARNING:${NRML} Something went wrong preparing next ISO image.\n"
 					# Skip to top of this while loop, we don't want to do anything else.
@@ -4823,7 +4823,7 @@ create_vm_image_handler ()
 
 				# Remove the disk image in the vms.conf file.
 				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
-				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
@@ -4845,9 +4845,9 @@ create_vm_template ()
 	VM_TYPE="template"
 	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
 	CREATE_VM_TEMPLATE_MODIFIED=false
-	SUM_EXIT_CODE=0
+	ERROR_COUNT=0
 	cd /${REPO_NAME}
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	trap 'create_vm_template_cleanup ; exit 3' HUP INT QUIT KILL TERM
 
@@ -5239,11 +5239,11 @@ create_vm_template ()
 
 	# Create new tap interface and add it to the VM bridge
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n       Aborting.\n"
 		create_vm_template_cleanup
@@ -5257,9 +5257,9 @@ create_vm_template ()
 		# ZFS filesystem doesn't yet exist, so let's create it.
 		echo -e "\n${YELL}Creating ZFS filesystem for the template VM OS image...${NRML}\n"
 		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		echo -e "\n${YELL}ZFS filesystem for the template VM image already exists...${NRML}\n"
 	fi
@@ -5274,67 +5274,67 @@ create_vm_template ()
 
 	# Add VM network configuration to '/etc/rc.conf'.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.cores "${VM_NUM_CORES}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.description "${VM_DESCRIPTION}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_enabled "enabled"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"ahci-hd\"; } ]"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.sectorsize  "${OS_DISK_SECTOR_SIZE}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Prepare OS disk images.
 	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
 	then
 		# Create the new VMs' disk image.
 		truncate -s "${VM_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/os_disk.img"
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${OS_INSTALLER_ISO}" != "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" ]
 		then
 			cp "${OS_INSTALLER_ISO}" "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
-				SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the OS installer ISO\n         to the resources filesystem!\n"
 			fi
 		fi
 
 		# Add the installer ISO image as an ahci-cd device in the vms.conf file.
 		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.1.filename  "${VM_OS_INSTALL_ISO_FILE}"
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
@@ -5344,12 +5344,12 @@ create_vm_template ()
 		cp "${EXISTING_IMAGE_PATH}" "${VM_FS_MOUNTPOINT}/os_disk.img"
 		if [ ${?} -ne 0 ]
 		then
-			SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the existing VM OS image\n         to the template VM filesystem!\n"
 		fi
 	fi
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
 		create_vm_template_cleanup
@@ -5436,9 +5436,9 @@ create_vm_instance ()
 	VM_TYPE="instance"
 	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
 	CREATE_VM_INSTANCE_MODIFIED=false
-	SUM_EXIT_CODE=0
+	ERROR_COUNT=0
 	cd /${REPO_NAME}
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	trap 'create_vm_instance_cleanup ; exit 3' HUP INT QUIT KILL TERM
 
@@ -5761,11 +5761,11 @@ create_vm_instance ()
 
 	# Create new tap interface and add it to the VM bridge
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n       Aborting.\n"
 		create_vm_instance_cleanup
@@ -5775,9 +5775,9 @@ create_vm_instance ()
 	# Create instance VM filesystem by cloning from it's template VM.
 	echo -e "\n${YELL}Creating ZFS filesystem for the instance VM OS image...${NRML}\n"
 	zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}@latest ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
 	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
@@ -5789,44 +5789,44 @@ create_vm_instance ()
 
 	# Add VM network configuration to '/etc/rc.conf'.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.cores "${VM_NUM_CORES}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.description "${VM_DESCRIPTION}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "enabled"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${EXISTING_IMAGES_UCL}"
-	SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 
 	IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
@@ -5839,7 +5839,7 @@ create_vm_instance ()
 		IMAGE_NAME=`echo ${IMAGE_1_FILENAME} | cut -d/ -f1`
 		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
 		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
@@ -5847,10 +5847,10 @@ create_vm_instance ()
 		IMAGE_NAME=`echo ${IMAGE_2_FILENAME} | cut -d/ -f1`
 		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
 		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	if [ ${SUM_EXIT_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
 		create_vm_instance_cleanup
@@ -5887,7 +5887,7 @@ create_vm_instance ()
 	if [ "${ANSWER}" = "yes" ]
 	then
 		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "disabled"
-		SUM_EXIT_CODE=$(( ${SUM_EXIT_CODE} + ${?} ))
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Snapshot the instance VM for later maintenance.
