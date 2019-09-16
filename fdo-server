@@ -360,7 +360,7 @@ readee ()
 				else
 					# Cursor moves left erasing the right-most character left of cursor.
 					# Truncate the pre-cursor text by one character from the right;
-					NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$((${PRE_CURS_TEXT_LENGTH} -1))`
+					NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$(( ${PRE_CURS_TEXT_LENGTH} - 1 ))`
 					NEW_CURSOR_AT_START="false"
 				fi
 
@@ -469,7 +469,7 @@ readee ()
 						else
 							# Cursor is moving left.
 							# Set new pre-cursor text to current pre-cursor text truncated by one character from the right;
-							NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$((${PRE_CURS_TEXT_LENGTH} -1))`
+							NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$(( ${PRE_CURS_TEXT_LENGTH} - 1 ))`
 							NEW_CURSOR_AT_START="false"
 							NEW_CURSOR_AT_END="false"
 						fi
@@ -692,9 +692,9 @@ get_next_vnc_port_num ()
 			PORT_NUM_TEST=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${INDEX_TEST}.vnc_port`
 			if [ "${PORT_NUM_TEST}" = "${VNC_PORT_NUM_TEMP}" ]
 			then
-				RESULT2=$(( ${RESULT2} +1 ))
+				RESULT2=$(( ${RESULT2} + 1 ))
 			fi
-			INDEX_TEST=$(( ${INDEX_TEST} +1 ))
+			INDEX_TEST=$(( ${INDEX_TEST} + 1 ))
 		done
 
 		INDEX_TEST=0
@@ -703,14 +703,14 @@ get_next_vnc_port_num ()
 			PORT_NUM_TEST=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .instances.${INDEX_TEST}.vnc_port`
 			if [ "${PORT_NUM_TEST}" = "${VNC_PORT_NUM_TEMP}" ]
 			then
-				RESULT2=$(( ${RESULT2} +1 ))
+				RESULT2=$(( ${RESULT2} + 1 ))
 			fi
-			INDEX_TEST=$(( ${INDEX_TEST} +1 ))
+			INDEX_TEST=$(( ${INDEX_TEST} + 1 ))
 		done
 
 		if [ "${RESULT1}" != "" ] || [ ${RESULT2} -gt 0 ]
 		then
-			VNC_PORT_NUM_TEMP=$((VNC_PORT_NUM_TEMP + 1))
+			VNC_PORT_NUM_TEMP=$(( ${VNC_PORT_NUM_TEMP} + 1 ))
 		else
 			VNC_PORT_NUM=${VNC_PORT_NUM_TEMP}
 		fi
@@ -1205,7 +1205,7 @@ install_file_tree ()
 		fi
 		if [ ${?} -ne 0 ]
 		then
-			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
 		fi
 
 		if [ "${CHOWN_USER}" != "" ]
@@ -1214,7 +1214,7 @@ install_file_tree ()
 		fi
 		if [ ${?} -ne 0 ]
 		then
-			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
 		fi
 
 		if [ "${CHOWN_GROUP}" != "" ]
@@ -1223,7 +1223,7 @@ install_file_tree ()
 		fi
 		if [ ${?} -ne 0 ]
 		then
-			INSTALL_FILE_ERROR_COUNT=$((INSTALL_FILE_ERROR_COUNT + 1))
+			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
 		fi
 	done
 
@@ -1256,14 +1256,14 @@ compare_file_tree ()
 			if [ ! -d ${DEST_FILE_PATH} ]
 			then
 				echo -e "The following dir  is      ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
-				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+				COMPARE_FILE_ERROR_COUNT=$(( ${COMPARE_FILE_ERROR_COUNT} + 1 ))
 				COMPARE_FILE_MISSING=true
 			fi
 		else
 			if [ ! -f ${DEST_FILE_PATH} ]
 			then
 				echo -e "The following file is      ${LRED}MISSING${NRML}: ${DEST_FILE_PATH}"
-				COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+				COMPARE_FILE_ERROR_COUNT=$(( ${COMPARE_FILE_ERROR_COUNT} + 1 ))
 				COMPARE_FILE_MISSING=true
 			else
 				diff ${SOURCE_FILE_PATH} ${DEST_FILE_PATH} > /dev/null 2>&1
@@ -1272,7 +1272,7 @@ compare_file_tree ()
 					echo -e "The following file is     ${LGRN}IN CHECK${NRML}: ${DEST_FILE_PATH}"
 				else
 					echo -e "The following file is ${ORNG}OUT OF CHECK${NRML}: ${DEST_FILE_PATH}"
-					COMPARE_FILE_ERROR_COUNT=$((COMPARE_FILE_ERROR_COUNT + 1))
+					COMPARE_FILE_ERROR_COUNT=$(( ${COMPARE_FILE_ERROR_COUNT} + 1 ))
 					COMPARE_FILE_OUT_OF_CHECK=true
 					if [ "${SILENT_MODE}" = "no" ]
 					then
@@ -1784,7 +1784,7 @@ check_all_configs ()
 	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
 	RETURN_CODE=${?}
 
-	CHECK_ALL_CONFIGS_ERROR_COUNT=$((CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
+	CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 
 	# Check configs for the jails.
 	cd /${REPO_NAME}
@@ -1796,7 +1796,7 @@ check_all_configs ()
 		then
 			RETURN_CODE=${?}
 		fi
-		CHECK_ALL_CONFIGS_ERROR_COUNT=$(( CHECK_ALL_CONFIGS_ERROR_COUNT + COMPARE_FILE_ERROR_COUNT ))
+		CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 	done
 
 	# Display meaningful aggregated results.
@@ -3974,7 +3974,7 @@ init_vms ()
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
 		then
-			VM_BRIDGE_ID_TEMP=$((VM_BRIDGE_ID_TEMP + 1))
+			VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
 		else
 			VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
 		fi
@@ -4913,7 +4913,7 @@ create_vm_template ()
 			echo -e "       Aborting.\n"
 			exit 1
 		fi
-		VM_INDEX=$(( ${VM_INDEX} +1 ))
+		VM_INDEX=$(( ${VM_INDEX} + 1 ))
 	done
 
 	# Check that the host is already registered.
@@ -5200,7 +5200,7 @@ create_vm_template ()
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
 		then
-			VM_TAP_ID_TEMP=$((VM_TAP_ID_TEMP + 1))
+			VM_TAP_ID_TEMP=$(( ${VM_TAP_ID_TEMP} + 1 ))
 		else
 			VM_TAP_ID=${VM_TAP_ID_TEMP}
 		fi
@@ -5491,7 +5491,7 @@ create_vm_instance ()
 			# We don't want to iterate VM_TEMPLATE_INDEX anymore.
 			break
 		fi
-		VM_TEMPLATE_INDEX=$(( ${VM_TEMPLATE_INDEX} +1 ))
+		VM_TEMPLATE_INDEX=$(( ${VM_TEMPLATE_INDEX} + 1 ))
 	done
 	if [ ${VM_TEMPLATE_EXISTS} = false ]
 	then
@@ -5525,7 +5525,7 @@ create_vm_instance ()
 			echo -e "       Aborting.\n"
 			exit 1
 		fi
-		VM_INDEX=$(( ${VM_INDEX} +1 ))
+		VM_INDEX=$(( ${VM_INDEX} + 1 ))
 	done
 
 	# Check that the template ZFS filesystem exists.
@@ -5710,7 +5710,7 @@ create_vm_instance ()
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
 		then
-			VM_TAP_ID_TEMP=$((VM_TAP_ID_TEMP + 1))
+			VM_TAP_ID_TEMP=$(( ${VM_TAP_ID_TEMP} + 1 ))
 		else
 			VM_TAP_ID=${VM_TAP_ID_TEMP}
 		fi
@@ -6096,7 +6096,7 @@ create_jail ()
 			then
 				break
 			else
-				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} +1 ))
+				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} + 1 ))
 			fi
 		done
 		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
