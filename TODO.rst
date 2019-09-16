@@ -5,7 +5,6 @@ fdo-server TODO list:
 TODO
 ----
 
-- Update all prompts and verification messages to new style (use single quotes and white on cyan text).
 - Jail recipes with additional filesystems should ask for pool to use (e.g. pxe recipe).
 - fdo-backupz-thin-snapshots must ALWAYS keep the lastest TWO snapshots.
 - fdo-backupz-thin-snapshots and fdo-backupz should both block one another.
@@ -52,3 +51,4 @@ DONE
 - 'http_gateway': disable upstreaming traffic of invalid/unused host names/IP addresses.
 - All scripts which destroy filesystems should rename the backup pool filesystem, prefix with -DESTROYED (fdo-hotdesk-remove-user).
 - Convert all exit codes to 1 for expected error, 2 for unexpected error and 3 for interupt error.
+- Update all prompts and verification messages to new style (e.g. use single quotes and white on cyan text).
