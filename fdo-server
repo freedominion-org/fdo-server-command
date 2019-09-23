@@ -3309,7 +3309,7 @@ init_hotdesking ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Get pool name to use for hotdesk users' home folders.
-	POOL_NAME=""
+	HOTDESK_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -3319,26 +3319,26 @@ init_hotdesking ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		POOL_NAME=${POOLS_AVAILABLE}
+		HOTDESK_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${POOL_NAME}" = "" ]
+		while [ "${HOTDESK_POOL_NAME}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			HOTDESK_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the hotdesk users home folders.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${HOTDESK_POOL_NAME_TEMP}${LCYN}' to store the hotdesk users home folders.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				POOL_NAME="${POOL_NAME_TEMP}"
+				HOTDESK_POOL_NAME="${HOTDESK_POOL_NAME_TEMP}"
 			fi
 		done
 	fi
 
 	# Warn if hotdesk user home base dataset already exists.
-	zfs list ${POOL_NAME}/fdo-hotdesk-home 2> /dev/null
+	zfs list ${HOTDESK_POOL_NAME}/fdo-hotdesk-home 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
 	fi
 
 	# Get the NIS domainname.
@@ -3415,7 +3415,7 @@ init_hotdesking ()
 	sed -i "" "s/rpc_lockd_enable=\"NO\"/rpc_lockd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/rpc_statd_enable=\"NO\"/rpc_statd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/rpcbind_enable=\"NO\"/rpcbind_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/POOL_NAME/${POOL_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/hotdesk-home-zfs-name.conf
+	sed -i "" "s/HOTDESK_POOL_NAME/${HOTDESK_POOL_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/hotdesk-home-zfs-name.conf
 	sed -i "" "s/NIS_DOMAIN_NAME/${NIS_DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/NIS_HOST_IP/${NIS_HOST_IP}/" configs/${HOST_NAME}/etc/rc.conf
 
@@ -3465,7 +3465,7 @@ init_hotdesking ()
 	pw group add users -g 100 > /dev/null 2>&1
 
 	# Create the ZFS dataset for the root of hotdesk users home folders
-	zfs create -o mountpoint=/fdo-hotdesk-home ${POOL_NAME}/fdo-hotdesk-home
+	zfs create -o mountpoint=/fdo-hotdesk-home ${HOTDESK_POOL_NAME}/fdo-hotdesk-home
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
@@ -3486,8 +3486,8 @@ init_hotdesking ()
 	echo -e "\n${YELL}To register hotdesk users on this server; use the command:${NRML}"
 	echo -e "${LBLU}fdo-hotdesk-add-user${NRML}\n"
 
-	echo -e "${YELL}Hotdesk user home folder pool name:${NRML} ${POOL_NAME}"
-	echo -e "${YELL}Hotdesk user home folder dataset:${NRML}   ${POOL_NAME}/fdo-hotdesk-home"
+	echo -e "${YELL}Hotdesk user home folder pool name:${NRML} ${HOTDESK_POOL_NAME}"
+	echo -e "${YELL}Hotdesk user home folder dataset:${NRML}   ${HOTDESK_POOL_NAME}/fdo-hotdesk-home"
 	echo -e "${YELL}NIS domain name:${NRML}                    ${NIS_DOMAIN_NAME}"
 	echo -e "${YELL}NIS server IP address:${NRML}              ${NIS_HOST_IP}\n"
 
@@ -3546,7 +3546,7 @@ init_jails ()
 	fi
 
 	# Get pool name to use for base of jails.
-	POOL_NAME=""
+	JAIL_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -3556,26 +3556,26 @@ init_jails ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		POOL_NAME=${POOLS_AVAILABLE}
+		JAIL_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${POOL_NAME}" = "" ]
+		while [ "${JAIL_POOL_NAME}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for jails datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			JAIL_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${JAIL_POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				POOL_NAME="${POOL_NAME_TEMP}"
+				JAIL_POOL_NAME="${JAIL_POOL_NAME_TEMP}"
 			fi
 		done
 	fi
  
 	# Warn if jail base dataset already exists.
-	zfs list ${POOL_NAME}/jails 2> /dev/null
+	zfs list ${JAIL_POOL_NAME}/jails 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${POOL_NAME}/jails${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
 		JAILS_FILESYSTEM_EXISTS="yes"
 	else
 		JAILS_FILESYSTEM_EXISTS="no"
@@ -3584,10 +3584,10 @@ init_jails ()
 	pause_prompt 8
 
 	# Test for existing template jail and prompt how to proceed
-	zfs list ${POOL_NAME}/jails/template 2> /dev/null
+	zfs list ${JAIL_POOL_NAME}/jails/template 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The ZFS dataset '${ORNG}${POOL_NAME}/jails/template${NRML}' already exists!\n"
+		echo -e "\n${LRED}ERROR:${NRML} The ZFS dataset '${ORNG}${JAIL_POOL_NAME}/jails/template${NRML}' already exists!\n"
 		question_yes_no "\nIt seems as though '${NRML}init-jails${LCYN}' has already been applied to this host.\nWould you like to proceed?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -3595,10 +3595,10 @@ init_jails ()
 			question_yes_no "\nWould you like to delete the existing jail template filesystem \nand all dependent clones?\nAnswer '${NRML}no${LCYN}' to rename the existing filesystem. [CAUTION]"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				zfs destroy -Rf ${POOL_NAME}/jails/template
+				zfs destroy -Rf ${JAIL_POOL_NAME}/jails/template
 			else
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
-				zfs rename -f ${POOL_NAME}/jails/template ${POOL_NAME}/jails/template_renamed-by-init-jails-${NOW}
+				zfs rename -f ${JAIL_POOL_NAME}/jails/template ${JAIL_POOL_NAME}/jails/template_renamed-by-init-jails-${NOW}
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
@@ -3642,23 +3642,23 @@ init_jails ()
 	echo -e "\n${YELL}Creating ZFS datasets for template jail...${NRML}\n"
 	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
 	then
-		zfs create -o mountpoint=/jls ${POOL_NAME}/jails
+		zfs create -o mountpoint=/jls ${JAIL_POOL_NAME}/jails
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs create ${POOL_NAME}/jails/template
+	zfs create ${JAIL_POOL_NAME}/jails/template
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Mount the datasets if they are not already
-	zfs mount | grep "${POOL_NAME}/jails "
+	zfs mount | grep "${JAIL_POOL_NAME}/jails "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/jails
+		zfs mount ${JAIL_POOL_NAME}/jails
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | grep "${POOL_NAME}/jails/template "
+	zfs mount | grep "${JAIL_POOL_NAME}/jails/template "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/jails/template
+		zfs mount ${JAIL_POOL_NAME}/jails/template
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
@@ -3677,7 +3677,7 @@ init_jails ()
 		exit 2
 	fi
 
-	echo "${POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
+	echo "${JAIL_POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
 	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/^#template/template/" configs/${HOST_NAME}/etc/jail.conf
 
@@ -3748,7 +3748,7 @@ init_jails ()
 	install_file_tree configs/${HOST_NAME} /
 
 	# Take snapshot of the template for use in create-jail*
-	zfs snapshot ${POOL_NAME}/jails/template@${FREEBSD_VERSION_STRING}
+	zfs snapshot ${JAIL_POOL_NAME}/jails/template@${FREEBSD_VERSION_STRING}
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
@@ -4002,7 +4002,7 @@ init_vms ()
 	fi
 
 	# Get pool name to use for base of VM image datasets.
-	POOL_NAME=""
+	VMS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -4012,17 +4012,17 @@ init_vms ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		POOL_NAME=${POOLS_AVAILABLE}
+		VMS_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${POOL_NAME}" = "" ]
+		while [ "${VMS_POOL_NAME}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for VM image datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			VMS_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the VM image datasets.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${VMS_POOL_NAME_TEMP}${LCYN}' to store the VM image datasets.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				POOL_NAME="${POOL_NAME_TEMP}"
+				VMS_POOL_NAME="${VMS_POOL_NAME_TEMP}"
 			fi
 		done
 	fi
@@ -4036,54 +4036,54 @@ init_vms ()
 
 	# Create ZFS datasets for VM images
 	echo -e "\n${YELL}Creating ZFS datasets for VM images...${NRML}\n"
-	zfs list ${POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${POOL_NAME}/${VMS_ROOT_FS}
+		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${VMS_POOL_NAME}/${VMS_ROOT_FS}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs create -o recordsize=512k ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+		zfs create -o recordsize=512k ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Mount the datasets if they are not already
-	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS} "
+	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS} "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}
+		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
+	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
+	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | grep "${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
+	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
@@ -4116,7 +4116,7 @@ init_vms ()
 	sed -i "" "s/^#net.link.tap.up_on_open=.*/net.link.tap.up_on_open=1/" configs/${HOST_NAME}/etc/sysctl.conf
 
 	# Store subsystem configuration details
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.pool_name "${POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.pool_name "${VMS_POOL_NAME}"
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_id "${VM_BRIDGE_ID}"
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_net_iface "${LAN_NET_IFACE}"
 
@@ -4162,7 +4162,7 @@ create_vm_template_cleanup ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Destroy any ZFS filesystems that were created.
-		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
+		zfs destroy -rf ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
@@ -4197,7 +4197,7 @@ create_vm_instance_cleanup ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Destroy any ZFS filesystems that were created.
-		zfs destroy -rf ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
+		zfs destroy -rf ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
@@ -4427,7 +4427,7 @@ create_vm_image_handler ()
 					readee -p "${LCYN}Enter the name of the disk image: ${NRML}" IMAGE_NAME_TEMP
 
 					# Check that the disk image name is not already in use.
-					zfs list -H ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME_TEMP} > /dev/null 2>&1
+					zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME_TEMP} > /dev/null 2>&1
 					if [ ${?} -eq 0 ]
 					then
 						echo -e "\n${LRED}ERROR:${NRML} The disk image name '${ORNG}${IMAGE_NAME_TEMP}${NRML}'\n       is already in use.\n"
@@ -4455,7 +4455,7 @@ create_vm_image_handler ()
 				IMAGE_FILENAME="${IMAGE_NAME}/${IMAGE_NAME}.img"
 
 				echo -e "\n${YELL}Creating additional disk image filesystem...${NRML}\n"
-				zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} 2> /dev/null
+				zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} 2> /dev/null
 				if [ ${?} -ne 0 ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Failed to create the additional disk image filesystem!\n"
@@ -4471,7 +4471,7 @@ create_vm_image_handler ()
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the disk image to its filesystem!\n"
-						zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
 						# Skip to top of this while loop, we don't want to do anything else.
 						continue
 					fi
@@ -4482,7 +4482,7 @@ create_vm_image_handler ()
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${ORNG}WARNING:${NRML} There was a problem creating the disk image in its filesystem!\n"
-						zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
 						# Skip to top of this while loop, we don't want to do anything else.
 						continue
 					fi
@@ -4651,7 +4651,7 @@ create_vm_image_handler ()
 				fi
 
 				echo -e "\n${YELL}Destroying disk image filesystem...${NRML}\n"
-				zfs destroy -f ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+				zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
 				if [ ${?} -ne 0 ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Failed to destroy the additional disk image filesystem!\n"
@@ -4939,8 +4939,8 @@ create_vm_template ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the VM subsystem has been initialised on this host.
-	POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
-	if [ ${?} -ne 0 ] || [ "${POOL_NAME}" = "null" ]
+	VMS_POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
+	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
 		echo -e "       Consider using the command:"
@@ -5285,14 +5285,14 @@ create_vm_template ()
 	fi
 
 	# Create ZFS filesystem for VM images
-	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	if [ ${?} -ne 0 ]
 	then
 		# ZFS filesystem doesn't yet exist, so let's create it.
 		echo -e "\n${YELL}Creating ZFS filesystem for the template VM OS image...${NRML}\n"
-		zfs create ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
+		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+		VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		echo -e "\n${YELL}ZFS filesystem for the template VM image already exists...${NRML}\n"
@@ -5427,7 +5427,7 @@ create_vm_template ()
 	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
 
 	# Snapshot the template VM for use by 'create-vm-instance'.
-	zfs snapshot -r ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
+	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the template VM filesystem!\n       Aborting.\n"
@@ -5529,22 +5529,22 @@ create_vm_instance ()
 	done
 
 	# Check that the template ZFS filesystem exists.
-	zfs list -H ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME} > /dev/null 2>&1
+	zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The template VM filesystem: "
-		echo -e "       ${ORNG}${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}${NRML}"
+		echo -e "       ${ORNG}${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}${NRML}"
 		echo -e "       does not exist!"
 		echo -e "       Aborting.\n"
 		exit 1
 	fi
 
 	# Check that the instance ZFS filesystem does not already exist.
-	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The instance VM filesystem: "
-		echo -e "       ${ORNG}${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}${NRML}"
+		echo -e "       ${ORNG}${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}${NRML}"
 		echo -e "       already exists. To delete it, use the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-instance ${VM_NAME}${NRML}\n"
 		echo -e "       Aborting.\n"
@@ -5574,8 +5574,8 @@ create_vm_instance ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the VM subsystem has been initialised on this host.
-	POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
-	if [ ${?} -ne 0 ] || [ "${POOL_NAME}" = "null" ]
+	VMS_POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
+	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
 		echo -e "       Consider using the command:"
@@ -5808,9 +5808,9 @@ create_vm_instance ()
 
 	# Create instance VM filesystem by cloning from it's template VM.
 	echo -e "\n${YELL}Creating ZFS filesystem for the instance VM OS image...${NRML}\n"
-	zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}@latest ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
+	zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}@latest ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
+	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
@@ -5871,16 +5871,16 @@ create_vm_instance ()
 	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
 	then
 		IMAGE_NAME=`echo ${IMAGE_1_FILENAME} | cut -d/ -f1`
-		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
-		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
 	then
 		IMAGE_NAME=`echo ${IMAGE_2_FILENAME} | cut -d/ -f1`
-		zfs clone ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
-		${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -5925,7 +5925,7 @@ create_vm_instance ()
 	fi
 
 	# Snapshot the instance VM for later maintenance.
-	zfs snapshot -r ${POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@initial
+	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@initial
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the instance VM filesystem!\n       Aborting.\n"
@@ -6045,7 +6045,7 @@ create_jail ()
 	fi
 
 	# Check that the jails subsystem is initialised and therefore we know the pool name.
-	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
+	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
@@ -6082,7 +6082,7 @@ create_jail ()
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 	FREEBSD_ARCH=`uname -m`
 
-	TEMPLATE_SNAPSHOT=`zfs list -t all -r ${POOL_NAME}/jails/template | awk '{print $1}' | cut -d@ -f2| egrep "^${FREEBSD_VERSION}-RELEASE" | sort | tail -1`
+	TEMPLATE_SNAPSHOT=`zfs list -t all -r ${JAIL_POOL_NAME}/jails/template | awk '{print $1}' | cut -d@ -f2| egrep "^${FREEBSD_VERSION}-RELEASE" | sort | tail -1`
 
 	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 
@@ -6104,7 +6104,7 @@ create_jail ()
 
 	# Create new jail filesystem by zfs send/recv from the template jail snapshot
 	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
-	zfs send -e ${POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${POOL_NAME}/jails/${JAIL_NAME}
+	zfs send -e ${JAIL_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAIL_POOL_NAME}/jails/${JAIL_NAME}
 
 	# Install template jails' configs to new jails' config repo directory
 	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state
@@ -6263,8 +6263,8 @@ revert_create_jail ()
 	done
 
 	# Destroy the jail filesystem
-	POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	zfs destroy -rf ${POOL_NAME}/jails/${JAIL_TO_REVERT}
+	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
+	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT}
 
 	# Delete jail config directory from local repo
 	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME}
@@ -6566,7 +6566,7 @@ init_clonezilla_images ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Get pool name to use for Clonezilla images.
-	POOL_NAME=""
+	CZ_IMAGES_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -6576,17 +6576,17 @@ init_clonezilla_images ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		POOL_NAME=${POOLS_AVAILABLE}
+		CZ_IMAGES_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${POOL_NAME}" = "" ]
+		while [ "${CZ_IMAGES_POOL_NAME}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select pool for Clonezilla images:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			CZ_IMAGES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${POOL_NAME_TEMP}${LCYN}' to store the Clonezilla images.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${CZ_IMAGES_POOL_NAME_TEMP}${LCYN}' to store the Clonezilla images.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				POOL_NAME="${POOL_NAME_TEMP}"
+				CZ_IMAGES_POOL_NAME="${CZ_IMAGES_POOL_NAME_TEMP}"
 			fi
 		done
 	fi
@@ -6624,10 +6624,10 @@ init_clonezilla_images ()
 	done
 
 	# Warn if Clonezilla images dataset already exists.
-	zfs list ${POOL_NAME}/clonezilla-images 2> /dev/null
+	zfs list ${CZ_IMAGES_POOL_NAME}/clonezilla-images 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${POOL_NAME}/clonezilla-images${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${CZ_IMAGES_POOL_NAME}/clonezilla-images${NRML}' already exists!\n"
 	fi
 
 	sed -i "" "s/mountd_enable=\"NO\"/mountd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -6640,7 +6640,7 @@ init_clonezilla_images ()
 	install_file_tree configs/${HOST_NAME} /
 
 	# Create the ZFS dataset for the Clonezilla images
-	zfs create -o mountpoint=/usr/home/partimag ${POOL_NAME}/clonezilla-images
+	zfs create -o mountpoint=/usr/home/partimag ${CZ_IMAGES_POOL_NAME}/clonezilla-images
 
 	touch /etc/exports
 
