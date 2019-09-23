@@ -131,7 +131,7 @@ usage ()
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-hotdesking${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-clonezilla-images${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-partimag${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-sshfs-daemon${NRML}"
 	echo -e ""
@@ -6538,7 +6538,7 @@ create_jail_from_recipe ()
 
 }
 
-init_clonezilla_images ()
+init_partimag ()
 {
 
 	cd /${REPO_NAME}
@@ -6565,8 +6565,8 @@ init_clonezilla_images ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	# Get pool name to use for Clonezilla images.
-	CZ_IMAGES_POOL_NAME=""
+	# Get pool name to use for partimag filesystem.
+	PARTIMAG_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -6576,17 +6576,17 @@ init_clonezilla_images ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		CZ_IMAGES_POOL_NAME=${POOLS_AVAILABLE}
+		PARTIMAG_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${CZ_IMAGES_POOL_NAME}" = "" ]
+		while [ "${PARTIMAG_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool for Clonezilla images:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			CZ_IMAGES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			dialog --no-items --no-cancel --menu "Select pool for the partimag filesystem:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			PARTIMAG_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${CZ_IMAGES_POOL_NAME_TEMP}${LCYN}' to store the Clonezilla images.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${PARTIMAG_POOL_NAME_TEMP}${LCYN}' to use for the partimag filesystem.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				CZ_IMAGES_POOL_NAME="${CZ_IMAGES_POOL_NAME_TEMP}"
+				PARTIMAG_POOL_NAME="${PARTIMAG_POOL_NAME_TEMP}"
 			fi
 		done
 	fi
@@ -6623,11 +6623,11 @@ init_clonezilla_images ()
 		break
 	done
 
-	# Warn if Clonezilla images dataset already exists.
-	zfs list ${CZ_IMAGES_POOL_NAME}/clonezilla-images 2> /dev/null
+	# Warn if partimag filesystem already exists.
+	zfs list ${PARTIMAG_POOL_NAME}/partimag 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${CZ_IMAGES_POOL_NAME}/clonezilla-images${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
 	fi
 
 	sed -i "" "s/mountd_enable=\"NO\"/mountd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -6639,8 +6639,8 @@ init_clonezilla_images ()
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
 
-	# Create the ZFS dataset for the Clonezilla images
-	zfs create -o mountpoint=/usr/home/partimag ${CZ_IMAGES_POOL_NAME}/clonezilla-images
+	# Create the ZFS filesystem for the partimag
+	zfs create -o mountpoint=/usr/home/partimag ${PARTIMAG_POOL_NAME}/partimag
 
 	touch /etc/exports
 
@@ -6662,7 +6662,7 @@ init_clonezilla_images ()
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
-	git commit -m "Updating host after 'init-clonezilla-images'; ${HOST_NAME}."
+	git commit -m "Updating host after 'init-partimag'; ${HOST_NAME}."
 
 	if [ "${REPO_URI}" != "local" ]
 	then
@@ -6675,11 +6675,10 @@ init_clonezilla_images ()
 		fi
 	fi
 
-	echo -e "\n${LGRN}Congratulations! We have now finished setting up an NFS share for${NRML}"
-	echo -e "${LGRN}Clonezilla images.${NRML}\n"
-	echo -e "${YELL}Clonezilla images NFS version:      3${NRML}"
-	echo -e "${YELL}Clonezilla images host address:     ${HOST_LAN_IP}${NRML}"
-	echo -e "${YELL}Clonezilla images server directory: /home/partimag${NRML}\n"
+	echo -e "\n${LGRN}Congratulations! We have now finished setting up an NFS share for partimag.\n${NRML}"
+	echo -e "${YELL}partimag NFS version:      3${NRML}"
+	echo -e "${YELL}partimag host address:     ${HOST_LAN_IP}${NRML}"
+	echo -e "${YELL}partimag server directory: /home/partimag${NRML}\n"
 
 	cd -
 
@@ -6983,10 +6982,10 @@ case "${SUB_CMD}" in
 		init_hotdesking
 		;;
 
-	init-clonezilla-images)
-		# Initialise the NFS share for Clonezilla images.
+	init-partimag)
+		# Initialise the NFS share for partimag.
 		update_local_repo
-		init_clonezilla_images
+		init_partimag
 		;;
 
 	merge-local-repo-to-remote)
