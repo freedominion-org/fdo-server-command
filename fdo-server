@@ -3334,11 +3334,11 @@ init_hotdesking ()
 		done
 	fi
 
-	# Warn if hotdesk user home base dataset already exists.
+	# Warn if hotdesk user home directory base filesystem already exists.
 	zfs list ${HOTDESK_POOL_NAME}/fdo-hotdesk-home 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
 	fi
 
 	# Get the NIS domainname.
@@ -3464,7 +3464,7 @@ init_hotdesking ()
 	# Let's add a group called users to support a Slackware based workstation / client
 	pw group add users -g 100 > /dev/null 2>&1
 
-	# Create the ZFS dataset for the root of hotdesk users home folders
+	# Create the ZFS filesystem for the root of hotdesk users home folders
 	zfs create -o mountpoint=/fdo-hotdesk-home ${HOTDESK_POOL_NAME}/fdo-hotdesk-home
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -3486,8 +3486,8 @@ init_hotdesking ()
 	echo -e "\n${YELL}To register hotdesk users on this server; use the command:${NRML}"
 	echo -e "${LBLU}fdo-hotdesk-add-user${NRML}\n"
 
-	echo -e "${YELL}Hotdesk user home folder pool name:${NRML} ${HOTDESK_POOL_NAME}"
-	echo -e "${YELL}Hotdesk user home folder dataset:${NRML}   ${HOTDESK_POOL_NAME}/fdo-hotdesk-home"
+	echo -e "${YELL}Hotdesk home directory pool name:${NRML}   ${HOTDESK_POOL_NAME}"
+	echo -e "${YELL}Hotdesk home directory filesystem:${NRML}  ${HOTDESK_POOL_NAME}/fdo-hotdesk-home"
 	echo -e "${YELL}NIS domain name:${NRML}                    ${NIS_DOMAIN_NAME}"
 	echo -e "${YELL}NIS server IP address:${NRML}              ${NIS_HOST_IP}\n"
 
@@ -3560,7 +3560,7 @@ init_jails ()
 	else
 		while [ "${JAIL_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool to use for jails datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			dialog --no-items --no-cancel --menu "Select pool to use for jails filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			JAIL_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${JAIL_POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
@@ -3571,11 +3571,11 @@ init_jails ()
 		done
 	fi
  
-	# Warn if jail base dataset already exists.
+	# Warn if jail base filesystem already exists.
 	zfs list ${JAIL_POOL_NAME}/jails 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
 		JAILS_FILESYSTEM_EXISTS="yes"
 	else
 		JAILS_FILESYSTEM_EXISTS="no"
@@ -3587,7 +3587,7 @@ init_jails ()
 	zfs list ${JAIL_POOL_NAME}/jails/template 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The ZFS dataset '${ORNG}${JAIL_POOL_NAME}/jails/template${NRML}' already exists!\n"
+		echo -e "\n${LRED}ERROR:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails/template${NRML}' already exists!\n"
 		question_yes_no "\nIt seems as though '${NRML}init-jails${LCYN}' has already been applied to this host.\nWould you like to proceed?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -3638,8 +3638,8 @@ init_jails ()
 		exit 1
 	fi
 
-	# Create ZFS datasets for service jail template
-	echo -e "\n${YELL}Creating ZFS datasets for template jail...${NRML}\n"
+	# Create ZFS filesystems for service jail template
+	echo -e "\n${YELL}Creating ZFS filesystems for template jail...${NRML}\n"
 	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
 	then
 		zfs create -o mountpoint=/jls ${JAIL_POOL_NAME}/jails
@@ -3648,7 +3648,7 @@ init_jails ()
 	zfs create ${JAIL_POOL_NAME}/jails/template
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Mount the datasets if they are not already
+	# Mount the filesystems if they are not already
 	zfs mount | grep "${JAIL_POOL_NAME}/jails "
 	if [ ${?} -ne 0 ]
 	then
@@ -4001,7 +4001,7 @@ init_vms ()
 		exit 2
 	fi
 
-	# Get pool name to use for base of VM image datasets.
+	# Get pool name to use for base of VM image filesystems.
 	VMS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
@@ -4016,10 +4016,10 @@ init_vms ()
 	else
 		while [ "${VMS_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool to use for VM image datasets:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			dialog --no-items --no-cancel --menu "Select pool to use for VM image filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			VMS_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${VMS_POOL_NAME_TEMP}${LCYN}' to store the VM image datasets.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${VMS_POOL_NAME_TEMP}${LCYN}' to store the VM image filesystems.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VMS_POOL_NAME="${VMS_POOL_NAME_TEMP}"
@@ -4034,8 +4034,8 @@ init_vms ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Create ZFS datasets for VM images
-	echo -e "\n${YELL}Creating ZFS datasets for VM images...${NRML}\n"
+	# Create ZFS filesystems for VM images
+	echo -e "\n${YELL}Creating ZFS filesystems for VM images...${NRML}\n"
 	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -4061,7 +4061,7 @@ init_vms ()
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Mount the datasets if they are not already
+	# Mount the filesystems if they are not already
 	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS} "
 	if [ ${?} -ne 0 ]
 	then
@@ -4089,7 +4089,7 @@ init_vms ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS datasets for the"
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS filesystems for the"
 		echo -e "       VM subsystem.\n       Aborting.\n"
 		exit 2
 	fi
@@ -6254,12 +6254,12 @@ revert_create_jail ()
 
 	echo -e "\n"
 
-	# Destroy additional jail recipe datasets in reverse order
-	REV_RECIPE_ZFS_DATASETS=`echo ${RECIPE_ZFS_DATASETS} | rev`
-	for REV_RECIPE_ZFS_DATASET in ${REV_RECIPE_ZFS_DATASETS}
+	# Destroy additional jail recipe filesystems in reverse order
+	REV_RECIPE_ZFS_FILESYSTEMS=`echo ${RECIPE_ZFS_FILESYSTEMS} | rev`
+	for REV_RECIPE_ZFS_FILESYSTEM in ${REV_RECIPE_ZFS_FILESYSTEMS}
 	do
-		RECIPE_ZFS_DATASET=`echo ${REV_RECIPE_ZFS_DATASET} | rev`
-		zfs destroy -f ${RECIPE_ZFS_DATASET}
+		RECIPE_ZFS_FILESYSTEM=`echo ${REV_RECIPE_ZFS_FILESYSTEM} | rev`
+		zfs destroy -f ${RECIPE_ZFS_FILESYSTEM}
 	done
 
 	# Destroy the jail filesystem
@@ -6373,20 +6373,20 @@ create_jail_from_recipe ()
 	# Source the recipe again to pick up any updated variables
 	. /${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
 
-	echo -e "\n\n${YELL}Creating any additional jail recipe datasets...${NRML}\n"
+	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
 
 	# Sleep for 1 second to avoid timestamp conflicts
 	sleep 1
 
 	PRE_RECIPE_TIMESTAMP=`date "+%s"`
 
-	# Create additional jail recipe datasets
-	COUNT_DATASETS=0
-	for RECIPE_ZFS_DATASET in ${RECIPE_ZFS_DATASETS}
+	# Create additional jail recipe filesystems
+	COUNT_FILESYSTEMS=0
+	for RECIPE_ZFS_FILESYSTEM in ${RECIPE_ZFS_FILESYSTEMS}
 	do
-		COUNT_DATASETS=$(( ${COUNT_DATASETS} + 1 ))
-		RECIPE_ZFS_MOUNTPOINT=`echo ${RECIPE_ZFS_MOUNTPOINTS} | awk -v column="${COUNT_DATASETS}" '{print $column}'`
-		zfs create -o mountpoint=${RECIPE_ZFS_MOUNTPOINT} ${RECIPE_ZFS_DATASET}
+		COUNT_FILESYSTEMS=$(( ${COUNT_FILESYSTEMS} + 1 ))
+		RECIPE_ZFS_MOUNTPOINT=`echo ${RECIPE_ZFS_MOUNTPOINTS} | awk -v column="${COUNT_FILESYSTEMS}" '{print $column}'`
+		zfs create -o mountpoint=${RECIPE_ZFS_MOUNTPOINT} ${RECIPE_ZFS_FILESYSTEM}
 	done
 
 	cd /${REPO_NAME}
@@ -6627,7 +6627,7 @@ init_partimag ()
 	zfs list ${PARTIMAG_POOL_NAME}/partimag 2> /dev/null
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS dataset '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
 	fi
 
 	sed -i "" "s/mountd_enable=\"NO\"/mountd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
