@@ -6346,6 +6346,7 @@ create_jail_from_recipe ()
 	JAIL_NAME="${1}"
 	JAIL_HOST_NAME="${2}"
 	JAIL_RECIPE_NAME="${3}"
+	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
 
 	get_enabled_nat_services
 
@@ -6357,6 +6358,52 @@ create_jail_from_recipe ()
 		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
 		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
 		exit 1
+	fi
+
+	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
+	# This should not involve any persistent changes to the system or any other jails.
+	prep_recipe
+
+	if [ "${PREP_SUCCESS}" = "yes" ]
+	then
+		echo -e "${LGRN}Recipe prep successful.${NRML}\n"
+	elif [ "${PREP_SUCCESS}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
+		exit 1
+	else
+		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
+	fi
+
+	# Check if SIDES_POOL_NAME is used for this recipe.
+	echo "${SIDES_FILESYSTEMS}" | egrep "${SIDES_POOL_NAME}" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Get pool name to use for additional recipe filesystems.
+		SIDES_POOL_NAME=""
+		POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+		NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+		if [ ${NUM_POOLS} -lt 1 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
+			exit 1
+		fi
+		if [ ${NUM_POOLS} -lt 2 ]
+		then
+			SIDES_POOL_NAME=${POOLS_AVAILABLE}
+		else
+			while [ "${SIDES_POOL_NAME}" = "" ]
+			do
+				dialog --no-items --no-cancel --menu "Select pool to use for additional ZFS filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+				SIDES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${NRML}${SIDES_POOL_NAME_TEMP}${LCYN}' to use for additional filesystems.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					SIDES_POOL_NAME="${SIDES_POOL_NAME_TEMP}"
+				fi
+			done
+		fi
 	fi
 
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
@@ -6381,12 +6428,12 @@ create_jail_from_recipe ()
 	PRE_RECIPE_TIMESTAMP=`date "+%s"`
 
 	# Create additional jail recipe filesystems
-	COUNT_FILESYSTEMS=0
-	for RECIPE_ZFS_FILESYSTEM in ${RECIPE_ZFS_FILESYSTEMS}
+	COUNT_SIDES_FILESYSTEMS=0
+	for SIDES_FILESYSTEM in ${SIDES_FILESYSTEMS}
 	do
-		COUNT_FILESYSTEMS=$(( ${COUNT_FILESYSTEMS} + 1 ))
-		RECIPE_ZFS_MOUNTPOINT=`echo ${RECIPE_ZFS_MOUNTPOINTS} | awk -v column="${COUNT_FILESYSTEMS}" '{print $column}'`
-		zfs create -o mountpoint=${RECIPE_ZFS_MOUNTPOINT} ${RECIPE_ZFS_FILESYSTEM}
+		COUNT_SIDES_FILESYSTEMS=$(( ${COUNT_SIDES_FILESYSTEMS} + 1 ))
+		SIDES_MOUNTPOINT=`echo ${SIDES_MOUNTPOINTS} | awk -v column="${COUNT_SIDES_FILESYSTEMS}" '{print $column}'`
+		zfs create -o mountpoint=${SIDES_MOUNTPOINT} ${SIDES_FILESYSTEM}
 	done
 
 	cd /${REPO_NAME}
@@ -6482,7 +6529,9 @@ create_jail_from_recipe ()
 		revert_create_jail ${JAIL_NAME}
 		exit 1
 	else
-		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS variable!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
+		echo -e "         Consider reverting the jail creation by running the command:${NRML}"
+		echo -e "${LBLU}         ${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
 	fi
 
 	if [ "${RECIPE_SUCCESS}" = "devel" ]
