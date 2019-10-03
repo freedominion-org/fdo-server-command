@@ -610,7 +610,7 @@ question_yes_no ()
 	while true
 	do
 		echo -e "${LCYN}${1}${NRML}"
-		readee -p "${LCYN}(yes/no): ${NRML}" ANSWER
+		readee -p "${LCYN}(yes|no): ${NRML}" ANSWER
 		if [ "${ANSWER}" = "yes" ] || [ "${ANSWER}" = "no" ]
 		then
 			break
@@ -1122,7 +1122,7 @@ check_repo_config ()
 		do
 			echo -e "\n${LCYN}Would you like to use an existing remote git repo (recommended, if available),${NRML}"
 			echo -e "${LCYN}or start with a local repo (not backed up remotely, no central management)?${NRML}"
-			readee -p "${LCYN}(remote/local): ${NRML}" REPO_TYPE_TEMP
+			readee -p "${LCYN}(remote|local): ${NRML}" REPO_TYPE_TEMP
 			# Check input validation.
 			if [ "${REPO_TYPE_TEMP}" = "remote" ] || [ "${REPO_TYPE_TEMP}" = "local" ]
 			then
