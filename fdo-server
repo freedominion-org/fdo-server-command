@@ -1587,7 +1587,7 @@ install_scripts ()
 
 	install_file_tree scripts ${INSTALL_PATH}
 
-	if [ ${INSTALL_FILE_ERROR_COUNT} -gt 0 ]
+	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more scripts to target location:"
 		echo -e "       ${ORNG}(${INSTALL_PATH})${NRML}\n"
@@ -1749,7 +1749,7 @@ install_configs ()
 
 	install_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH}
 
-	if [ ${INSTALL_FILE_ERROR_COUNT} -gt 0 ]
+	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to the target location:\n       ${ORNG}${CONFIG_REPO_ROOT}${NRML}\n"
 		cd -
