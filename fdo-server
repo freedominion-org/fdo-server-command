@@ -57,6 +57,9 @@ VM_DEFAULT_SECTOR_SIZE=4096
 VM_VNC_PORT_NUM_START=6000
 VM_DEFAULT_NIC_DRIVER="e1000"
 VM_DEFAULT_BOOT_LOADER="UEFI"
+FDO_VMS_LIST_PATH="/usr/local/sbin/fdo-vms-list"
+FDO_VMS_START_PATH="/usr/local/sbin/fdo-vms-start"
+FDO_VMS_STOP_PATH="/usr/local/sbin/fdo-vms-stop"
 VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
 SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
@@ -623,6 +626,20 @@ question_yes ()
 		echo -e "${LCYN}${1}${NRML}"
 		readee -p "${LCYN}(yes): ${NRML}" ANSWER
 		if [ "${ANSWER}" = "yes" ]
+		then
+			break
+		fi
+		echo ""
+	done
+}
+
+question_purge_archive_reuse ()
+{
+	while true
+	do
+		echo -e "${LCYN}${1}${NRML}"
+		readee -p "${LCYN}(purge|archive|reuse): ${NRML}" ANSWER
+		if [ "${ANSWER}" = "purge" ] || [ "${ANSWER}" = "archive" ] || [ "${ANSWER}" = "reuse" ]
 		then
 			break
 		fi
@@ -3495,10 +3512,94 @@ init_hotdesking ()
 
 }
 
+init_jails_cleanup ()
+{
+
+	ERROR_COUNT=0
+
+	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	service jail status | egrep "^ template " > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Stop the template jail.
+		echo -e "\n${YELL}Stopping the template jail...\n"
+		service jail onestop template > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		echo -e "\n${YELL}The template jail appears to be stopped.\n"
+	fi
+
+	# Wait for I/O to settle.
+	sleep 4
+
+	# Check if the jail did not stop or appears to be still running.
+	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Remove the jail and unmount nullfs mounted certificates directory.
+		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
+		JAIL_ID=`cat ${JAIL_ID_FILE}`
+		jail -r ${JAIL_ID} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${INIT_JAILS_FILESYSTEMS_CREATED} = true ]
+	then
+		# Destroy the template jail filesystem.
+		zfs destroy -rf ${JAIL_POOL_NAME}/jails/template > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${INIT_JAILS_HOST_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_JAILS}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_JAILS}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Remove base system tarballs now that they are no longer needed.
+	rm /tmp/jail-base.txz > /dev/null 2>&1
+	rm /tmp/jail-lib32.txz > /dev/null 2>&1
+	rm /tmp/jail-src.txz > /dev/null 2>&1
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-jails process!\n"
+		return 2
+	fi
+
+	echo -e "\n${ORNG}Aborting.${NRML}\n"
+}
+
 init_jails ()
 {
+
+	INIT_JAILS_FILESYSTEMS_CREATED=false
+	INIT_JAILS_HOST_MODIFIED=false
+
+	trap 'init_jails_cleanup ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_JAILS=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
 	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
  
+	get_enabled_nat_services
+
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
@@ -3547,7 +3648,7 @@ init_jails ()
 
 	# Get pool name to use for base of jails.
 	JAIL_POOL_NAME=""
-	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+	POOLS_AVAILABLE=`zpool list -H -o name`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
@@ -3572,7 +3673,7 @@ init_jails ()
 	fi
  
 	# Warn if jail base filesystem already exists.
-	zfs list ${JAIL_POOL_NAME}/jails 2> /dev/null
+	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
@@ -3583,22 +3684,25 @@ init_jails ()
 
 	pause_prompt 8
 
-	# Test for existing template jail and prompt how to proceed
-	zfs list ${JAIL_POOL_NAME}/jails/template 2> /dev/null
+	# Test for existing jail base filesystem and prompt how to proceed.
+	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails/template${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
 		question_yes_no "\nIt seems as though '${NRML}init-jails${LCYN}' has already been applied to this host.\nWould you like to proceed?"
 		if [ "${ANSWER}" = "yes" ]
 		then
-			# Ask whether to rename exsiting filesystem or delete
-			question_yes_no "\nWould you like to delete the existing jail template filesystem \nand all dependent clones?\nAnswer '${NRML}no${LCYN}' to rename the existing filesystem. [CAUTION]"
-			if [ "${ANSWER}" = "yes" ]
+			# Ask whether to purge, archive or reuse exsiting jail base filesystem.
+			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing jail base filesystem\nand all it's children filesystems? [CAUTION]"
+			if [ "${ANSWER}" = "purge" ]
 			then
-				zfs destroy -Rf ${JAIL_POOL_NAME}/jails/template
-			else
+				zfs destroy -Rf ${JAIL_POOL_NAME}/jails
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "archive" ]
+			then
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
-				zfs rename -f ${JAIL_POOL_NAME}/jails/template ${JAIL_POOL_NAME}/jails/template_renamed-by-init-jails-${NOW}
+				zfs rename -f ${JAIL_POOL_NAME}/jails ${JAIL_POOL_NAME}/jails_renamed-by-init-jails-${NOW}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
@@ -3606,24 +3710,29 @@ init_jails ()
 		fi
 	fi
 
-	patch_host
-	PATCH_HOST_RETURN_CODE=${?}
-	if [ ${PATCH_HOST_RETURN_CODE} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error preparing 'init-jails'!\n"
+		init_jails_cleanup
 		exit 2
 	fi
 
-	# Get version strings
+	patch_host
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
+		init_jails_cleanup
+		exit 2
+	fi
+
+	# Get version strings.
 	FREEBSD_VERSION_STRING=`freebsd-version`
 	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
 	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 
-	ERROR_COUNT=0
-
-	# Download relevant base system tarballs
+	# Download relevant base system tarballs.
 	echo -e "\n${YELL}Downloading FreeBSD base system tarballs...${NRML}\n"
 	fetch -o /tmp/jail-base.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -3634,11 +3743,13 @@ init_jails ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n"
+		init_jails_cleanup
 		exit 1
 	fi
 
-	# Create ZFS filesystems for service jail template
+	# Create ZFS filesystems for service jail template.
+	INIT_JAILS_FILESYSTEMS_CREATED=true
 	echo -e "\n${YELL}Creating ZFS filesystems for template jail...${NRML}\n"
 	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
 	then
@@ -3648,21 +3759,23 @@ init_jails ()
 	zfs create ${JAIL_POOL_NAME}/jails/template
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Mount the filesystems if they are not already
-	zfs mount | grep "${JAIL_POOL_NAME}/jails "
+	# Mount the filesystems if they are not already.
+	zfs mount | egrep "^${JAIL_POOL_NAME}/jails " > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${JAIL_POOL_NAME}/jails
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | grep "${JAIL_POOL_NAME}/jails/template "
+	zfs mount | egrep "^${JAIL_POOL_NAME}/jails/template "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${JAIL_POOL_NAME}/jails/template
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install base system tarballs into the template jail directory
+	# Install base system tarballs into the template jail directory.
 	echo -e "\n${YELL}Extracting FreeBSD base system tarballs into template jail...${NRML}\n"
 	tar -JxC /jls/template/ -f /tmp/jail-base.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -3671,40 +3784,55 @@ init_jails ()
 	tar -JxC /jls/template/ -f /tmp/jail-src.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Remove base system tarballs now that they are no longer needed.
+	rm /tmp/jail-base.txz > /dev/null 2>&1
+	rm /tmp/jail-lib32.txz > /dev/null 2>&1
+	rm /tmp/jail-src.txz > /dev/null 2>&1
+
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in preparing the template jail.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the template jail filesystem!\n"
+		init_jails_cleanup
 		exit 2
 	fi
 
+	INIT_JAILS_HOST_MODIFIED=true
 	echo "${JAIL_POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
 	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#template/template/" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Only run sshd on LAN host (not jail) IPs
+	# Only run sshd on LAN host (not jail) IPs.
 	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
 	do
-		# Add port forwarding rules to pf and ppp config
+		# Add port forwarding rules to pf and ppp config.
 		IS_REPO_CONF="yes" PF_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		IS_REPO_CONF="yes" PPP_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-		# Set this hosts sshd to only run on the primary LAN IP
+		# Set this hosts sshd to only run on the primary LAN IP.
 		sed -i "" "s/#ListenAddress .*/ListenAddress ${IP_ADDRESS}/" configs/${HOST_NAME}/etc/ssh/sshd_config
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP.
 		break
 	done
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install init-jails configs to the template jail
+	# Install init-jails configs to the template jail.
 	install_file_tree config-templates/init-jails /jls/template/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Create nullfs mountpoint for hosts ssl certs
+	# Create nullfs mountpoint for hosts ssl certs.
 	mkdir -p /jls/template/usr/local/etc/ssl/certs
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Copy certain host specific config files to the template jail
+	# Copy certain host specific config files to the template jail.
 	HOST_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
 	for CONFIG_FILE in ${HOST_CONFIG_FILES}
 	do
@@ -3712,47 +3840,111 @@ init_jails ()
 		if [ "${FILE_CONTENTS}" = "COPY_FROM_HOST" ]
 		then
 			cp /${CONFIG_FILE} /jls/template/${CONFIG_FILE}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		elif [ "${FILE_CONTENTS}" = "COPY_STATIC_FROM_HOST" ]
 		then
 			STATIC_CONFIG_FILE="${CONFIG_FILE}.static"
 			cp /${STATIC_CONFIG_FILE} /jls/template/${CONFIG_FILE}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	done
 
-	# Run tzsetup for the jail
-	tzsetup -s -C /jls/template `cat /var/db/zoneinfo`
+	# Run tzsetup for the jail.
+	tzsetup -s -C /jls/template `cat /var/db/zoneinfo` > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	service pf reload
-	service sshd reload
-	service jail start template
+	if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+	then
+		# TODO: resolve why ppp can't reconnect on service restart.
+		#service ppp restart > /dev/null 2>&1
+		service ppp stop > /dev/null 2>&1
+		sleep 4
+		service ppp start > /dev/null 2>&1
+		sleep 4
+		service ppp start > /dev/null 2>&1
+	fi
+	if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+	then
+		service pf reload > /dev/null 2>&1
+	fi
+	service sshd reload > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	service jail start template > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the template jail!\n"
+		init_jails_cleanup
+		exit 2
+	fi
 
 	echo -e "\n${YELL}Updating template jail to latest patch release...${NRML}\n"
 	PAGER=cat freebsd-update -b /jls/template fetch > /tmp/fdo-freebsd-update.output
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	PAGER=cat freebsd-update -b /jls/template install > /tmp/fdo-freebsd-update.output
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	service jail restart template
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install essential packages into the template jail
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst updating the template jail base!\n"
+		init_jails_cleanup
+		exit 2
+	fi
+
+	# Install essential packages into the template jail.
 	echo -e "\n${YELL}Next we need to install some essential packages into the template jail.${NRML}\n"
 	pause_prompt 8
 	pkg -j template update -f
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	pkg -j template install -y ${ESSENTIAL_JAIL_PACKAGES}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Stop the template jail now that we're done making the template
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the template jail packages!\n"
+		init_jails_cleanup
+		exit 2
+	fi
+
+	# Stop the template jail now that we're done making the template.
 	service jail stop template
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Disable template jail from running again
+	# Disable template jail from running again.
 	sed -i "" "s/^template/#template/" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install updated host configs to the system (after disabling template jail)
+	# Install updated host configs to the system (after disabling template jail).
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Take snapshot of the template for use in create-jail*
+	# Take snapshot of the template for use in create-jail*.
 	zfs snapshot ${JAIL_POOL_NAME}/jails/template@${FREEBSD_VERSION_STRING}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the template jail packages!\n"
+		init_jails_cleanup
+		exit 2
+	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	git commit -m "Updating host after 'init-jails'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		init_jails_cleanup
+		exit 2
+	fi
 
 	if [ "${REPO_URI}" != "local" ]
 	then
@@ -3768,8 +3960,6 @@ init_jails ()
 	echo -e "\n${LGRN}Congratulations! We have now finished initialising the jails subsystem.${NRML}\n"
 	echo -e "\n${YELL}To create jails, use the command:${NRML}"
 	echo -e "${LBLU}${SCRIPT_NAME} create-jail${NRML}\n"
-
-	cd -
 
 }
 
@@ -3869,10 +4059,119 @@ init_sshfs_daemon ()
 
 }
 
+init_vms_cleanup ()
+{
+
+	ERROR_COUNT=0
+
+	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Stop any running VMs.
+	for VM_NAME_TEMP in `${FDO_VMS_LIST_PATH} --concise --type=all | egrep -v " stopped$" | awk '{print $1}'`
+	do
+		${FDO_VMS_STOP_PATH} "${VM_NAME_TEMP}" --force
+	done
+
+	# Undo any network config changes.
+	if [ ${INIT_VMS_NET_LINK_TAP_UP_ON_OPEN_ONE} = true ]
+	then
+		sysctl net.link.tap.up_on_open=0 > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_BRIDGE_UP} = true ]
+	then
+		ifconfig ${VM_BRIDGE_IFACE} down > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_BRIDGE_ADDM} = true ]
+	then
+		ifconfig ${VM_BRIDGE_IFACE} deletem ${LAN_NET_IFACE} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_BRIDGE_CREATE} = true ]
+	then
+		ifconfig ${VM_BRIDGE_IFACE} destroy > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Unload any loaded kernel modules.
+	if [ ${INIT_VMS_TAP_LOAD} = true ]
+	then
+		kldunload if_tap
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_BRIDGE_LOAD} = true ]
+	then
+		kldunload if_bridge
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_BRIDGESTP_LOAD} = true ]
+	then
+		kldunload bridgestp
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_VMS_VMM_LOAD} = true ]
+	then
+		kldunload vmm
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Destroy any created filesystems.
+	if [ ${INIT_VMS_FILESYSTEMS_CREATED} = true ]
+	then
+		# Destroy the VMs base filesystem and any children.
+		zfs destroy -rf ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo host system modifications.
+	if [ ${INIT_VMS_HOST_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_VMS}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_VMS}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-vms process!\n"
+		return 2
+	fi
+
+	echo -e "\n${ORNG}Aborting.${NRML}\n"
+}
+
 init_vms ()
 {
 
+	INIT_VMS_TAP_LOAD=false
+	INIT_VMS_BRIDGE_LOAD=false
+	INIT_VMS_BRIDGESTP_LOAD=false
+	INIT_VMS_VMM_LOAD=false
+	INIT_VMS_NET_LINK_TAP_UP_ON_OPEN_ONE=false
+	INIT_VMS_BRIDGE_CREATE=false
+	INIT_VMS_BRIDGE_ADDM=false
+	INIT_VMS_BRIDGE_UP=false
+	INIT_VMS_FILESYSTEMS_CREATED=false
+	INIT_VMS_HOST_MODIFIED=false
+
+	trap 'init_vms_cleanup ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_VMS=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
 	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
  
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
@@ -3883,7 +4182,7 @@ init_vms ()
 		exit 1
 	fi
  
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -3897,8 +4196,8 @@ init_vms ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	# Get the LAN interface for this host
-	## TODO: replace with UCL config file
+	# Get the LAN interface for this host.
+	## TODO: replace with UCL config file.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -3915,90 +4214,11 @@ init_vms ()
 		fi
 	done
 
-	# Exit if the LAN subnet interface was not found
+	# Exit if the LAN subnet interface was not found.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
 		exit 1
-	fi
-
-	ERROR_COUNT=0
-
-	# Install required packages
-	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
-	pause_prompt 8
-	pkg update -f
-	pkg install -y ${VM_SUBSYSTEM_PACKAGES}
-
-	# Load required kernel modules
-	kldstat -n if_tap > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload if_tap 2> /dev/null
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	kldstat -n if_bridge > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload if_bridge 2> /dev/null
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	kldstat -n bridgestp > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload bridgestp 2> /dev/null
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	kldstat -n vmm > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload vmm 2> /dev/null
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the VM subsystem kernel modules.\n       Aborting.\n"
-		exit 2
-	fi
-
-	# Get next available bridge id
-	VM_BRIDGE_ID=-1
-	VM_BRIDGE_ID_TEMP=0
-	while [ ${VM_BRIDGE_ID} -lt 0 ]
-	do
-		ifconfig "bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
-		RESULT1=${?}
-		sysrc "ifconfig_bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
-		RESULT2=${?}
-		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
-		then
-			VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
-		else
-			VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
-		fi
-	done
-
-	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
-
-	# Setup initial bridge interface
-	sysctl net.link.tap.up_on_open=1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n       Aborting.\n"
-		ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
-		ifconfig ${VM_BRIDGE_IFACE} deletem ${LAN_NET_IFACE} > /dev/null 2>&1
-		ifconfig ${VM_BRIDGE_IFACE} destroy > /dev/null 2>&1
-		exit 2
 	fi
 
 	# Get pool name to use for base of VM image filesystems.
@@ -4026,7 +4246,157 @@ init_vms ()
 			fi
 		done
 	fi
- 
+
+	# Test for existing VMs filesystems and prompt how to proceed.
+	zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${VMS_POOL_NAME}/${VMS_ROOT_FS}${NRML}' already exists!\n"
+		question_yes_no "\nIt seems as though '${NRML}init-vms${LCYN}' has already been applied to this host.\nWould you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Ask whether to purge, archive or reuse existing VMs base filesystems.
+			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing VMs base filesystem\nand all it's children filesystems? [CAUTION]"
+			if [ "${ANSWER}" = "purge" ]
+			then
+				zfs destroy -Rf ${VMS_POOL_NAME}/${VMS_ROOT_FS}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "archive" ]
+			then
+				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+				zfs rename -f ${VMS_POOL_NAME}/${VMS_ROOT_FS} ${VMS_POOL_NAME}/${VMS_ROOT_FS}_renamed-by-init-vms-${NOW}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
+			exit 1
+		fi
+	fi
+
+	# Install required packages.
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	pkg update -f
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	pkg install -y ${VM_SUBSYSTEM_PACKAGES}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
+		init_vms_cleanup
+		exit 2
+	fi
+
+	# Load required kernel modules.
+	kldstat -n if_tap > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_VMS_TAP_LOAD=true
+		kldload if_tap 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	kldstat -n if_bridge > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_VMS_BRIDGE_LOAD=true
+		kldload if_bridge 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	kldstat -n bridgestp > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_VMS_BRIDGESTP_LOAD=true
+		kldload bridgestp 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	kldstat -n vmm > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_VMS_VMM_LOAD=true
+		kldload vmm 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ `sysctl -n net.link.tap.up_on_open` -ne 1 ]
+	then
+		INIT_VMS_NET_LINK_TAP_UP_ON_OPEN_ONE=true
+		sysctl net.link.tap.up_on_open=1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading the VM subsystem kernel modules!\n"
+		init_vms_cleanup
+		exit 2
+	fi
+
+	# Get next available bridge id.
+	VM_BRIDGE_ID=-1
+	VM_BRIDGE_ID_TEMP=0
+	while [ ${VM_BRIDGE_ID} -lt 0 ]
+	do
+		ifconfig "bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "ifconfig_bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
+		else
+			VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
+		fi
+	done
+
+	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	# Setup initial bridge interface.
+	INIT_VMS_BRIDGE_CREATE=true
+	ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	INIT_VMS_BRIDGE_ADDM=true
+	ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	INIT_VMS_BRIDGE_UP=true
+	ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n"
+		init_vms_cleanup
+		exit 2
+	fi
+
+	# Create ZFS filesystems for VM images.
+	echo -e "\n${YELL}Creating ZFS filesystems for VM images...${NRML}\n"
+	INIT_VMS_FILESYSTEMS_CREATED=true
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${VMS_POOL_NAME}/${VMS_ROOT_FS}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create -o recordsize=512k ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
 	question_yes_no "\nShould the VM resources directory be accessible by non-root users [RECOMMENDED]?"
 	if [ "${ANSWER}" = "yes" ]
 	then
@@ -4034,65 +4404,47 @@ init_vms ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Create ZFS filesystems for VM images
-	echo -e "\n${YELL}Creating ZFS filesystems for VM images...${NRML}\n"
-	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${VMS_POOL_NAME}/${VMS_ROOT_FS}
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst creating VM subsystem filesystems!\n"
+		init_vms_cleanup
+		exit 2
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		zfs create -o recordsize=512k ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
-	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Mount the filesystems if they are not already
+	# Mount the filesystems if they are not already.
 	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when creating the ZFS filesystems for the"
-		echo -e "       VM subsystem.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst mounting VM subsystem filesystems!\n"
+		init_vms_cleanup
 		exit 2
 	fi
+
+	INIT_VMS_HOST_MODIFIED=true
 
 	# Ask if the fdo_vms service should be enabled on startup.
 	question_yes_no "\nWould you like the VM service to be enabled on system startup?"
@@ -4100,32 +4452,61 @@ init_vms ()
 	then
 		echo -e ""
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf fdo_vms_enable="YES" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Copy init-vms template configs to this hosts' repo profile
+	# Copy init-vms template configs to this hosts' repo profile.
 	install_file_tree config-templates/init-vms configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
-	# Set persitent bridge interface configuration
+	# Set persitent bridge interface configuration.
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_tap_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf vmm_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_BRIDGE_IFACE}" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#ifconfig_VM_BRIDGE_IFACE=\"\"/ifconfig_${VM_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#net.link.tap.up_on_open=.*/net.link.tap.up_on_open=1/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Store subsystem configuration details
+	# Store subsystem configuration details.
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.pool_name "${VMS_POOL_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_id "${VM_BRIDGE_ID}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_net_iface "${LAN_NET_IFACE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the VMs initialisation!\n"
+		init_vms_cleanup
+		exit 2
+	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	git commit -m "Updating host after 'init-vms'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		init_vms_cleanup
+		exit 2
+	fi
 
 	if [ "${REPO_URI}" != "local" ]
 	then
@@ -4141,8 +4522,6 @@ init_vms ()
 	echo -e "\n${LGRN}Congratulations! We have now finished initialising the VM subsystem.${NRML}\n"
 	echo -e "\n${YELL}To create a template VM, use the command:${NRML}"
 	echo -e "${LBLU}${SCRIPT_NAME} create-vm-template${NRML}\n"
-
-	cd -
 
 }
 
@@ -4172,7 +4551,7 @@ create_vm_template_cleanup ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${ERROR_COUNT} -gt 0 ]
+		if [ ${ERROR_COUNT} -ne 0 ]
 		then
 			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-template!\n"
 		fi
@@ -4207,7 +4586,7 @@ create_vm_instance_cleanup ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${ERROR_COUNT} -gt 0 ]
+		if [ ${ERROR_COUNT} -ne 0 ]
 		then
 			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-instance!\n"
 		fi
@@ -4879,14 +5258,16 @@ create_vm_template ()
 	VM_TYPE="template"
 	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
 	CREATE_VM_TEMPLATE_MODIFIED=false
-	ERROR_COUNT=0
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	trap 'create_vm_template_cleanup ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_CREATE_VM_TEMPLATE=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
+	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Check that the template name is valid.
 	test_valid_vm_name "${VM_NAME}"
@@ -5279,7 +5660,7 @@ create_vm_template ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n"
 		create_vm_template_cleanup
 		exit 2
 	fi
@@ -5385,7 +5766,7 @@ create_vm_template ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
 		create_vm_template_cleanup
 		exit 2
 	fi
@@ -5430,7 +5811,7 @@ create_vm_template ()
 	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the template VM filesystem!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the template VM filesystem!\n"
 		create_vm_template_cleanup
 		exit 2
 	fi
@@ -5801,7 +6182,7 @@ create_vm_instance ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n"
 		create_vm_instance_cleanup
 		exit 2
 	fi
@@ -5886,7 +6267,7 @@ create_vm_instance ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
 		create_vm_instance_cleanup
 		exit 2
 	fi
@@ -5928,7 +6309,7 @@ create_vm_instance ()
 	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@initial
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the instance VM filesystem!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the instance VM filesystem!\n"
 		create_vm_instance_cleanup
 		exit 2
 	fi
@@ -6009,9 +6390,132 @@ find_jails_from_recipe_name ()
 
 }
 
+# WARNING: Only for use by developers on a 'local' only repo.
+# Only to be used on last created jail directly afterwards.
+# It does a hard reset of the git repo.
+revert_create_jail ()
+{
+	JAIL_TO_REVERT=${1}
+	ERROR_COUNT=0
+
+	# Sanity tests.
+	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
+	zfs list -H ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
+		exit 1
+	fi
+
+	# NOTE: commit after create jail is not much use, since we can't remove a previous range
+	#       of commits using 'git revert' without creating conflicts that need manual intervention.
+	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
+
+	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
+	then
+		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
+	else
+		AFFECTED_JAIL_RECIPES=""
+	fi
+
+	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
+
+	cd /${REPO_NAME}
+
+	service jail status | egrep "^ ${JAIL_TO_REVERT} " > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Stop the jail.
+		echo -e "\n${YELL}Stopping the jail '${JAIL_TO_REVERT}'...\n"
+		service jail stop ${JAIL_TO_REVERT} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		echo -e "\n${YELL}The jail '${JAIL_TO_REVERT}' appears to be stopped.\n"
+	fi
+
+	# Wait for I/O to settle.
+	sleep 8
+
+	# Check if the jail did not stop or appears to be still running.
+	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Remove the jail and unmount nullfs mounted certificates directory.
+		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
+		JAIL_ID=`cat ${JAIL_ID_FILE}`
+		jail -r ${JAIL_ID} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	echo -e "\n"
+
+	# Destroy additional jail recipe filesystems in reverse order
+	REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
+	for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
+	do
+		SIDES_FILESYSTEM=`echo ${REV_SIDES_FILESYSTEM} | rev`
+		zfs destroy -f ${SIDES_FILESYSTEM} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	done
+
+	# Destroy the jail filesystem
+	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Delete jail config directory from local repo
+	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
+
+	# Roll back local repo to last good commit (!!!DANGEROUS!!!)
+	if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
+	then
+		git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Remove untracked config files from host and config repo
+	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install back old host configs
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install back affected jail configs
+	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
+	do
+		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${NRML}${AFFECTED_JAIL_RECIPE}${YELL}':${NRML}"
+		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
+		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
+		do
+			# Use install_config to reinstate configs for jail found to be affected
+			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
+			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${ORNG}WARNING:${NRML} Something went wrong reverting repo configs to the '${ORNG}${AFFECTED_JAIL}${NRML}' jail!\n"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		done
+	done
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error reverting the jail creation!\n"
+		return 2
+	fi
+
+	echo -e "\n${YELL}Finished reverting jail creation!\n${ORNG}Aborting.${NRML}\n"
+}
+
 create_jail ()
 {
 
+	JAIL_NAME=${1}
+	JAIL_HOST_NAME=${2}
 	if [ "${3}" = "--non-interactive" ]
 	then
 		IS_INTERACTIVE="no"
@@ -6019,21 +6523,22 @@ create_jail ()
 		IS_INTERACTIVE="yes"
 	fi
 
-	JAIL_NAME=${1}
-	JAIL_HOST_NAME=${2}
+	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
 
 	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Check for unsaved registered host config files
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
-	echo -e "${YELL}config files...${NRML}\n"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
 	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommannd to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the host is already registered.
@@ -6041,7 +6546,7 @@ create_jail ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the jails subsystem is initialised and therefore we know the pool name.
@@ -6051,7 +6556,7 @@ create_jail ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the jail_name has not already been used.
@@ -6059,7 +6564,7 @@ create_jail ()
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${ORNG}${JAIL_NAME}${NRML}' is already in use.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that, if specified, the jail IP address is not already in use.
@@ -6069,7 +6574,7 @@ create_jail ()
 		if [ "${VALID_HOST_PING}" = "yes" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The jail IP address '${ORNG}${JAIL_IP}${NRML}' is already in use.\n       Aborting.\n"
-			exit 1
+			return 1
 		fi
 	fi
 
@@ -6082,7 +6587,7 @@ create_jail ()
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 	FREEBSD_ARCH=`uname -m`
 
-	TEMPLATE_SNAPSHOT=`zfs list -t all -r ${JAIL_POOL_NAME}/jails/template | awk '{print $1}' | cut -d@ -f2| egrep "^${FREEBSD_VERSION}-RELEASE" | sort | tail -1`
+	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
 
 	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 
@@ -6102,14 +6607,22 @@ create_jail ()
 		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
-	# Create new jail filesystem by zfs send/recv from the template jail snapshot
+	# Create new jail filesystem by zfs send/recv from the template jail snapshot.
 	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
 	zfs send -e ${JAIL_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAIL_POOL_NAME}/jails/${JAIL_NAME}
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "${LRED}ERROR:${NRML} Failed to zfs send the jail template snapshot to the new jail filesystem!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
 
 	# Install template jails' configs to new jails' config repo directory
 	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state
 	mkdir configs/${JAIL_NAME}@${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
 	do
 		if [ -f "/jls/template/${CONFIG_FILE}" ]
@@ -6118,59 +6631,108 @@ create_jail ()
 			if [ "${CONFIG_FILE}" = "etc/resolv.conf" ]
 			then
 				cp /jls/template/${CONFIG_FILE} /jls/${JAIL_NAME}/${CONFIG_FILE}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
 				CONFIG_FILE_DIR=`dirname ${CONFIG_FILE}`
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				if [ ! -d ${CONFIG_FILE_DIR} ]
 				then
 					mkdir -p configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE_DIR}
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				fi
 				cp /jls/template/${CONFIG_FILE} configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 		fi
 	done
 
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in copying template configs to the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
 	# Save the previous git commit reference to file, for later use in reverting operations
 	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create entry in configs/${HOST_NAME}/etc/jail.conf
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "        exec.prestart += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "        exec.poststop += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 -alias\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "        host.hostname = \"${JAIL_HOST_NAME}\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "        ip4.addr = ${JAIL_IP};" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Prepare the jail fstab
-	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
-	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME}
+	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add jail to jail_list in /etc/rc.conf
-	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null
+	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf
+		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${ORNG}${JAIL_NAME}${NRML}' already exists in jail_list (/etc/rc.conf)!\n"
 	fi
 
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
 	# Install latest scripts to the jail
 	install_scripts /jls/${JAIL_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install initial config templates to the new jail
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
 
 	if [ "${IS_INTERACTIVE}" = "yes" ]
 	then
 		# Add changes to the local config repo
 		git add configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git add configs/${JAIL_NAME}@${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
 
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -6183,13 +6745,10 @@ create_jail ()
 			fi
 		fi
 
-		# Save this git commit reference to file, for later use in reverting operations
-		git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-post-create-jail.commit.inf
-
 		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
 		echo -e "\n${YELL}To login to the jail, use the command:${NRML}"
 		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
-	
+
 		question_yes_no "Would you like to start the jail '${NRML}${JAIL_NAME}${LCYN}' now?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -6200,105 +6759,6 @@ create_jail ()
 	fi
 
 	echo -e ""
-
-	cd -
-
-}
-
-# WARNING: Only for use by developers on a 'local' only repo.
-# Only to be used on last created jail directly afterwards.
-# It does a hard reset of the git repo.
-revert_create_jail ()
-{
-	JAIL_TO_REVERT=${1}
-
-	# Sanity tests
-	egrep "^${JAIL_TO_REVERT} {" /etc/jail.conf > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
-		exit 1
-	fi
-
-	# NOTE: commit after create jail is not much use, since we can't remove a previous range
-	#       of commits using 'git revert' without creating conflicts that need manual intervention.
-	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
-	COMMIT_AFTER_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-post-create-jail.commit.inf`
-
-	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
-	then
-		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
-	else
-		AFFECTED_JAIL_RECIPES=""
-	fi
-
-	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
-
-	cd /${REPO_NAME}
-
-	# Stop the jail
-	service jail stop ${JAIL_TO_REVERT}
-
-	# Wait for I/O to settle
-	sleep 8
-
-	# Remove the jail and unmount nullfs mounted certificates directory
-	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
-		JAIL_ID=`cat ${JAIL_ID_FILE}`
-		jail -r ${JAIL_ID}
-		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs
-	fi
-
-	echo -e "\n"
-
-	# Destroy additional jail recipe filesystems in reverse order
-	REV_RECIPE_ZFS_FILESYSTEMS=`echo ${RECIPE_ZFS_FILESYSTEMS} | rev`
-	for REV_RECIPE_ZFS_FILESYSTEM in ${REV_RECIPE_ZFS_FILESYSTEMS}
-	do
-		RECIPE_ZFS_FILESYSTEM=`echo ${REV_RECIPE_ZFS_FILESYSTEM} | rev`
-		zfs destroy -f ${RECIPE_ZFS_FILESYSTEM}
-	done
-
-	# Destroy the jail filesystem
-	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT}
-
-	# Delete jail config directory from local repo
-	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME}
-
-	# Roll back local repo to last good commit (!!!DANGEROUS!!!)
-	git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
-
-	# Remove untracked files from local repo
-	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
-
-	# Remove untracked config files from host and config repo
-	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
-
-	# Install back old host configs
-	install_file_tree configs/${HOST_NAME} /
-
-	# Install back affected jail configs
-	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
-	do
-		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${NRML}${AFFECTED_JAIL_RECIPE}${YELL}':${NRML}"
-		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
-		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
-		do
-			# Use install_config to reinstate configs for jail found to be affected
-			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
-			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the '${ORNG}${AFFECTED_JAIL}${NRML}' jail!\n"
-			fi
-		done
-	done
-
-	echo -e "\n${YELL}Finished reverting jail creation! Aborting.${NRML}\n"
 }
 
 edit_recipe_configs ()
@@ -6348,12 +6808,20 @@ create_jail_from_recipe ()
 	JAIL_RECIPE_NAME="${3}"
 	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
 
+	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
+
+	cd /${REPO_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	get_enabled_nat_services
 
 	# Source the recipe
-	if [ -f "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
+	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
 	then
-		. "/${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
 		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
@@ -6372,6 +6840,7 @@ create_jail_from_recipe ()
 		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
 		exit 1
 	else
+		# We should never get here.
 		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
 	fi
 
@@ -6406,26 +6875,43 @@ create_jail_from_recipe ()
 		fi
 	fi
 
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [1]\n"
+		revert_create_jail ${JAIL_NAME}
+		exit 2
+	fi
+
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
 
 	# Create a blank jail (non-interactively)
 	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n       Aborting.\n"
+		EXIT_CODE=${?}
+		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
 		revert_create_jail ${JAIL_NAME}
-		exit ${?}
+		exit ${EXIT_CODE}
 	fi
 
 	# Source the recipe again to pick up any updated variables
-	. /${REPO_NAME}/jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
-
-	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
+	. jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Sleep for 1 second to avoid timestamp conflicts
 	sleep 1
 
 	PRE_RECIPE_TIMESTAMP=`date "+%s"`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [2]\n"
+		revert_create_jail ${JAIL_NAME}
+		exit 2
+	fi
+
+	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
 
 	# Create additional jail recipe filesystems
 	COUNT_SIDES_FILESYSTEMS=0
@@ -6433,19 +6919,34 @@ create_jail_from_recipe ()
 	do
 		COUNT_SIDES_FILESYSTEMS=$(( ${COUNT_SIDES_FILESYSTEMS} + 1 ))
 		SIDES_MOUNTPOINT=`echo ${SIDES_MOUNTPOINTS} | awk -v column="${COUNT_SIDES_FILESYSTEMS}" '{print $column}'`
-		zfs create -o mountpoint=${SIDES_MOUNTPOINT} ${SIDES_FILESYSTEM}
+		zfs create -o mountpoint=${SIDES_MOUNTPOINT} ${SIDES_FILESYSTEM} > /dev/null 2>&1
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to create filesystem for the following additional filesystem:"
+			echo -e "       ${ORNG}${SIDES_FILESYSTEM}${NRML}\n"
+			revert_create_jail ${JAIL_NAME}
+			exit 2
+		fi
 	done
-
-	cd /${REPO_NAME}
 
 	# Install recipe config templates to new jails' config repo directory
 	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set the correct jail ABI in the jails' pkg repo conf file
 	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install initial config templates to the new jail
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the jail recipe configs!\n"
+		revert_create_jail ${JAIL_NAME}
+		exit 2
+	fi
 
 	question_yes "\nShall we proceed to cook the recipe?"
 
@@ -6475,15 +6976,27 @@ create_jail_from_recipe ()
 	then
 		# Interactively edit the configs touched by the recipe
 		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		edit_recipe_configs
 
 		# Save recipe name to information file
 		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Install any new or modfied configs
 		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
+			revert_create_jail ${JAIL_NAME}
+			exit 2
+		fi
 
 		# Restart pf if required
 		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
@@ -6496,16 +7009,16 @@ create_jail_from_recipe ()
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
 					# TODO: resolve why ppp can't reconnect on service restart.
-					#service ppp restart
-					service ppp stop
+					#service ppp restart > /dev/null 2>&1
+					service ppp stop > /dev/null 2>&1
 					sleep 4
-					service ppp start
+					service ppp start > /dev/null 2>&1
 					sleep 4
-					service ppp start
+					service ppp start > /dev/null 2>&1
 				fi
 				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
 				then
-					service pf reload
+					service pf reload > /dev/null 2>&1
 				fi
 			fi
 		fi
@@ -6514,14 +7027,22 @@ create_jail_from_recipe ()
 		if [ "${RECIPE_REQUIRES_JAIL_RESTART}" = "yes" ]
 		then
 			service jail restart ${JAIL_NAME}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
 		# Start jail recipe services
 		for SERVICE in ${START_JAIL_SERVICES}
 		do
 			start_jail_service ${JAIL_NAME} ${SERVICE} --allow-restart
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			sleep 4
 		done
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			# ASSUME: the jail restart and jail services restart are not errors critical to jail recipe creation.
+			echo -e "\n${ORNG}WARNING:${NRML} Something went wrong whilst restarting the jail or it's services!\n"
+		fi
 
 	elif [ "${RECIPE_SUCCESS}" = "no" ]
 	then
@@ -6551,8 +7072,18 @@ create_jail_from_recipe ()
 	if [ "${RECIPE_SUCCESS}" = "yes" ]
 	then
 		git add configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git add configs/${JAIL_NAME}@${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
 
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -6565,9 +7096,6 @@ create_jail_from_recipe ()
 			fi
 		fi
  
-		# Save this git commit reference to file, for later use in reverting operations
-		git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-post-create-jail.commit.inf
-
 		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
 		then
 			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
@@ -6582,9 +7110,6 @@ create_jail_from_recipe ()
 		echo -e "${YELL}To login to the jail, use the command:${NRML}"
 		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
 	fi
-
-	cd -
-
 }
 
 init_partimag ()
