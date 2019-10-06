@@ -212,8 +212,8 @@ pause_prompt ()
 	echo -e "\n"
 }
 
-## Modern replacement for the 'read' shell inbuilt command.
-## Similar to the bash inbuilt 'read -e'.
+# Modern replacement for the 'read' shell inbuilt command.
+# Similar to the bash inbuilt 'read -e'.
 readee ()
 {
 
@@ -603,7 +603,7 @@ readee ()
 	# Lastly, set the input variable that was passed as an argument
 	eval "${READEE_VARIABLE}=\"${READEE_ENTERED_TEXT}\""
 
-} ## END: readee ()
+}
 
 question_yes_no ()
 {
@@ -680,7 +680,7 @@ get_file_size_in_gigabytes ()
 
 get_jail_id_from_name ()
 {
-	# ${1} is jail name
+	# NOTE: ${1} is jail name
 
 	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id 2> /dev/null | head -1`
 	if [ "${JAIL_ID_FILE}" = "" ]
@@ -765,6 +765,7 @@ test_valid_person_name ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_integer ()
@@ -801,6 +802,7 @@ test_valid_integer ()
 		return 4
 	fi
 
+	return 0
 }
 
 test_valid_email_address ()
@@ -823,6 +825,7 @@ test_valid_email_address ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_inet_address ()
@@ -863,6 +866,7 @@ test_valid_inet_address ()
 		return 4
 	fi
 
+	return 0
 }
 
 test_valid_host_name ()
@@ -885,6 +889,7 @@ test_valid_host_name ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_fqhn ()
@@ -907,6 +912,7 @@ test_valid_fqhn ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_ping_host ()
@@ -923,6 +929,8 @@ test_ping_host ()
 		VALID_HOST_PING="no"
 		return 1
 	fi
+
+	return 0
 }
 
 test_valid_simple_url ()
@@ -945,6 +953,7 @@ test_valid_simple_url ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_alpha_numeric_string ()
@@ -968,6 +977,7 @@ test_valid_alpha_numeric_string ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_ldap_dn ()
@@ -990,6 +1000,7 @@ test_valid_ldap_dn ()
 		return 2
 	fi
 
+	return 0
 }
 
 test_valid_vm_name ()
@@ -1016,6 +1027,8 @@ test_valid_vm_name ()
 		VALID_VM_NAME="no"
 		return 3
 	fi
+
+	return 0
 }
 
 fetch_latest_self ()
@@ -1028,6 +1041,7 @@ fetch_latest_self ()
 		question_yes_no "\nUnable to fetch the latest version of this utility.\nWould you like to continue anyway?"
 		if [ "${ANSWER}" = "no" ]
 		then
+			echo -e "\nAborting.\n"
 			exit 1
 		fi
 	else
@@ -1049,8 +1063,7 @@ fetch_latest_self ()
 		fi
 	fi
 
-	cd -
-
+	return 0
 }
 
 git_pull ()
@@ -1175,6 +1188,7 @@ check_repo_config ()
 	echo -e "\n${YELL}The local repo will be stored in the path '${NRML}/${REPO_NAME}${YELL}'.${NRML}\n"
 	NO_DISPLAY_USAGE="yes"
 
+	return 0
 }
 
 backup_file ()
@@ -1185,7 +1199,14 @@ backup_file ()
 	if [ -f ${FILE_PATH} ]
 	then
 		cp ${FILE_PATH} ${FILE_PATH}.${CHANGE_AGENT}_backup_${NOW}
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to backup file '${ORNG}${FILE_PATH}${NRML}'!\n"
+			return 2
+		fi
 	fi
+
+	return 0
 }
 
 install_file_tree ()
@@ -1244,6 +1265,7 @@ install_file_tree ()
 		fi
 	done
 
+	return 0
 }
 
 compare_file_tree ()
@@ -1318,14 +1340,10 @@ compare_file_tree ()
 	else
 		return 0
 	fi
-
 }
 
 init_git_config ()
 {
-
-	CWD=`pwd`
-	cd /${REPO_NAME}
 
 	echo -e "\n\n${YELL}Initialising git config...${NRML}\n"
 
@@ -1383,8 +1401,7 @@ init_git_config ()
 		git config push.default "simple"
 	fi
 
-	cd ${CWD}
-
+	return 0
 }
 
 upgrade_repo_from_upstream ()
@@ -1397,13 +1414,12 @@ upgrade_repo_from_upstream ()
 		DO_GIT_PUSH="no"
 	fi
 
-	CWD=`pwd`
-
 	# Move into local repo directory.
 	cd "/${REPO_NAME}"
 	if [ ${?} -ne 0 ]
 	then
-		return 1
+		echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!"
+		return 2
 	fi
 
 	# Get the pre-upgrade git commit reference
@@ -1420,21 +1436,21 @@ upgrade_repo_from_upstream ()
 	git fetch upstream
 	if [ ${?} -ne 0 ]
 	then
-		return 3
+		return 2
 	fi
 
 	# Merge the upstream changes to the local repo.
 	git merge upstream/master --allow-unrelated-histories -m "Upgrading private repo from upstream skeleton repo on host '${HOST_NAME}'."
 	if [ ${?} -ne 0 ]
 	then
-		return 4
+		return 2
 	fi
 
 	# Detach the upstream remote from the local repo
 	git remote remove upstream
 	if [ ${?} -ne 0 ]
 	then
-		return 5
+		return 2
 	fi
 
 	if [ "${REPO_URI}" != "local" ] && [ "${DO_GIT_PUSH}" = "yes" ]
@@ -1480,28 +1496,27 @@ upgrade_repo_from_upstream ()
 		echo -e ""
 	fi
 
-	cd "${CWD}"
-
 	return 0
 }
 
 init_local_repo ()
 {
 
-	CWD=`pwd`
-
 	echo -e "\n\n${YELL}Initialising the local repo...${NRML}\n"
-
-	# Move to '/' because this is where we keep the local repo
-	cd /
 
 	# Clone or update the git repository
 	if [ -d "/${REPO_NAME}/.git" ]
 	then
 
-		# The local repo already exists.
+		# ASSUME: The local repo already exists.
 
+		# Move into local repo directory.
 		cd "/${REPO_NAME}"
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!"
+			return 2
+		fi
 
 		if [ "${REPO_URI}" = "local" ]
 		then
@@ -1530,20 +1545,23 @@ init_local_repo ()
 				echo -e "       Check that the remote repo URI is correct."
 				echo -e "       Consider using the '${LBLU}merge-local-repo-to-remote${NRML}' subcommand."
 				echo -e "       Aborting.\n"
-				exit 2
+				return 2
 			fi
 			# Update (pull) the latest changes from the private remote repo.
 			git_pull
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo.\n       Aborting.\n"
-				exit 2
+				return 2
 			fi
 		fi
 
 	else
 
-		# The local repo does not exist yet.
+		# ASSUME: The local repo does not exist yet.
+
+		# Move to '/' because this is where we keep the local repo
+		cd /
 
 		if [ "${REPO_URI}" = "local" ]
 		then
@@ -1554,10 +1572,17 @@ init_local_repo ()
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo.\n       Aborting.\n"
-				exit 2
+				return 2
+			fi
+			# Move into local repo directory.
+			cd "/${REPO_NAME}"
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!"
+				# TODO: run undo function
+				return 2
 			fi
 			# After we get the skeleton, detach from the upstream skeleton repo.
-			cd "/${REPO_NAME}"
 			git remote remove origin
 		else
 			# Initialise a new local repo and attach to its remote repo.
@@ -1567,15 +1592,14 @@ init_local_repo ()
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo.\n       Aborting.\n"
-				exit 2
+				return 2
 			fi
 		fi
 	fi
 
 	echo -e "\n${LGRN}Finished initialising the local repo.${NRML}\n\n"
 
-	cd ${CWD}
-
+	return 0
 }
 
 install_scripts ()
@@ -1583,33 +1607,46 @@ install_scripts ()
 
 	INSTALL_PATH=${1}
 
-	cd /${REPO_NAME}
-
 	install_file_tree scripts ${INSTALL_PATH}
 
 	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more scripts to target location:"
 		echo -e "       ${ORNG}(${INSTALL_PATH})${NRML}\n"
+		return 2
 	else
 		echo -e "\n${LGRN}SUCCESS:${NRML} Installed all scripts successfully!"
 		echo -e "         ${LGRN}(${INSTALL_PATH})${NRML}\n"
+		return 0
 	fi
-
-	cd -
-
 }
 
 install_scripts_everywhere ()
 {
+	EXIT_CODE=0
+
 	# Install scripts to the host
 	install_scripts /
+	RETURN_CODE=${?}
+	if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing scripts to the this host!\n"
+		EXIT_CODE=${RETURN_CODE}
+	fi
 
 	# Install scripts to the jails
 	for JAIL_DIR in `ls -1 /jls 2> /dev/null`
 	do
 		install_scripts /jls/${JAIL_DIR}/
+		RETURN_CODE=${?}
+		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing scripts to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
+			EXIT_CODE=${RETURN_CODE}
+		fi
 	done
+
+	return ${EXIT_CODE}
 }
 
 add_script ()
@@ -1617,29 +1654,28 @@ add_script ()
 
 	SCRIPT_PATH="${1}"
 
-	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f ${SCRIPT_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${ORNG}${SCRIPT_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	elif [ -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}scripts${SCRIPT_PATH}${NRML}' already exists."
 		echo -e "       Please consider using '${LBLU}${SCRIPT_NAME} update-script${NRML}' instead.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		cp ${SCRIPT_PATH} scripts${SCRIPT_PATH} > /dev/null 2>&1
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
 			rm scripts${SCRIPT_PATH} > /dev/null 2>&1
-			exit 2
+			return 2
 		fi
 		git commit -m "Added new script; '${SCRIPT_PATH}'."
 		if [ ${?} -ne 0 ]
@@ -1647,7 +1683,7 @@ add_script ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo."
 			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1657,14 +1693,13 @@ add_script ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-				exit 2
+				return 2
 			fi
 		fi
 		echo -e "\n${LGRN}OK, it seems we've successfully added the new script!${NRML}\n"
 	fi
 
-	cd -
-
+	return 0
 }
 
 update_script ()
@@ -1672,15 +1707,14 @@ update_script ()
 
 	SCRIPT_PATH="${1}"
 
-	cd /${REPO_NAME}
 	if [ "${SCRIPT_PATH}" = "" ] || [ ! -f "${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The referenced file '${ORNG}${SCRIPT_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	elif [ ! -f "scripts${SCRIPT_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}scripts${SCRIPT_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		echo -e ""
 		readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
@@ -1689,14 +1723,14 @@ update_script ()
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		git add scripts${SCRIPT_PATH}
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
 			mv /tmp/${SCRIPT_NAME}_update-script.tmp scripts${SCRIPT_PATH} > /dev/null 2>&1
-			exit 2
+			return 2
 		else
 			rm /tmp/${SCRIPT_NAME}_update-script.tmp > /dev/null 2>&1
 		fi
@@ -1706,7 +1740,7 @@ update_script ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${SCRIPT_PATH}${NRML}'\n       to the local git repo."
 			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		if [ "${REPO_URI}" != "local" ]
 		then
@@ -1717,14 +1751,13 @@ update_script ()
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'."
 				echo -e "       Aborting.\n"
-				exit 2
+				return 2
 			fi
 		fi
 		echo -e "\n${LGRN}OK, it seems we've successfully updated the script!${NRML}\n"
 	fi
 
-	cd -
-
+	return 0
 }
 
 install_configs ()
@@ -1732,8 +1765,6 @@ install_configs ()
 
 	CONFIG_REPO_ROOT=${1}
 	INSTALL_PATH=${2}
-
-	cd /${REPO_NAME}
 
 	if [ ! -d ${CONFIG_REPO_ROOT} ]
 	then
@@ -1752,14 +1783,48 @@ install_configs ()
 	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to the target location:\n       ${ORNG}${CONFIG_REPO_ROOT}${NRML}\n"
-		cd -
 		return 2
-	else
-		echo -e "\n${LGRN}Installed all config files successfully! (${ORNG}${CONFIG_REPO_ROOT}${LGRN})${NRML}\n"
-		cd -
-		return 0
 	fi
 
+	echo -e "\n${LGRN}Installed all config files successfully! (${ORNG}${CONFIG_REPO_ROOT}${LGRN})${NRML}\n"
+
+	return 0
+}
+
+install_configs_everywhere ()
+{
+
+	EXIT_CODE=0
+
+	# Install configs to the host
+	question_yes_no "Are you sure you want to install all host configs from the repo to this host?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		install_configs configs/${HOST_NAME} /
+		RETURN_CODE=${?}
+		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the this host!\n"
+			EXIT_CODE=${RETURN_CODE}
+		fi
+	fi
+
+	# Install configs to the jails
+	for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
+	do
+		question_yes_no "Are you sure you want to install all jail configs from the repo to the\n'${NRML}${JAIL_NAME}${LCYN}' jail?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			install_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+			RETURN_CODE=${?}
+			if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
+				EXIT_CODE=${RETURN_CODE}
+			fi
+		fi
+	done
+	return ${EXIT_CODE}
 }
 
 check_configs ()
@@ -1768,50 +1833,48 @@ check_configs ()
 	CONFIG_REPO_ROOT=${1}
 	INSTALL_PATH=${2}
 
-	cd /${REPO_NAME}
-
 	if [ ! -d ${CONFIG_REPO_ROOT} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears the repo config directory '${ORNG}${CONFIG_REPO_ROOT}${NRML}' does not exist!\n"
-		cd -
 		return 1
 	fi
 
 	if [ ! -d ${INSTALL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears the installation directory '${ORNG}${INSTALL_PATH}${NRML}' does not exist!\n"
-		cd -
-		return 2
+		return 1
 	fi
 
 	compare_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH} ${3}
-	RETURN_CODE=${?}
-	cd -
-	return ${RETURN_CODE}
+	return ${?}
 
 }
 
 check_all_configs ()
 {
 
+	EXIT_CODE=0
 	CHECK_ALL_CONFIGS_ERROR_COUNT=0
 
 	# Check configs for the host.
 	echo -e "\n${YELL}Checking configs for the host...${NRML}\n"
 	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
 	RETURN_CODE=${?}
-
+	if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+	then
+		EXIT_CODE=${RETURN_CODE}
+	fi
 	CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 
 	# Check configs for the jails.
-	cd /${REPO_NAME}
 	for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
 	do
 		echo -e "\n${YELL}Checking configs for the '${NRML}${JAIL_NAME}${YELL}' jail...${NRML}\n"
 		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
-		if [ ${?} -gt ${RETURN_CODE} ]
+		RETURN_CODE=${?}
+		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
 		then
-			RETURN_CODE=${?}
+			EXIT_CODE=${RETURN_CODE}
 		fi
 		CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 	done
@@ -1828,17 +1891,13 @@ check_all_configs ()
 		echo -e "\n${ORNG}It seems that '${NRML}${CHECK_ALL_CONFIGS_ERROR_COUNT}${ORNG}' files tracked by the repo are MISSING or OUT OF CHECK!${NRML}\n"
 	fi
 
-	cd -
-	return ${RETURN_CODE}
-
+	return ${EXIT_CODE}
 }
 
 add_config ()
 {
 
 	CONFIG_FULL_PATH="${1}"
-
-	cd /${REPO_NAME}
 
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -1862,25 +1921,25 @@ add_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	elif [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}' already exists."
 		echo -e "       Please consider using '${LBLU}${SCRIPT_NAME} update-config${NRML}' instead.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
 			rm ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-			exit 2
+			return 2
 		fi
 		git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
 		if [ ${?} -ne 0 ]
@@ -1888,7 +1947,7 @@ add_config ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
 			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
 		then
@@ -1903,16 +1962,13 @@ add_config ()
 		echo -e "\n${LGRN}OK, it seems we've successfully added the new config file!${NRML}\n"
 	fi
 
-	cd -
-
+	return 0
 }
 
 remove_config ()
 {
 
 	CONFIG_FULL_PATH="${1}"
-
-	cd /${REPO_NAME}
 
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -1930,13 +1986,13 @@ remove_config ()
 	if [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		git rm "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to remove '${ORNG}${CONFIG_FULL_PATH}${NRML}' from local git repo.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		git commit -m "Remove config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
 		if [ ${?} -ne 0 ]
@@ -1944,7 +2000,7 @@ remove_config ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit removal of '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
 			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
 		then
@@ -1954,7 +2010,7 @@ remove_config ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-				exit 2
+				return 2
 			fi
 		fi
 		echo -e "\n${LGRN}OK, it seems we've successfully removed the config file!${NRML}\n"
@@ -1967,16 +2023,13 @@ remove_config ()
 		rmdir ${CONFIG_REPO_DIR}
 	fi
 
-	cd -
-
+	return 0
 }
 
 update_config ()
 {
 
 	CONFIG_FULL_PATH="${1}"
-
-	cd /${REPO_NAME}
 
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -2000,11 +2053,11 @@ update_config ()
 	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	elif [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file:\n       ${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}\n       does not exist.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		if [ ! -n "${CHANGE_MESSAGE}" ]
 		then
@@ -2016,14 +2069,14 @@ update_config ()
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
 			mv /tmp/${SCRIPT_NAME}_update-config.tmp ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-			exit 2
+			return 2
 		else
 			rm /tmp/${SCRIPT_NAME}_update-config.tmp > /dev/null 2>&1
 		fi
@@ -2033,7 +2086,7 @@ update_config ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
 			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}' "
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			exit 2
+			return 2
 		fi
 		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
 		then
@@ -2043,14 +2096,13 @@ update_config ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-				exit 2
+				return 2
 			fi
 		fi
 		echo -e "\n${LGRN}OK, it seems we've successfully updated the config file!${NRML}\n"
 	fi
 
-	cd -
-
+	return 0
 }
 
 update_local_repo ()
@@ -2069,11 +2121,17 @@ update_local_repo ()
 		exit 1
 	fi
 
+	cd "/${REPO_NAME}"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!\n       Aborting.\n"
+		exit 1
+	fi
+
 	if [ "${REPO_URI}" = "local" ]
 	then
 		echo -e "\n${YELL}No need to update the local repo, there is no remote repo.${NRML}\n"
 	else
-		cd /${REPO_NAME}
 
 		# Get the pre-update git commit reference
 		PRE_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
@@ -2108,10 +2166,9 @@ update_local_repo ()
 				echo -e ""
 			fi
 		fi
-
-		cd -
 	fi
 
+	return 0
 }
 
 connect_internet ()
@@ -2123,7 +2180,7 @@ connect_internet ()
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found.       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	WAN_NET_IFACE=""
@@ -2363,7 +2420,7 @@ connect_internet ()
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} DHCP failed on '${ORNG}${WAN_NET_IFACE}${NRML}'!\n       Aborting.\n"
-				exit 1
+				return 1
 			fi
 		else
 			ifconfig ${WAN_NET_IFACE} inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK} up
@@ -2393,7 +2450,7 @@ connect_internet ()
 	if [ "${IS_IP_WORKING}" = "no" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} IP connection failed! Unable to ping ${INET_TEST_IPV4}.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	IS_DNS_WORKING="no"
@@ -2422,18 +2479,17 @@ connect_internet ()
 	if [ "${IS_DNS_WORKING}" = "no" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} internet DNS failed! Unable to lookup google.com.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}Successfully connected to the internet!${NRML}\n"
 
-	# END: configure WAN interface
-
+	return 0
 }
 
 init_host_cleanup ()
 {
-	## TODO: replace with 'git reset --hard'; see create_vm_template
+	# TODO: replace with 'git reset --hard'; see create_vm_template
 	rm -rf configs/${HOST_NAME}
 }
 
@@ -2441,6 +2497,8 @@ init_host ()
 {
 
 	trap 'init_host_cleanup ; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
 
 	# NOTE: we have to assume we only have base userland at this point. No local repo either.
 
@@ -2455,7 +2513,7 @@ init_host ()
 		echo -e "       It must only contain letters, numbers and hyphens."
 		echo -e "       It must not begin or end with a hyphen."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the domain name is valid.
@@ -2466,7 +2524,7 @@ init_host ()
 		echo -e "       It must only contain letters, numbers, periods and hyphens."
 		echo -e "       It must not begin or end with a hyphen or a period."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Update pkgng repositories
@@ -2475,7 +2533,7 @@ init_host ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Install essential packages
@@ -2486,11 +2544,17 @@ init_host ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Initialise the local private repo
 	init_local_repo
+	EXIT_CODE=${?}
+	if [ ${EXIT_CODE} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to initialise the local git repo.\n       Aborting.\n"
+		return ${EXIT_CODE}
+	fi
 
 	# Initialise the git config, so we can commit and push without warnings.
 	init_git_config
@@ -2503,14 +2567,13 @@ init_host ()
 	    echo -e "         we will attempt to fetch the upstream skeleton git repo...${NRML}\n"
 		pause_prompt 8
 		upgrade_repo_from_upstream
-		if [ ${?} -ne 0 ]
+		EXIT_CODE=${?}
+		if [ ${EXIT_CODE} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo.\n       Aborting.\n"
-			exit 2
+			return ${EXIT_CODE}
 		fi
 	fi
-
-	cd /${REPO_NAME}
 
 	# Check that the hostname is not already taken.
 	if [ -d "configs/${HOST_NAME}" ]
@@ -2518,7 +2581,7 @@ init_host ()
 		echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${ORNG}${HOST_NAME}${NRML}'!"
 		echo -e "       It is already registered as a host in the repo."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Copy init-host template configs to the repo.
@@ -2532,7 +2595,7 @@ init_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
 		init_host_cleanup
-		exit 1
+		return 1
 	fi
 
 	SERVER_TYPE=""
@@ -2576,7 +2639,7 @@ init_host ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!\n       Aborting.\n"
 				init_host_cleanup
-				exit 1
+				return 1
 			fi
 			;;
 		auxiliary_local)
@@ -2902,6 +2965,7 @@ init_host ()
 	if [ "${ANSWER}" = "no" ]
 	then
 		init_host_cleanup
+		return 1
 	fi
 
 	#### POINT OF NO RETURN ####
@@ -2935,7 +2999,7 @@ init_host ()
 	then
 		echo -e "\n${LRED}ERROR:${{NRML} Unable to change the shell for the user '${ORNG}toor${NRML}'!\n"
 		init_host_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Add arbitrary ssh login user
@@ -2970,7 +3034,7 @@ init_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to add the arbitrary user '${ORNG}${FDO_USERNAME}${NRML}'!\n"
 		init_host_cleanup
-		exit 2
+		return 2
 	fi
 	echo -e "\n${YELL}And now give this user account a password.${NRML}\n"
 	echo -e "${LCYN}"
@@ -3071,10 +3135,12 @@ init_host ()
 	then
 		echo -e "\n${YELL}Pushing changes to the private remote repo...${NRML}\n"
 		git_push origin master
-		if [ ${?} -ne 0 ]
+		RETURN_CODE=${?}
+		if [ ${RETURN_CODE} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${RETURN_CODE} ))
 		fi
 	fi
 
@@ -3087,9 +3153,13 @@ init_host ()
 		reboot
 	fi
 
-	cd -
-
-} ## END: init_host ()
+	if [ ${ERROR_COUNT} -gt 0 ]
+	then
+		return 2
+	else
+		return 0
+	fi
+}
 
 patch_host()
 {
@@ -3146,20 +3216,17 @@ patch_host()
 	fi
 
 	return 0
-
 }
 
 setup_vnc_desktop()
 {
-
-	cd /${REPO_NAME}
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -3171,7 +3238,7 @@ setup_vnc_desktop()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -3182,7 +3249,7 @@ setup_vnc_desktop()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to update pkg (pkgng) repositories.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Install desktop / vnc packages
@@ -3193,7 +3260,7 @@ setup_vnc_desktop()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to install required packages.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	FDO_USERNAME=`cat configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf`
@@ -3294,21 +3361,18 @@ setup_vnc_desktop()
 	echo -e "${LGRN}${FDO_USERNAME}@${HOST_NAME}:10${NRML}"
 	echo -e "${LGRN}${FDO_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
 
-	cd -
-
+	return 0
 }
 
 init_hotdesking ()
 {
-
-	cd /${REPO_NAME}
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -3320,7 +3384,7 @@ init_hotdesking ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -3332,7 +3396,7 @@ init_hotdesking ()
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
@@ -3401,7 +3465,7 @@ init_hotdesking ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get IP to use for NIS service.
@@ -3469,7 +3533,7 @@ init_hotdesking ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The NIS maps failed to initialise."
 		echo -e "       Consult FDo documentation for help.\n       Aborting.\n"
-		exit 2
+		return 2
 	fi
 
 	# Start the NIS/NFS services
@@ -3508,17 +3572,13 @@ init_hotdesking ()
 	echo -e "${YELL}NIS domain name:${NRML}                    ${NIS_DOMAIN_NAME}"
 	echo -e "${YELL}NIS server IP address:${NRML}              ${NIS_HOST_IP}\n"
 
-	cd -
-
+	return 0
 }
 
 init_jails_cleanup ()
 {
 
 	ERROR_COUNT=0
-
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	service jail status | egrep "^ template " > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -3579,7 +3639,8 @@ init_jails_cleanup ()
 		return 2
 	fi
 
-	echo -e "\n${ORNG}Aborting.${NRML}\n"
+	echo -e "\nAborting.\n"
+	return 0
 }
 
 init_jails ()
@@ -3595,9 +3656,6 @@ init_jails ()
 
 	ERROR_COUNT=0
 
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
- 
 	get_enabled_nat_services
 
 	# Check that the host is already registered.
@@ -3605,7 +3663,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
  
 	# Check for unsaved registered host config files
@@ -3617,7 +3675,7 @@ init_jails ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -3643,7 +3701,7 @@ init_jails ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get pool name to use for base of jails.
@@ -3653,7 +3711,7 @@ init_jails ()
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
@@ -3706,7 +3764,7 @@ init_jails ()
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
-			exit 1
+			return 1
 		fi
 	fi
 
@@ -3714,7 +3772,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error preparing 'init-jails'!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	patch_host
@@ -3722,7 +3780,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Get version strings.
@@ -3745,7 +3803,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n"
 		init_jails_cleanup
-		exit 1
+		return 1
 	fi
 
 	# Create ZFS filesystems for service jail template.
@@ -3793,7 +3851,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the template jail filesystem!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	INIT_JAILS_HOST_MODIFIED=true
@@ -3876,7 +3934,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the template jail!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	echo -e "\n${YELL}Updating template jail to latest patch release...${NRML}\n"
@@ -3892,7 +3950,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst updating the template jail base!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Install essential packages into the template jail.
@@ -3907,7 +3965,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the template jail packages!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Stop the template jail now that we're done making the template.
@@ -3930,7 +3988,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the template jail packages!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -3943,7 +4001,7 @@ init_jails ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
 		init_jails_cleanup
-		exit 2
+		return 2
 	fi
 
 	if [ "${REPO_URI}" != "local" ]
@@ -3961,18 +4019,17 @@ init_jails ()
 	echo -e "\n${YELL}To create jails, use the command:${NRML}"
 	echo -e "${LBLU}${SCRIPT_NAME} create-jail${NRML}\n"
 
+	return 0
 }
 
 init_sshfs_daemon ()
 {
-	cd /${REPO_NAME}
-
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -3984,7 +4041,7 @@ init_sshfs_daemon ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -4006,7 +4063,7 @@ init_sshfs_daemon ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
-		exit 2
+		return 2
 	fi
 
 	cat configs/${HOST_NAME}/boot/loader.conf | egrep "^fuse_load=\"(YES|NO)\"" > /dev/null 2>&1
@@ -4055,17 +4112,13 @@ init_sshfs_daemon ()
 	echo -e "\n${YELL}To create a sshfs connection, use the command:${NRML}"
 	echo -e "${LBLU}fdo-sshfs-add-connection${NRML}\n"
 
-	cd -
-
+	return 0
 }
 
 init_vms_cleanup ()
 {
 
 	ERROR_COUNT=0
-
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Stop any running VMs.
 	for VM_NAME_TEMP in `${FDO_VMS_LIST_PATH} --concise --type=all | egrep -v " stopped$" | awk '{print $1}'`
@@ -4146,7 +4199,8 @@ init_vms_cleanup ()
 		return 2
 	fi
 
-	echo -e "\n${ORNG}Aborting.${NRML}\n"
+	echo -e "\nAborting.\n"
+	return 0
 }
 
 init_vms ()
@@ -4170,16 +4224,13 @@ init_vms ()
 
 	ERROR_COUNT=0
 
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
- 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
  
 	# Check for unsaved registered host config files.
@@ -4191,13 +4242,13 @@ init_vms ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Get the LAN interface for this host.
-	## TODO: replace with UCL config file.
+	# TODO: replace with UCL config file.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -4218,7 +4269,7 @@ init_vms ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get pool name to use for base of VM image filesystems.
@@ -4228,7 +4279,7 @@ init_vms ()
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
@@ -4269,7 +4320,7 @@ init_vms ()
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
-			exit 1
+			return 1
 		fi
 	fi
 
@@ -4285,7 +4336,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Load required kernel modules.
@@ -4329,7 +4380,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading the VM subsystem kernel modules!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Get next available bridge id.
@@ -4366,7 +4417,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Create ZFS filesystems for VM images.
@@ -4408,7 +4459,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst creating VM subsystem filesystems!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Mount the filesystems if they are not already.
@@ -4441,7 +4492,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst mounting VM subsystem filesystems!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	INIT_VMS_HOST_MODIFIED=true
@@ -4492,7 +4543,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the VMs initialisation!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -4505,7 +4556,7 @@ init_vms ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
 		init_vms_cleanup
-		exit 2
+		return 2
 	fi
 
 	if [ "${REPO_URI}" != "local" ]
@@ -4523,6 +4574,7 @@ init_vms ()
 	echo -e "\n${YELL}To create a template VM, use the command:${NRML}"
 	echo -e "${LBLU}${SCRIPT_NAME} create-vm-template${NRML}\n"
 
+	return 0
 }
 
 create_vm_template_cleanup ()
@@ -4557,7 +4609,8 @@ create_vm_template_cleanup ()
 		fi
 	fi
 
-	echo -e "\n${ORNG}Aborting.${NRML}\n"
+	echo -e "\nAborting.\n"
+	return 0
 }
 
 create_vm_instance_cleanup ()
@@ -4592,7 +4645,8 @@ create_vm_instance_cleanup ()
 		fi
 	fi
 
-	echo -e "\n${ORNG}Aborting.${NRML}\n"
+	echo -e "\nAborting.\n"
+	return 0
 }
 
 create_vm_image_handler ()
@@ -4634,9 +4688,7 @@ create_vm_image_handler ()
 			question_yes_no "\nAre you sure you want to abort? All changes will be lost."
 			if [ "${ANSWER}" = "yes" ]
 			then
-				CREATE_VM_CLEANUP_FUNC="create_vm_${VM_TYPE}_cleanup"
-				${CREATE_VM_CLEANUP_FUNC}
-				exit 1
+				return 1
 			fi
 		fi
 
@@ -4795,7 +4847,7 @@ create_vm_image_handler ()
 
 			if [ "${ATTACH_IMAGE_FILE}" != "" ] || [ ${ATTACH_EXISTING_IMAGE} = false ]
 			then
-				## TODO: ask or test for next disk sectorsize.
+				# TODO: ask or test for next disk sectorsize.
 				IMAGE_SECTOR_SIZE=${VM_DEFAULT_SECTOR_SIZE}
 
 				# Ask for image filename.
@@ -5249,6 +5301,8 @@ create_vm_image_handler ()
 		fi
 
 	done
+
+	return 0
 }
 
 create_vm_template ()
@@ -5266,9 +5320,6 @@ create_vm_template ()
 
 	ERROR_COUNT=0
 
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 	# Check that the template name is valid.
 	test_valid_vm_name "${VM_NAME}"
 	if [ "${VALID_VM_NAME}" = "no" ]
@@ -5278,7 +5329,7 @@ create_vm_template ()
 		echo -e "       It must not begin or end with an underscore."
 		echo -e "       It must be between 3 and 30 characters in length."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the template name is not already used.
@@ -5292,7 +5343,7 @@ create_vm_template ()
 			echo -e "       To delete it, use the command:"
 			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-template ${VM_NAME}${NRML}\n"
 			echo -e "       Aborting.\n"
-			exit 1
+			return 1
 		fi
 		VM_INDEX=$(( ${VM_INDEX} + 1 ))
 	done
@@ -5302,7 +5353,7 @@ create_vm_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -5314,7 +5365,7 @@ create_vm_template ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -5326,7 +5377,7 @@ create_vm_template ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get the bridge id and it's net interface name set in init-vms
@@ -5340,7 +5391,7 @@ create_vm_template ()
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The bridge network interface '${ORNG}${VM_BRIDGE_NET_IFACE}${NRML}' does not have any IP addresses!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get the IP address of the bridge network interface.
@@ -5415,10 +5466,10 @@ create_vm_template ()
 		fi
 	done
 
-	## TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	# TODO: get VM_NIC_DRIVER (e1000|virtio-net)
 	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
 
-	## TODO: get VM_BOOT_LOADER (UEFI|grub)
+	# TODO: get VM_BOOT_LOADER (UEFI|grub)
 	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
 
 	# Ask if the older standard HDD sector size is required.
@@ -5494,8 +5545,8 @@ create_vm_template ()
 				question_yes_no "\nWould you like to try again?"
 				if [ "${ANSWER}" = "no" ]
 				then
-					echo -e "\n${ORNG}Aborting.${NRML}\n"
-					exit 1
+					echo -e "\nAborting.\n"
+					return 1
 				fi
 				echo -e ""
 			fi
@@ -5538,8 +5589,8 @@ create_vm_template ()
 				question_yes_no "\nWould you like to try again?"
 				if [ "${ANSWER}" = "no" ]
 				then
-					echo -e "\n${ORNG}Aborting.${NRML}\n"
-					exit 1
+					echo -e "\nAborting.\n"
+					return 1
 				fi
 				echo -e ""
 			fi
@@ -5662,7 +5713,7 @@ create_vm_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n"
 		create_vm_template_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Create ZFS filesystem for VM images
@@ -5768,7 +5819,7 @@ create_vm_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
 		create_vm_template_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Start template VM for the first time.
@@ -5799,6 +5850,12 @@ create_vm_template ()
 
 	# Recursive ISO and disk image handler, for use in preparing the VM.
 	create_vm_image_handler
+	EXIT_CODE=${?}
+	if [ ${EXIT_CODE} -ne 0 ]
+	then
+		create_vm_template_cleanup
+		return ${EXIT_CODE}
+	fi
 
 	# The template VM preparation is finished, let's shutdown and save the template for use.
 	echo -e "${YELL}\nPlease try to shutdown the VM gracefully, if possible.${NRML}\n"
@@ -5813,7 +5870,7 @@ create_vm_template ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the template VM filesystem!\n"
 		create_vm_template_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Install host configs to the system
@@ -5839,8 +5896,7 @@ create_vm_template ()
 	echo -e "${YELL}To create a new VM, use the command:${NRML}"
 	echo -e "${LBLU}${SCRIPT_NAME} create-vm-instance${NRML}\n"
 
-	cd -
-
+	return 0
 }
 
 create_vm_instance ()
@@ -5851,14 +5907,13 @@ create_vm_instance ()
 	VM_TYPE="instance"
 	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
 	CREATE_VM_INSTANCE_MODIFIED=false
-	ERROR_COUNT=0
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	trap 'create_vm_instance_cleanup ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_CREATE_VM_INSTANCE=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
 
 	# Check that the template exists.
 	VM_TEMPLATE_EXISTS=false
@@ -5878,7 +5933,7 @@ create_vm_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The template VM '${ORNG}${VM_TEMPLATE_NAME}${NRML}' does not exist on this host.\n"
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the instance name is valid.
@@ -5890,7 +5945,7 @@ create_vm_instance ()
 		echo -e "       It must not begin or end with an underscore."
 		echo -e "       It must be between 3 and 30 characters in length."
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the instance name is not already used.
@@ -5904,7 +5959,7 @@ create_vm_instance ()
 			echo -e "       To delete it, use the command:"
 			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-instance ${VM_NAME}${NRML}\n"
 			echo -e "       Aborting.\n"
-			exit 1
+			return 1
 		fi
 		VM_INDEX=$(( ${VM_INDEX} + 1 ))
 	done
@@ -5917,7 +5972,7 @@ create_vm_instance ()
 		echo -e "       ${ORNG}${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}${NRML}"
 		echo -e "       does not exist!"
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the instance ZFS filesystem does not already exist.
@@ -5929,7 +5984,7 @@ create_vm_instance ()
 		echo -e "       already exists. To delete it, use the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-instance ${VM_NAME}${NRML}\n"
 		echo -e "       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check that the host is already registered.
@@ -5937,7 +5992,7 @@ create_vm_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -5949,7 +6004,7 @@ create_vm_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -5961,7 +6016,7 @@ create_vm_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get the bridge id and it's net interface name set in init-vms
@@ -5975,7 +6030,7 @@ create_vm_instance ()
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The bridge network interface '${ORNG}${VM_BRIDGE_NET_IFACE}${NRML}' does not have any IP addresses!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get the IP address of the bridge network interface.
@@ -6050,10 +6105,10 @@ create_vm_instance ()
 		fi
 	done
 
-	## TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	# TODO: get VM_NIC_DRIVER (e1000|virtio-net)
 	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
 
-	## TODO: get VM_BOOT_LOADER (UEFI|grub)
+	# TODO: get VM_BOOT_LOADER (UEFI|grub)
 	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
 
 	# Get IP to use for VNC.
@@ -6184,7 +6239,7 @@ create_vm_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n"
 		create_vm_instance_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Create instance VM filesystem by cloning from it's template VM.
@@ -6269,7 +6324,7 @@ create_vm_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
 		create_vm_instance_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Start instance VM for the first time.
@@ -6289,6 +6344,12 @@ create_vm_instance ()
 
 	# Recursive ISO and disk image handler, for use in preparing the VM.
 	create_vm_image_handler
+	EXIT_CODE=${?}
+	if [ ${EXIT_CODE} -ne 0 ]
+	then
+		create_vm_instrance_cleanup
+		return ${EXIT_CODE}
+	fi
 
 	# The instance VM preparation is finished, let's shutdown and save the instance for use.
 	echo -e "${YELL}\nPlease try to shutdown the VM gracefully, if possible.${NRML}\n"
@@ -6311,7 +6372,7 @@ create_vm_instance ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the instance VM filesystem!\n"
 		create_vm_instance_cleanup
-		exit 2
+		return 2
 	fi
 
 	# Install host configs to the system
@@ -6337,8 +6398,7 @@ create_vm_instance ()
 	echo -e "${YELL}To start the new VM, use the command:${NRML}"
 	echo -e "${LBLU}fdo-vms-start ${VM_NAME}${NRML}\n"
 
-	cd -
-
+	return 0
 }
 
 start_jail_service ()
@@ -6361,8 +6421,10 @@ start_jail_service ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORGN}${1}${NRML}'!\n"
+		return 2
 	else
 		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORGN}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		return 0
 	fi
 
 }
@@ -6388,6 +6450,7 @@ find_jails_from_recipe_name ()
 		fi
 	done
 
+	return 0
 }
 
 # WARNING: Only for use by developers on a 'local' only repo.
@@ -6404,7 +6467,7 @@ revert_create_jail ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# NOTE: commit after create jail is not much use, since we can't remove a previous range
@@ -6419,8 +6482,6 @@ revert_create_jail ()
 	fi
 
 	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
-
-	cd /${REPO_NAME}
 
 	service jail status | egrep "^ ${JAIL_TO_REVERT} " > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -6463,6 +6524,8 @@ revert_create_jail ()
 	# Destroy the jail filesystem
 	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	cd "/${REPO_NAME}"
 
 	# Delete jail config directory from local repo
 	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
@@ -6508,7 +6571,8 @@ revert_create_jail ()
 		return 2
 	fi
 
-	echo -e "\n${YELL}Finished reverting jail creation!\n${ORNG}Aborting.${NRML}\n"
+	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\nAborting.\n"
+	return 0
 }
 
 create_jail ()
@@ -6526,9 +6590,6 @@ create_jail ()
 	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
 
 	ERROR_COUNT=0
-
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Check for unsaved registered host config files
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
@@ -6759,6 +6820,7 @@ create_jail ()
 	fi
 
 	echo -e ""
+	return 0
 }
 
 edit_recipe_configs ()
@@ -6798,6 +6860,7 @@ edit_recipe_configs ()
 		fi
 	done
 
+	return 0
 }
 
 create_jail_from_recipe ()
@@ -6812,9 +6875,6 @@ create_jail_from_recipe ()
 
 	ERROR_COUNT=0
 
-	cd /${REPO_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 	get_enabled_nat_services
 
 	# Source the recipe
@@ -6825,7 +6885,7 @@ create_jail_from_recipe ()
 	else
 		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
 		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
@@ -6838,7 +6898,7 @@ create_jail_from_recipe ()
 	elif [ "${PREP_SUCCESS}" = "no" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		# We should never get here.
 		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
@@ -6855,7 +6915,7 @@ create_jail_from_recipe ()
 		if [ ${NUM_POOLS} -lt 1 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-			exit 1
+			return 1
 		fi
 		if [ ${NUM_POOLS} -lt 2 ]
 		then
@@ -6879,7 +6939,7 @@ create_jail_from_recipe ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [1]\n"
 		revert_create_jail ${JAIL_NAME}
-		exit 2
+		return 2
 	fi
 
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
@@ -6891,7 +6951,7 @@ create_jail_from_recipe ()
 		EXIT_CODE=${?}
 		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
 		revert_create_jail ${JAIL_NAME}
-		exit ${EXIT_CODE}
+		return ${EXIT_CODE}
 	fi
 
 	# Source the recipe again to pick up any updated variables
@@ -6908,7 +6968,7 @@ create_jail_from_recipe ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [2]\n"
 		revert_create_jail ${JAIL_NAME}
-		exit 2
+		return 2
 	fi
 
 	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
@@ -6925,7 +6985,7 @@ create_jail_from_recipe ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to create filesystem for the following additional filesystem:"
 			echo -e "       ${ORNG}${SIDES_FILESYSTEM}${NRML}\n"
 			revert_create_jail ${JAIL_NAME}
-			exit 2
+			return 2
 		fi
 	done
 
@@ -6945,7 +7005,7 @@ create_jail_from_recipe ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the jail recipe configs!\n"
 		revert_create_jail ${JAIL_NAME}
-		exit 2
+		return 2
 	fi
 
 	question_yes "\nShall we proceed to cook the recipe?"
@@ -6995,7 +7055,7 @@ create_jail_from_recipe ()
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
 			revert_create_jail ${JAIL_NAME}
-			exit 2
+			return 2
 		fi
 
 		# Restart pf if required
@@ -7048,7 +7108,7 @@ create_jail_from_recipe ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Jail recipe failed!\n"
 		revert_create_jail ${JAIL_NAME}
-		exit 1
+		return 1
 	else
 		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
 		echo -e "         Consider reverting the jail creation by running the command:${NRML}"
@@ -7110,19 +7170,19 @@ create_jail_from_recipe ()
 		echo -e "${YELL}To login to the jail, use the command:${NRML}"
 		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
 	fi
+
+	return 0
 }
 
 init_partimag ()
 {
-
-	cd /${REPO_NAME}
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Check for unsaved registered host config files
@@ -7134,7 +7194,7 @@ init_partimag ()
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
 		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
@@ -7146,7 +7206,7 @@ init_partimag ()
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
@@ -7186,7 +7246,7 @@ init_partimag ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
-		exit 1
+		return 1
 	fi
 
 	# Get the LAN IP address of the NFS host
@@ -7254,8 +7314,7 @@ init_partimag ()
 	echo -e "${YELL}partimag host address:     ${HOST_LAN_IP}${NRML}"
 	echo -e "${YELL}partimag server directory: /home/partimag${NRML}\n"
 
-	cd -
-
+	return 0
 }
 
 merge_local_repo_to_remote ()
@@ -7267,8 +7326,8 @@ merge_local_repo_to_remote ()
 		question_yes_no "Would you like to proceed regardless?"
 		if [ "${ANSWER}" = "no" ]
 		then
-			echo "       Aborting.\n"
-			exit 1
+			echo "\nAborting.\n"
+			return 1
 		fi
 	fi
 
@@ -7307,7 +7366,7 @@ merge_local_repo_to_remote ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to clone the remote repo!\n       Aborting.\n"
-		exit 2
+		return 2
 	fi
 	if [ ! -d "${REPO_NAME}/configs/" ]
 	then
@@ -7319,7 +7378,7 @@ merge_local_repo_to_remote ()
 		echo -e "\n${LRED}ERROR:${NRML} This host already exists in the remote repo!"
 		echo -e "       Consider removing or renaming the stale host config directory in the"
 		echo -e "       remote repo.\n       Aborting.\n"
-		exit 1
+		return 1
 	else
 		echo -e "\n${LGRN}The remote repo seems to be ok!${NRML}\n"
 	fi
@@ -7342,7 +7401,7 @@ merge_local_repo_to_remote ()
 		then
 			git remote remove origin
 		else
-			exit 1
+			return 1
 		fi
 	fi
 
@@ -7351,7 +7410,7 @@ merge_local_repo_to_remote ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!\n       Aborting.\n"
-		exit 2
+		return 2
 	fi
 
 	# Fetch the remote repo.
@@ -7363,7 +7422,7 @@ merge_local_repo_to_remote ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!\n       Aborting.\n"
 		git remote remove origin
-		exit 1
+		return 1
 	fi
 
 	# Align the master branch on both local and remote repo.
@@ -7378,7 +7437,7 @@ merge_local_repo_to_remote ()
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
 			git remote remove origin
-			exit 2
+			return 2
 		fi
 	else
 		NEEDS_UPSTREAM_BRANCH_SET="yes"
@@ -7394,7 +7453,7 @@ merge_local_repo_to_remote ()
 		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!\n       Aborting.\n"
 		git remote remove origin
 		git reset --soft "${LAST_LOCAL_COMMIT}"
-		exit 1
+		return 1
 	fi
 
 	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" = "yes" ]
@@ -7408,6 +7467,7 @@ merge_local_repo_to_remote ()
 	
 	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
 
+	return 0
 }
 
 ##### MAIN EXECUTION THREAD ####################################################
@@ -7454,6 +7514,7 @@ case "${SUB_CMD}" in
 	install-scripts)
 		update_local_repo --no-check-scripts
 		install_scripts_everywhere
+		exit ${?}
 		;;
 
 	add-script)
@@ -7461,6 +7522,7 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		add_script "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	update-script)
@@ -7468,37 +7530,13 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_script "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	install-configs)
 		update_local_repo
-
-		# Install configs to the host
-		question_yes_no "Are you sure you want to install all host configs from the repo to this host?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			install_configs configs/${HOST_NAME} /
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the this host!\n"
-			fi
-		fi
-
-		# Install configs to the jails
-		cd /${REPO_NAME}
-		for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
-		do
-			question_yes_no "Are you sure you want to install all jail configs from the repo to the\n'${NRML}${JAIL_NAME}${LCYN}' jail?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				install_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
-				if [ ${?} -ne 0 ]
-				then
-					echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
-				fi
-			fi
-		done
-		cd -
+		install_configs_everywhere
+		exit ${?}
 		;;
 
 	check-configs)
@@ -7512,6 +7550,7 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		add_config "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	update-config)
@@ -7519,6 +7558,7 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_config "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	remove-config)
@@ -7526,54 +7566,64 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		remove_config "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	connect-internet)
 		# Create a non-persistent connection to the internet so that we can access FDo resources etc.
 		connect_internet
+		exit ${?}
 		;;
 
 	init-host)
 		# Register a new host in the repo, install essential packages and initial configuration from templates.
 		test_num_mandatory_sub_args 2
 		init_host "${SUB_ARG1}" "${SUB_ARG2}"
+		exit ${?}
 		;;
 
 	patch-host)
 		# Use freebsd-update to update to latest patch level.
 		patch_host
+		exit ${?}
 		;;
 
 	setup-vnc-desktop)
 		# Install minimal X desktop environment accessible via VNC using IceWM, Roxterm, Xfe, Firefox and TightVNC.
 		update_local_repo
 		setup_vnc_desktop
+		exit ${?}
 		;;
 
 	init-hotdesking)
 		# Initialise the NIS/NFS hostdesking subsystem.
 		update_local_repo
 		init_hotdesking
+		exit ${?}
 		;;
 
 	init-partimag)
 		# Initialise the NFS share for partimag.
 		update_local_repo
 		init_partimag
+		exit ${?}
 		;;
 
 	merge-local-repo-to-remote)
 		# Move and merge a local repo to a private remote repo.
 		merge_local_repo_to_remote
+		exit ${?}
 		;;
 
 	upgrade-repo-from-upstream)
 		# Upgrade the private repo to include changes from the public upstream skeleton repo.
 		update_local_repo
 		upgrade_repo_from_upstream --push
+		EXIT_CODE=${?}
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to upgrade from the public upstream skeleton git repo.\n"
+			exit ${EXIT_CODE}
 		fi
 		;;
 
@@ -7581,34 +7631,37 @@ case "${SUB_CMD}" in
 		# Initialise the FDo jails subsystem.
 		update_local_repo
 		init_jails
+		exit ${?}
 		;;
 
 	create-jail)
 		# Create a vanilla jail.
 		test_num_mandatory_sub_args 2
 		update_local_repo
-		JAIL_IP=""
 		create_jail "${SUB_ARG1}" "${SUB_ARG2}"
+		exit ${?}
 		;;
 
 	create-jail-from-recipe)
 		# Create a jail from a jail recipe.
 		test_num_mandatory_sub_args 3
 		update_local_repo
-		JAIL_IP=""
 		create_jail_from_recipe "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
+		exit ${?}
 		;;
 
 	revert-create-jail)
 		# Revert back to before last jail creation (developers).
 		test_num_mandatory_sub_args 1
 		revert_create_jail "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	init-vms)
 		# Initialise the FDo Virtual Machine subsystem (currently based on bhyve).
 		update_local_repo
 		init_vms
+		exit ${?}
 		;;
 
 	create-vm-template)
@@ -7616,6 +7669,7 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		create_vm_template "${SUB_ARG1}"
+		exit ${?}
 		;;
 
 	create-vm-instance)
@@ -7623,12 +7677,14 @@ case "${SUB_CMD}" in
 		test_num_mandatory_sub_args 2
 		update_local_repo
 		create_vm_instance "${SUB_ARG1}" "${SUB_ARG2}"
+		exit ${?}
 		;;
 
 	init-sshfs-daemon)
 		# Initiaze the sshfs (SFTP) daemon subsystem
 		update_local_repo
 		init_sshfs_daemon
+		exit ${?}
 		;;
 
 	*)
