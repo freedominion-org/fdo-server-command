@@ -4463,25 +4463,25 @@ init_vms ()
 	fi
 
 	# Mount the filesystems if they are not already.
-	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS} "
+	zfs mount | egrep "^${VMS_POOL_NAME}/${VMS_ROOT_FS} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
+	zfs mount | egrep "^${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_RESOURCES_DIRNAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
+	zfs mount | egrep "^${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs mount | grep "${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
+	zfs mount | egrep "^${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME} "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_INSTANCES_DIRNAME}
