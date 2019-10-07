@@ -3391,7 +3391,7 @@ init_hotdesking ()
 
 	# Get pool name to use for hotdesk users' home folders.
 	HOTDESK_POOL_NAME=""
-	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+	POOLS_AVAILABLE=`zpool list -H -o name`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
@@ -4274,7 +4274,7 @@ init_vms ()
 
 	# Get pool name to use for base of VM image filesystems.
 	VMS_POOL_NAME=""
-	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+	POOLS_AVAILABLE=`zpool list -H -o name`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
@@ -6910,7 +6910,7 @@ create_jail_from_recipe ()
 	then
 		# Get pool name to use for additional recipe filesystems.
 		SIDES_POOL_NAME=""
-		POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+		POOLS_AVAILABLE=`zpool list -H -o name`
 		NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 		if [ ${NUM_POOLS} -lt 1 ]
 		then
@@ -7201,7 +7201,7 @@ init_partimag ()
 
 	# Get pool name to use for partimag filesystem.
 	PARTIMAG_POOL_NAME=""
-	POOLS_AVAILABLE=`zpool list | tail -n +2 | awk '{print $1}'`
+	POOLS_AVAILABLE=zpool list -H -o name``
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
