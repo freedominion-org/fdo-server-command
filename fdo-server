@@ -1795,11 +1795,10 @@ install_configs ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to the target location:\n       ${ORNG}${CONFIG_REPO_ROOT}${NRML}\n"
 		return 2
+	else
+		echo -e "\n${LGRN}SUCCESS:${NRML} Installed all config files successfully! (${ORNG}${CONFIG_REPO_ROOT}${NRML})\n"
+		return 0
 	fi
-
-	echo -e "\n${LGRN}Installed all config files successfully! (${ORNG}${CONFIG_REPO_ROOT}${LGRN})${NRML}\n"
-
-	return 0
 }
 
 install_configs_everywhere ()
