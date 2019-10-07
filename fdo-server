@@ -217,14 +217,14 @@ pause_prompt ()
 readee ()
 {
 
-	# Test for no arguments
+	# Test for no arguments.
 	if [ ${#} -eq 0 ]
 	then
 		echo -e "readee: arg count"
 		return 2
 	fi
 
-	# Parse arguments
+	# Parse arguments.
 	READEE_SILENT_MODE="false"
 	READEE_PROMPT_MODE="false"
 	READEE_PROMPT_TEXT=""
@@ -233,7 +233,7 @@ readee ()
 	do
 		case "${ARG}" in
 			"-e")
-				# For backwards compatibility only
+				# For backwards compatibility only.
 				continue
 				;;
 			"-s")
@@ -251,14 +251,14 @@ readee ()
 					continue
 				fi
 
-				# Test for illegal option flags
+				# Test for illegal option flags.
 				if [ "`echo ${ARG} | cut -c1`" = "-" ]
 				then
 					echo -e "readee: Illegal option "`echo "${ARG}" | cut -c1-2`
 					return 2
 				fi
 
-				# Test for variable name validity (try best to copy sh inbuilt: read)
+				# Test for variable name validity (try best to copy sh inbuilt: read).
 				IS_SYNTAX_OK=`echo "${ARG}" | sed -r "s/^[a-zA-Z\_]+[a-zA-Z0-9\_]*//" | wc -L`
 				if [ ${IS_SYNTAX_OK}  -ne 0 ]
 				then
@@ -271,34 +271,34 @@ readee ()
 		esac
 	done
 
-	# Test for missing prompt argument
+	# Test for missing prompt argument.
 	if [ "${READEE_PROMPT_MODE}" = "next_arg" ]
 	then
 		echo -e "readee: No arg for -p option"
 		return 2
 	fi
 
-	# Test for missing variable argument
+	# Test for missing variable argument.
 	if [ "${READEE_VARIABLE}" = "" ]
 	then
 		echo -e "readee: arg count"
 		return 2
 	fi
 
-	# Variables (re)initialisation:
+	# Variables (re)initialisation.
 	CURS="\033[30;47m"
 	NRML="\033[0;00m"
 	HEX_CARRIAGE_RETURN="%0d"
 	HEX_ESCAPE="%1b"
 	HEX_CTRL_C="%03"
 	HEX_CTRL_D="%04"
-	HEX_ASCII_DEL="%7f"		# ASCII DEL, but actually comes from Backspace Key in some terminals
+	HEX_ASCII_DEL="%7f"         # ASCII DEL, but actually comes from Backspace Key in some terminals.
 	HEX_BACKSPACE="%08"
-	HEX_DELETE="%33"		# Comes after escape character
-	HEX_HOME="%48"			# Comes after escape character
-	HEX_END="%46"			# Comes after escape character
-	HEX_D="%44"				# LEFT ARROW, comes after escape character
-	HEX_C="%43"				# RIGHT ARROW, comes after escape character
+	HEX_DELETE="%33"            # Comes after escape character.
+	HEX_HOME="%48"              # Comes after escape character.
+	HEX_END="%46"               # Comes after escape character.
+	HEX_D="%44"                 # LEFT ARROW, comes after escape character.
+	HEX_C="%43"                 # RIGHT ARROW, comes after escape character.
 	TYPED_CHAR=""
 	TYPED_CHAR_HEX=""
 	PRE_CURS_TEXT=""
@@ -309,18 +309,18 @@ readee ()
 	READEE_ABORTED="false"
 	CURRENT_TTY_SETTINGS=`stty -g`
 
-	# Prepare the TTY for line editing (no echo, raw input, make cursor invisible)
+	# Prepare the TTY for line editing (no echo, raw input, make cursor invisible).
 	stty -echo raw
 	tput vi
 
-	# Display initial prompt and edit line
+	# Display initial prompt and edit line.
 	echo -e "\r${NRML}${READEE_PROMPT_TEXT}${CURS}${CURS_TEXT}${NRML}\c"
 
-	# Loop taking keystrokes until carriage return key is pressed
+	# Loop taking keystrokes until carriage return key is pressed.
 	while [ "${TYPED_CHAR_HEX}" != "${HEX_CARRIAGE_RETURN}" ]
 	do
 
-		# Get a 2-byte character from stdin on key press and convert to Hexidecimal value
+		# Get a 2-byte character from stdin on key press and convert to Hexidecimal value.
 		TYPED_CHAR=$(dd bs=2 count=1 2> /dev/null)
 		TYPED_CHAR_HEX=`printf "%%%02x\n" "'${TYPED_CHAR}"`
 
@@ -329,7 +329,7 @@ readee ()
 			TYPED_CHAR_HEX=${HEX_BACKSPACE}
 		fi
 
-		# Compare the hexidecimal value of the first character with known ASCII values
+		# Compare the hexidecimal value of the first character with known ASCII values.
 		case "${TYPED_CHAR_HEX}" in
 			"${HEX_CTRL_C}")
 				READEE_ABORTED="true"
@@ -345,45 +345,45 @@ readee ()
 				continue
 				;;
 			"${HEX_BACKSPACE}")
-				# Get the length of the text left of cursor
+				# Get the length of the text left of cursor.
 				PRE_CURS_TEXT_LENGTH=`echo ${#PRE_CURS_TEXT}`
 
 				if [ "${CURSOR_AT_START}" = "true" ]
 				then
-					# If cursor is already at the beginning, do nothing and continue
+					# If cursor is already at the beginning, do nothing and continue.
 					continue
 				fi
 
 				if [ ${PRE_CURS_TEXT_LENGTH} -lt 2 ]
 				then
 					# Cursor reached the first character.
-					# Set new pre-cursor text to empty, since cursor is now at the beginning;
+					# Set new pre-cursor text to empty, since cursor is now at the beginning.
 					NEW_PRE_CURS_TEXT=""
 					NEW_CURSOR_AT_START="true"
 				else
 					# Cursor moves left erasing the right-most character left of cursor.
-					# Truncate the pre-cursor text by one character from the right;
+					# Truncate the pre-cursor text by one character from the right.
 					NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$(( ${PRE_CURS_TEXT_LENGTH} - 1 ))`
 					NEW_CURSOR_AT_START="false"
 				fi
 
-				# Set new values:
+				# Set new values.
 				PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
 				CURSOR_AT_START="${NEW_CURSOR_AT_START}"
 				;;
 			"${HEX_ESCAPE}")
 
-				# The first character was the escape character, so let's get a second character and hex value
+				# The first character was the escape character, so let's get a second character and hex value.
 				ESCAPED_CHAR=$(dd bs=2 count=1 2> /dev/null)
 				ESCAPED_CHAR_HEX=`printf "%%%02x\n" "'${ESCAPED_CHAR}"`
 
 				# Compare the hex value of second character with known ASCII values
-				# in order to get the extended meaning of the key stroke
+				# In order to get the extended meaning of the key stroke.
 				case "${ESCAPED_CHAR_HEX}" in
 					"${HEX_HOME}")
 						if [ "${CURSOR_AT_START}" = "true" ]
 						then
-							# if cursor is already at the start, do nothing and continue
+							# If the cursor is already at the start, do nothing and continue.
 							continue
 						fi
 
@@ -397,7 +397,7 @@ readee ()
 						NEW_CURS_TEXT=`echo "${NEW_TEXT}" | cut -c1`
 						NEW_POST_CURS_TEXT=`echo "${NEW_TEXT}" | cut -c2-${NEW_TEXT_LENGTH}`
 
-						# Set new values:
+						# Set new values.
 						PRE_CURS_TEXT=""
 						CURS_TEXT="${NEW_CURS_TEXT}"
 						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
@@ -407,13 +407,13 @@ readee ()
 					"${HEX_END}")
 						if [ "${CURSOR_AT_END}" = "true" ]
 						then
-							# if cursor is already at he end, do nothing and continue
+							# If the cursor is already at he end, do nothing and continue.
 							continue
 						fi
 
 						NEW_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}${POST_CURS_TEXT}"
 
-						# Set new values:
+						# Set new values.
 						PRE_CURS_TEXT="${NEW_TEXT}"
 						CURS_TEXT=" "
 						POST_CURS_TEXT=""
@@ -421,113 +421,113 @@ readee ()
 						CURSOR_AT_END="true"
 						;;
 					"${HEX_DELETE}")
-						# Get the length of the text right of cursor
+						# Get the length of the text right of cursor.
 						POST_CURS_TEXT_LENGTH=${#POST_CURS_TEXT}
 
 						if [ "${CURSOR_AT_END}" = "true" ]
 						then
-							# If cursor is already at the end, do nothing and continue
+							# If cursor is already at the end, do nothing and continue.
 							continue
 						fi
 
 						if [ ${POST_CURS_TEXT_LENGTH} -lt 1 ]
 						then
 							# Cursor reached the last character.
-							# Set new cursor character to whitespace so we can still see it;
+							# Set new cursor character to whitespace so we can still see it.
 							NEW_CURS_TEXT=" "
-							# Set new post-cursor text to empty, since we are at the end;
+							# Set new post-cursor text to empty, since we are at the end.
 							NEW_POST_CURS_TEXT=""
 							NEW_CURSOR_AT_END="true"
 						else
 							# Cursor erases it's character and becomes the left-most character right of cursor.
-							# Set cursor text to the left-most character of post-cursor text;
+							# Set cursor text to the left-most character of post-cursor text.
 							NEW_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c1`
-							# Truncate the post-cursor text by one character from the left;
+							# Truncate the post-cursor text by one character from the left.
 							NEW_POST_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c2-${POST_CURS_TEXT_LENGTH}`
 							NEW_CURSOR_AT_END="false"
 						fi
 
-						# Set new values:
+						# Set new values.
 						CURS_TEXT="${NEW_CURS_TEXT}"
 						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
 						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
 						;;
-					"${HEX_D}")	# LEFT ARROW
-						# Get the length of the text left of cursor
+					"${HEX_D}")    # LEFT ARROW.
+						# Get the length of the text left of cursor.
 						PRE_CURS_TEXT_LENGTH=`echo ${#PRE_CURS_TEXT}`
 
 						if [ "${CURSOR_AT_START}" = "true" ]
 						then
-							# If cursor is already at the beginning, do nothing and continue
+							# If cursor is already at the beginning, do nothing and continue.
 							continue
 						fi
 
 						if [ ${PRE_CURS_TEXT_LENGTH} -lt 2 ]
 						then
 							# Cursor reached the first character.
-							# Set new pre-cursor text to empty, since cursor is now at the beginning;
+							# Set new pre-cursor text to empty, since cursor is now at the beginning.
 							NEW_PRE_CURS_TEXT=""
 							NEW_CURSOR_AT_START="true"
 							NEW_CURSOR_AT_END="false"
 						else
 							# Cursor is moving left.
-							# Set new pre-cursor text to current pre-cursor text truncated by one character from the right;
+							# Set new pre-cursor text to current pre-cursor text truncated by one character from the right.
 							NEW_PRE_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c1-$(( ${PRE_CURS_TEXT_LENGTH} - 1 ))`
 							NEW_CURSOR_AT_START="false"
 							NEW_CURSOR_AT_END="false"
 						fi
 
-						# Set new cursor character to character left of current cursor;
+						# Set new cursor character to character left of current cursor.
 						NEW_CURS_TEXT=`echo "${PRE_CURS_TEXT}" | cut -c${#PRE_CURS_TEXT}`
 						if [ "${CURSOR_AT_END}" = "true" ]
 						then
-							# Cursor was at end, so new post-cursor text is same as before;
+							# Cursor was at end, so new post-cursor text is same as before.
 							NEW_POST_CURS_TEXT="${POST_CURS_TEXT}"
 						else
-							# Set new post-cursor text to current cursor character concatenated with current post-cursor text;
+							# Set new post-cursor text to current cursor character concatenated with current post-cursor text.
 							NEW_POST_CURS_TEXT="${CURS_TEXT}${POST_CURS_TEXT}"
 						fi
 
-						# Set new values:
+						# Set new values.
 						PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
 						CURS_TEXT="${NEW_CURS_TEXT}"
 						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
 						CURSOR_AT_START="${NEW_CURSOR_AT_START}"
 						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
 						;;
-					"${HEX_C}")	# RIGHT ARROW
-						# Get the length of the text right of cursor
+					"${HEX_C}")    # RIGHT ARROW.
+						# Get the length of the text right of cursor.
 						POST_CURS_TEXT_LENGTH=${#POST_CURS_TEXT}
 
 						if [ "${CURSOR_AT_END}" = "true" ]
 						then
-							# If cursor is already at the end, do nothing and continue
+							# If cursor is already at the end, do nothing and continue.
 							continue
 						fi
 
 						if [ ${POST_CURS_TEXT_LENGTH} -lt 1 ]
 						then
 							# Cursor reached past last character.
-							# Set new cursor character to whitespace so we can still see it;
+							# Set new cursor character to whitespace so we can still see it.
 							NEW_CURS_TEXT=" "
-							# Set new post-cursor text to empty, since we are at the end;
+							# Set new post-cursor text to empty, since we are at the end.
 							NEW_POST_CURS_TEXT=""
 							NEW_CURSOR_AT_START="false"
 							NEW_CURSOR_AT_END="true"
 						else
 							# Cursor is moving right.
-							# Set new cursor character to first character of current post-cursor text;
+							# Set new cursor character to first character of current post-cursor text.
 							NEW_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c1`
-							# Set new post-cursor text to current post-cursor text truncated by one character from the left;
+							# Set new post-cursor text to current post-cursor text truncated by one character from the left.
 							NEW_POST_CURS_TEXT=`echo "${POST_CURS_TEXT}" | cut -c2-${POST_CURS_TEXT_LENGTH}`
 							NEW_CURSOR_AT_START="false"
 							NEW_CURSOR_AT_END="false"
 						fi
 
-						# Set new pre-cursor text to current pre-cursor text concatenated with current cursor character;
+						# Set new pre-cursor text to current pre-cursor text concatenated with current cursor character.
 						NEW_PRE_CURS_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}"
 
-						# Set new values:
+						# Set new values.
 						PRE_CURS_TEXT="${NEW_PRE_CURS_TEXT}"
 						CURS_TEXT="${NEW_CURS_TEXT}"
 						POST_CURS_TEXT="${NEW_POST_CURS_TEXT}"
@@ -535,7 +535,7 @@ readee ()
 						CURSOR_AT_END="${NEW_CURSOR_AT_END}"
 						;;
 					*)
-						# For any other character, do nothing
+						# For any other character, do nothing.
 						continue
 						;;
 
@@ -543,13 +543,13 @@ readee ()
 				;;
 
 			*)
-				# Character is actual input
+				# Character is actual input.
 				PRE_CURS_TEXT="${PRE_CURS_TEXT}${TYPED_CHAR}"
 				CURSOR_AT_START="false"
 				;;
 		esac
 
-		# If in silent mode, hide displayed text
+		# If in silent mode, hide displayed text.
 		if [ "${READEE_SILENT_MODE}" = "true" ]
 		then
 			DISPLAY_LINE="${NRML}${READEE_PROMPT_TEXT}"`echo "${PRE_CURS_TEXT}" | sed "s/./\*/g"`
@@ -559,16 +559,16 @@ readee ()
 			DISPLAY_LINE="${NRML}${READEE_PROMPT_TEXT}${PRE_CURS_TEXT}${CURS}${CURS_TEXT}${NRML}${POST_CURS_TEXT}"
 		fi
 
-		# Echo display text to screen
+		# Echo display text to screen.
 		echo -e "\r${DISPLAY_LINE} \c"
 
 	done
 
-	# Put tty text and cursor back to how they were before
+	# Put tty text and cursor back to how they were before.
 	stty ${CURRENT_TTY_SETTINGS}
 	tput ve
 
-	# Compile the whole entered text line from component parts
+	# Compile the whole entered text line from component parts.
 	if [ "${CURSOR_AT_END}" = "true" ]
 	then
 		READEE_ENTERED_TEXT="${PRE_CURS_TEXT}${POST_CURS_TEXT}"
@@ -576,7 +576,7 @@ readee ()
 		READEE_ENTERED_TEXT="${PRE_CURS_TEXT}${CURS_TEXT}${POST_CURS_TEXT}"
 	fi
 
-	# If in silent mode, hide final entered text once more
+	# If in silent mode, hide final entered text once more.
 	if [ "${READEE_SILENT_MODE}" = "true" ]
 	then
 		DISPLAY_LINE="${READEE_PROMPT_TEXT}"`echo "${READEE_ENTERED_TEXT}" | sed "s/./\*/g"`
@@ -584,7 +584,7 @@ readee ()
 		DISPLAY_LINE="${READEE_PROMPT_TEXT}${READEE_ENTERED_TEXT}"
 	fi
 
-	# Now output final text
+	# Now output final text.
 	if [ "${READEE_ABORTED}" = "true" ]
 	then
 		if [ "${READEE_ABORT_TYPE}" = "C" ]
@@ -600,7 +600,7 @@ readee ()
 		echo -e "\r${DISPLAY_LINE} "
 	fi
 
-	# Lastly, set the input variable that was passed as an argument
+	# Lastly, set the input variable that was passed as an argument.
 	eval "${READEE_VARIABLE}=\"${READEE_ENTERED_TEXT}\""
 
 }
@@ -680,7 +680,7 @@ get_file_size_in_gigabytes ()
 
 get_jail_id_from_name ()
 {
-	# NOTE: ${1} is jail name
+	# NOTE: ${1} is jail name.
 
 	JAIL_ID_FILE=`ls -1 /var/run/jail_${1}.id 2> /dev/null | head -1`
 	if [ "${JAIL_ID_FILE}" = "" ]
@@ -1113,13 +1113,13 @@ git_push ()
 check_repo_config ()
 {
 
-	# If REPO_URI is already set, then no need to proceed
+	# If REPO_URI is already set, then no need to proceed.
 	if [ "${REPO_URI}" != "" ]
 	then
 		return 0
 	fi
 
-	# Get the type of repo and, if applicable, the remote repo URI
+	# Get the type of repo and, if applicable, the remote repo URI.
 	while [ "${REPO_URI}" = "" ]
 	do
 		echo -e "\n\n${LGRN}It appears that this is the first time you have used '${NRML}${SCRIPT_NAME}${LGRN}${NRML}'"
@@ -1143,7 +1143,7 @@ check_repo_config ()
 			fi
 		done
 
-		# If it does not exist, create the root path for FDo config files
+		# If it does not exist, create the root path for FDo config files.
 		if [ ! -f ${FDO_CONFIG_ROOT} ]
 		then
 			mkdir -p ${FDO_CONFIG_ROOT}
@@ -1153,18 +1153,18 @@ check_repo_config ()
 		then
 			REPO_URI="local"
 		else
-			# Get the URI of the remote git repo
+			# Get the URI of the remote git repo.
 			REMOTE_REPO_URI=""
 			while [ "${REMOTE_REPO_URI}" = "" ]
 			do
 				echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
 				readee REMOTE_REPO_URI_TEMP
-				# Allow user to change their mind about type of repo
+				# Allow user to change their mind about type of repo.
 				if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
 				then
 					break
 				fi
-				# Test the input to see if it is a valid URI (URL)
+				# Test the input to see if it is a valid URI (URL).
 				test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
 				if [ "${VALID_URL}" = "yes" ]
 				then
@@ -1182,7 +1182,7 @@ check_repo_config ()
 
 	done
 
-	# Store the repo URI in it's FDo config file
+	# Store the repo URI in it's FDo config file.
 	echo "${REPO_URI}" > ${FDO_CONFIG_ROOT}/fdo-server-repo.conf
 
 	echo -e "\n${YELL}The local repo will be stored in the path '${NRML}/${REPO_NAME}${YELL}'.${NRML}\n"
@@ -1271,7 +1271,7 @@ install_file_tree ()
 compare_file_tree ()
 {
 
-	# NOTE: return code is 2 if any file/dir is missing, 1 if any file is OUT OF CHECK, 0 if everything is IN CHECK
+	# NOTE: return code is 2 if any file/dir is missing, 1 if any file is OUT OF CHECK, 0 if everything is IN CHECK.
 	SOURCE_FILES_ROOT=${1}
 	DEST_FILES_ROOT=${2}
 	SILENT_MODE="no"
@@ -1422,7 +1422,7 @@ upgrade_repo_from_upstream ()
 		return 2
 	fi
 
-	# Get the pre-upgrade git commit reference
+	# Get the pre-upgrade git commit reference.
 	PRE_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
 
 	# Add the public upstream skeleton repo as a remote called 'upstream'.
@@ -1446,7 +1446,7 @@ upgrade_repo_from_upstream ()
 		return 2
 	fi
 
-	# Detach the upstream remote from the local repo
+	# Detach the upstream remote from the local repo.
 	git remote remove upstream
 	if [ ${?} -ne 0 ]
 	then
@@ -1476,16 +1476,16 @@ upgrade_repo_from_upstream ()
 		fi
 	fi
 
-	# Get the post-upgrade git commit reference
+	# Get the post-upgrade git commit reference.
 	POST_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
 
-	# Check if any scripts have been updated in this upgrade cycle
+	# Check if any scripts have been updated in this upgrade cycle.
 	echo -e "\n${YELL}Checking if any scripts have been updated in this upgrade...${NRML}\n"
 	git diff-tree --no-commit-id --name-only -r ${PRE_UPGRADE_COMMIT_REF} ${POST_UPGRADE_COMMIT_REF} | grep "^scripts/"
 
 	if [ ${?} -eq 0 ]
 	then
-		# Ask whether to perform an 'install-scripts'
+		# Ask whether to perform an 'install-scripts'.
 		question_yes_no "\nIt seems that one or more scripts have been updated in this upgrade.\nWould you like to perform an '${NRML}install-scripts${LCYN}' now?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -1504,7 +1504,7 @@ init_local_repo ()
 
 	echo -e "\n\n${YELL}Initialising the local repo...${NRML}\n"
 
-	# Clone or update the git repository
+	# Clone or update the git repository.
 	if [ -d "/${REPO_NAME}/.git" ]
 	then
 
@@ -1528,7 +1528,7 @@ init_local_repo ()
 			git fetch
 			git branch --set-upstream-to=origin/master master
 			git_pull
-			# Detach from the remote repo
+			# Detach from the remote repo.
 			git remote remove origin
 		else
 			# Re-initialise a local repo and attach it to its remote repo.
@@ -1560,7 +1560,7 @@ init_local_repo ()
 
 		# ASSUME: The local repo does not exist yet.
 
-		# Move to '/' because this is where we keep the local repo
+		# Move to '/' because this is where we keep the local repo.
 		cd /
 
 		if [ "${REPO_URI}" = "local" ]
@@ -1586,7 +1586,7 @@ init_local_repo ()
 			git remote remove origin
 		else
 			# Initialise a new local repo and attach to its remote repo.
-			# Clone our private remote git repo
+			# Clone our private remote git repo.
 			echo -e "${YELL}Cloning our private remote git repo...${NRML}\n"
 			git clone ${REPO_URI} ${REPO_NAME}
 			if [ ${?} -ne 0 ]
@@ -1625,7 +1625,7 @@ install_scripts_everywhere ()
 {
 	EXIT_CODE=0
 
-	# Install scripts to the host
+	# Install scripts to the host.
 	install_scripts /
 	RETURN_CODE=${?}
 	if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
@@ -1634,7 +1634,7 @@ install_scripts_everywhere ()
 		EXIT_CODE=${RETURN_CODE}
 	fi
 
-	# Install scripts to the jails
+	# Install scripts to the jails.
 	for JAIL_DIR in `ls -1 /jls 2> /dev/null`
 	do
 		install_scripts /jls/${JAIL_DIR}/
@@ -1796,7 +1796,7 @@ install_configs_everywhere ()
 
 	EXIT_CODE=0
 
-	# Install configs to the host
+	# Install configs to the host.
 	question_yes_no "Are you sure you want to install all host configs from the repo to this host?"
 	if [ "${ANSWER}" = "yes" ]
 	then
@@ -1809,7 +1809,7 @@ install_configs_everywhere ()
 		fi
 	fi
 
-	# Install configs to the jails
+	# Install configs to the jails.
 	for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
 	do
 		question_yes_no "Are you sure you want to install all jail configs from the repo to the\n'${NRML}${JAIL_NAME}${LCYN}' jail?"
@@ -1902,12 +1902,12 @@ add_config ()
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
-		# config file belongs to a jail
+		# config file belongs to a jail.
 		JAIL_NAME=`echo ${CONFIG_FULL_PATH}  | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
 		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
 	else
-		# config file belongs to the host
+		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
 		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
 	fi
@@ -1973,12 +1973,12 @@ remove_config ()
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
-		# config file belongs to a jail
+		# config file belongs to a jail.
 		JAIL_NAME=`echo ${CONFIG_FULL_PATH}  | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
 		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
 	else
-		# config file belongs to the host
+		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
 		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
 	fi
@@ -2034,12 +2034,12 @@ update_config ()
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
-		# config file belongs to a jail
+		# config file belongs to a jail.
 		JAIL_NAME=`echo ${CONFIG_FULL_PATH} | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
 		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
 	else
-		# config file belongs to the host
+		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
 		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
 	fi
@@ -2133,7 +2133,7 @@ update_local_repo ()
 		echo -e "\n${YELL}No need to update the local repo, there is no remote repo.${NRML}\n"
 	else
 
-		# Get the pre-update git commit reference
+		# Get the pre-update git commit reference.
 		PRE_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
 
 		echo -e "\n${YELL}First, let's update the local git repo...${NRML}\n"
@@ -2144,18 +2144,18 @@ update_local_repo ()
 			echo -e "       Please use '${LBLU}git status${NRML}' to find the cause.\n       Aborting.\n"
 			exit 2
 		fi
-		# Get the post-update git commit reference
+		# Get the post-update git commit reference.
 		POST_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
 
 		if [ "${CHECK_SCRIPTS}" = "yes" ]
 		then
-			# Check if any scripts have been updated in this update cycle
+			# Check if any scripts have been updated in this update cycle.
 			echo -e "\n${YELL}Checking if any scripts have been updated in this update...${NRML}\n"
 			git diff-tree --no-commit-id --name-only -r ${PRE_UPDATE_COMMIT_REF} ${POST_UPDATE_COMMIT_REF} | grep "^scripts/"
 
 			if [ ${?} -eq 0 ]
 			then
-				# Ask whether to perform an 'install-scripts'
+				# Ask whether to perform an 'install-scripts'.
 				question_yes_no "\nIt seems that one or more scripts have been updated.\nWould you like to perform an '${NRML}install-scripts${LCYN}' now?"
 				if [ "${ANSWER}" = "yes" ]
 				then
@@ -2174,7 +2174,7 @@ update_local_repo ()
 connect_internet ()
 {
 
-	# Get available interfaces and the quantity thereof
+	# Get available interfaces and the quantity thereof.
 	NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}" | cut -d: -f1`
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
@@ -2215,7 +2215,7 @@ connect_internet ()
 		done
 	fi
 
-	# Optionally configure PPP
+	# Optionally configure PPP.
 	question_yes_no "\nDo you want to use PPPoE for the WAN interface (internet facing)?"
 	USES_PPP=${ANSWER}
 	if [ "${USES_PPP}" = "yes" ]
@@ -2244,7 +2244,7 @@ connect_internet ()
 			done
 		fi
 
-		# Get PPP authname
+		# Get PPP authname.
 		while [ "${PPP_AUTHNAME}" = "" ]
 		do
 			echo -e ""
@@ -2261,7 +2261,7 @@ connect_internet ()
 			fi
 		done
 
-		# Get PPP authkey
+		# Get PPP authkey.
 		while [ "${PPP_AUTHKEY}" = "" ]
 		do
 			echo -e ""
@@ -2281,15 +2281,15 @@ connect_internet ()
 
 		echo -e ""
 	fi
-	# END: configure PPP
+	# END: configure PPP.
 
 
-	# Configure WAN interface IP address and subnet mask
+	# Configure WAN interface IP address and subnet mask.
 	question_yes_no "\nDo you want to use DHCP for the WAN interface?"
 	IS_WAN_IFACE_DHCP=${ANSWER}
 	if [ "${IS_WAN_IFACE_DHCP}" = "no" ]
 	then
-		# Set up static IP and netmask for WAN interface
+		# Set up static IP and netmask for WAN interface.
 		while [ "${WAN_IFACE_IP}" = "" ]
 		do
 			echo -e ""
@@ -2324,7 +2324,7 @@ connect_internet ()
 			fi
 		done
 
-		# Set default router
+		# Set default router.
 		while [ "${WAN_ROUTER_IP}" = "" ]
 		do
 			echo -e ""
@@ -2342,10 +2342,10 @@ connect_internet ()
 			fi
 		done
 	fi
-	# END: if IS_WAN_IFACE_DHCP = no
+	# END: if IS_WAN_IFACE_DHCP = no.
 
 
-	# Stop services that may interfere with a simple internet connection
+	# Stop services that may interfere with a simple internet connection.
 	echo -e "\n${YELL}Stopping unwanted network services...${NRML}\n"
 	service natd onestop > /dev/null 2>&1
 	service pflog onestop > /dev/null 2>&1
@@ -2357,7 +2357,7 @@ connect_internet ()
 
 	sleep ${NET_CONNECT_TIMEOUT_SECS}
 
-	# Destroy all existing interfaces
+	# Destroy all existing interfaces.
 	echo -e "\n${YELL}Destroying existing interfaces...${NRML}\n"
 	NET_IFACES_TO_DESTROY=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "^lo0" | cut -d: -f1`
 	for IFACE_TO_DESTROY in ${NET_IFACES_TO_DESTROY}
@@ -2366,16 +2366,16 @@ connect_internet ()
 		ifconfig ${IFACE_TO_DESTROY} destroy > /dev/null 2>&1
 	done
 
-	# Flush routing table
+	# Flush routing table.
 	echo -e "\n${YELL}Flushing routing table...${NRML}\n"
 	route flush > /dev/null 2>&1
 
-	# Backup and replace resolv.conf with a generic working copy
+	# Backup and replace resolv.conf with a generic working copy.
 	backup_file /etc/resolv.conf connect-internet
 	echo "nameserver 1.1.1.1" > /etc/resolv.conf
 	echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 
-	# Setup interface and routing
+	# Setup interface and routing.
 	echo -e "\n${YELL}Setup WAN interface and routing...${NRML}\n"
 	ifconfig ${WAN_NET_IFACE} up
 
@@ -2433,11 +2433,11 @@ connect_internet ()
 
 	while [ "${IS_IP_WORKING}" = "no" ] && [ ${WAIT_CYCLES} -lt 10 ]
 	do
-		# Sleep for 16 seconds for connection to establish
+		# Sleep for 16 seconds for connection to establish.
 		echo -e "\n${YELL}Waiting for ${NET_CONNECT_TIMEOUT_SECS} seconds for connection to establish...${NRML}\n"
 		sleep ${NET_CONNECT_TIMEOUT_SECS}
 
-		# Test internet connection
+		# Test internet connection.
 		test_ping_host "${INET_TEST_IPV4}"
 		if [ "${VALID_HOST_PING}" = "yes" ]
 		then
@@ -2461,12 +2461,12 @@ connect_internet ()
 
 		if [ ${WAIT_CYCLES} -ne 0 ]
 		then
-			# Sleep for 16 seconds for DNS to establish
+			# Sleep for 16 seconds for DNS to establish.
 			echo -e "\n${YELL}Waiting for ${NET_CONNECT_TIMEOUT_SECS} seconds for DNS to establish...${NRML}\n"
 			sleep ${NET_CONNECT_TIMEOUT_SECS}
 		fi
 
-		# Test DNS
+		# Test DNS.
 		host "${INET_TEST_HOSTNAME}" > /dev/null 2>&1
 		if [ ${?} -eq 0 ]
 		then
@@ -2489,7 +2489,7 @@ connect_internet ()
 
 init_host_cleanup ()
 {
-	# TODO: replace with 'git reset --hard'; see create_vm_template
+	# TODO: replace with 'git reset --hard'; see create_vm_template.
 	rm -rf configs/${HOST_NAME}
 }
 
@@ -2527,7 +2527,7 @@ init_host ()
 		return 1
 	fi
 
-	# Update pkgng repositories
+	# Update pkgng repositories.
 	echo -e "\n${YELL}First we need to update pkg (pkgng) repositories...${NRML}\n"
 	pkg update
 	if [ ${?} -ne 0 ]
@@ -2536,7 +2536,7 @@ init_host ()
 		return 1
 	fi
 
-	# Install essential packages
+	# Install essential packages.
 	echo -e "\n${YELL}Next we need to install some essential packages...${NRML}\n"
 	pause_prompt 8
 	pkg update -f
@@ -2547,7 +2547,7 @@ init_host ()
 		return 1
 	fi
 
-	# Initialise the local private repo
+	# Initialise the local private repo.
 	init_local_repo
 	EXIT_CODE=${?}
 	if [ ${EXIT_CODE} -ne 0 ]
@@ -2672,7 +2672,7 @@ init_host ()
 
 		sed -i "" "s/WAN_NET_IFACE/${WAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
 
-		# Optionally configure PPP
+		# Optionally configure PPP.
 		question_yes_no "\nDo you want to use PPPoE for the WAN interface (internet facing)?"
 		USES_PPP=${ANSWER}
 		if [ "${USES_PPP}" = "yes" ]
@@ -2707,7 +2707,7 @@ init_host ()
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 			fi
 	
-			# Get PPP authname
+			# Get PPP authname.
 			while [ "${PPP_AUTHNAME}" = "" ]
 			do
 				echo -e ""
@@ -2725,7 +2725,7 @@ init_host ()
 				fi
 			done
 
-			# Get PPP authkey
+			# Get PPP authkey.
 			while [ "${PPP_AUTHKEY}" = "" ]
 			do
 				echo -e ""
@@ -2753,15 +2753,15 @@ init_host ()
 		else
 			echo "${WAN_NET_IFACE}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_wan.conf
 		fi
-		# END: configure PPP
+		# END: configure PPP.
 
 
-		# Configure WAN interface IP address and subnet mask
+		# Configure WAN interface IP address and subnet mask.
 		question_yes_no "\nDo you want to use DHCP for the WAN interface?"
 		IS_WAN_IFACE_DHCP=${ANSWER}
 		if [ "${IS_WAN_IFACE_DHCP}" = "no" ]
 		then
-			# Set up static IP and netmask for WAN interface
+			# Set up static IP and netmask for WAN interface.
 			while [ "${WAN_IFACE_IP}" = "" ]
 			do
 				echo -e ""
@@ -2806,7 +2806,7 @@ init_host ()
 				fi
 			done
 
-			# Set default router
+			# Set default router.
 			while [ "${WAN_ROUTER_IP}" = "" ]
 			do
 				echo -e ""
@@ -2833,20 +2833,20 @@ init_host ()
 			fi
 		elif [ "${USES_PPP}" = "yes" ]
 		then
-			# WAN PPP connection uses Dynamic IP
+			# WAN PPP connection uses Dynamic IP.
 		else
-			# WAN IP interface uses DHCP
+			# WAN IP interface uses DHCP.
 			sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 		fi
-		# END: if IS_WAN_IFACE_DHCP = no
+		# END: if IS_WAN_IFACE_DHCP = no.
 
 		sed -i "" "s/^gateway_enable\=.*/gateway_enable\=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 
 	fi
-	# END: configure WAN interface
+	# END: configure WAN interface.
 
 
-	# Configure LAN interface
+	# Configure LAN interface.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		REMAINING_NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}|^${WAN_NET_IFACE}" | cut -d: -f1`
@@ -2884,7 +2884,7 @@ init_host ()
 
 	if [ "${WAN_NET_IFACE}" != "NULL" ]
 	then
-		# ASSUME this host is a remote or primary_local type server
+		# ASSUME this host is a remote or primary_local type server.
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
 		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 		if [ "${USES_PPP}" = "yes" ]
@@ -2893,12 +2893,12 @@ init_host ()
 			sed -i "" "s/LAN_SUBNET_C/${LAN_SUBNET_C}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 		fi
 	else
-		# ASSUME this host is an aux_local type server
+		# ASSUME this host is an aux_local type server.
 		question_yes_no "\nDo you want to use DHCP for the LAN interface?"
 		IS_LAN_IFACE_DHCP=${ANSWER}
 		if [ "${IS_LAN_IFACE_DHCP}" = "no" ]
 		then
-			# Set up static IP and netmask for LAN interface
+			# Set up static IP and netmask for LAN interface.
 			SELECT_IP_LIST=""
 			CURRENT_IP=${AUX_LOCAL_SERVER_IP_MIN}
 			while [ ${CURRENT_IP} -le ${AUX_LOCAL_SERVER_IP_MAX} ]
@@ -2929,24 +2929,24 @@ init_host ()
 		else
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 		fi
-		# END: if IS_LAN_IFACE_DHCP = no
+		# END: if IS_LAN_IFACE_DHCP = no.
 	fi
-	# END: if WAN_NET_IFACE != NULL
+	# END: if WAN_NET_IFACE != NULL.
 
 	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s|JAILS_LAN_SUBNET_C|${JAILS_LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
 	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
 
-	# Update hostname
+	# Update hostname.
 	sed -i "" "s/^hostname\=.*/hostname\=\"${HOST_NAME}\.${DOMAIN_NAME}\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/FDO_LAN_IP/${LAN_IFACE_IP}/g" configs/${HOST_NAME}/etc/hosts
 	sed -i "" "s/FDO_HOST_NAME/${HOST_NAME}/g" configs/${HOST_NAME}/etc/hosts
 	sed -i "" "s/FDO_DOMAIN_NAME/${DOMAIN_NAME}/g" configs/${HOST_NAME}/etc/hosts
 	hostname ${HOST_NAME}.${DOMAIN_NAME}
 
-	# END: configure LAN interface
+	# END: configure LAN interface.
 
-	# Configure firewall / NAT router
+	# Configure firewall / NAT router.
 	if [ "${WAN_NET_IFACE}" != "NULL" ] && [ "${USES_PPP}" = "no" ]
 	then
 		sed -i "" "s|WAN_NET_IFACE|${WAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
@@ -2956,11 +2956,11 @@ init_host ()
 		sed -i "" "s|^pflog_enable=.*|pflog_enable\=\"YES\"|" configs/${HOST_NAME}/etc/rc.conf
 	fi
 
-	# Additional network configuration
+	# Additional network configuration.
 	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|" configs/${HOST_NAME}/etc/resolv.conf.static
 	sed -i "" "s|DOMAIN_NAME|${DOMAIN_NAME}|" configs/${HOST_NAME}/etc/resolv.conf.static
 
-	# Ask if we want to continue past point of no return
+	# Ask if we want to continue past point of no returna.
 	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
 	if [ "${ANSWER}" = "no" ]
 	then
@@ -2970,12 +2970,12 @@ init_host ()
 
 	#### POINT OF NO RETURN ####
 
-	# Backup existing core system conf files
+	# Backup existing core system conf files.
 	backup_file /etc/rc.conf init-host
 	backup_file /etc/sysctl.conf init-host
 	backup_file /boot/loader.conf init-host
 
-	# Remove any cloud provider init
+	# Remove any cloud provider init.
 	if [ -e /usr/local/etc/rc.d/digitalocean ]
 	then
 		zfs set compression=on zroot
@@ -2983,17 +2983,17 @@ init_host ()
 		chmod -x /usr/local/etc/rc.d/digitaloceanpre
 	fi
 
-	# Install init-host configs to the system so that FDO user has a useful profile
+	# Install init-host configs to the system so that FDO user has a useful profile.
 	install_file_tree configs/${HOST_NAME} /
 
-	# Set password for toor user
+	# Set password for toor user.
 	echo -e "\n${YELL}Next we need to set a password for the toor user (interactive root shell${NRML}"
 	echo -e "${YELL}account). This can be the same as the root user password.${NRML}"
 	echo -e "${LCYN}"
 	passwd toor
 	echo -e "${NRML}"
 
-	# Set login shell for toor user
+	# Set login shell for toor user.
 	chsh -s bash toor > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -3002,12 +3002,12 @@ init_host ()
 		return 2
 	fi
 
-	# Add arbitrary ssh login user
+	# Add arbitrary ssh login user.
 	echo -e "\n${YELL}Next we will add an arbitrary user so that we can login via SSH.${NRML}"
 	echo -e "${YELL}It's recommended NOT to use an easy to guess username like admin or your own${NRML}"
 	echo -e "${YELL}name.${NRML}"
 
-	# Get valid login name
+	# Get valid login name.
 	FDO_USERNAME=""
 	while [ "${FDO_USERNAME}" = "" ]
 	do
@@ -3045,10 +3045,10 @@ init_host ()
 	echo -e "${LGRN}to toor using the command:${NRML}"
 	echo -e "${LBLU}root${NRML}\n"
 
-	# Store FDO_USERNAME in it's config file
+	# Store FDO_USERNAME in it's config file.
 	echo ${FDO_USERNAME} > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf
 
-	# Timezone setup
+	# Timezone setup.
 	echo -e ""
 	readee -p "${LCYN}Let's perform the hosts timezone setup. Press enter to proceed... ${NRML}" ENTER_PRESSED
 	tzsetup
@@ -3068,13 +3068,13 @@ init_host ()
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/profile
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/csh.login
 
-	# Set correct time/date from ntp.org
+	# Set correct time/date from ntp.org.
 	echo -e "\n${YELL}Setting correct time and date from ntp.org...${NRML}\n"
 	service ntpd stop
 	ntpdate pool.ntp.org
 	service ntpd start
 
-	# Locale setup
+	# Locale setup.
 	echo -e "\n"
 	question_yes_no "\nWould you like to configure the locale for this host?"
 	if [ "${ANSWER}" = "yes" ]
@@ -3106,16 +3106,16 @@ init_host ()
 
 	#### CONFIG PROFILE FINISHED ####
 
-	# Install scripts to the system
+	# Install scripts to the system.
 	install_scripts /
 
-	# Install final init-host configs to the system
+	# Install final init-host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
-	# Create ssl certs directory
+	# Create ssl certs directory.
 	mkdir -p /usr/local/etc/ssl/certs
 
-	# If not using DHCP, symlink resolv.conf.static to resolv.conf
+	# If not using DHCP, symlink resolv.conf.static to resolv.conf.
 	if [ "${IS_PRIMARY_IFACE_DHCP}" = "no" ] || [ "${USES_PPP}" = "yes" ]
 	then
 		backup_file /etc/resolv.conf init-host
@@ -3123,10 +3123,10 @@ init_host ()
 		ln -s /etc/resolv.conf.static /etc/resolv.conf
 	fi
 
-	# Remove the .gitignore from the local repo configs directory (if it exists)
+	# Remove the .gitignore from the local repo configs directory (if it exists).
 	git rm configs/.gitignore 2> /dev/null
 
-	# Commit this hosts config to the local repo
+	# Commit this hosts config to the local repo.
 	echo -e "\n${YELL}Committing this hosts config to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	git commit -m "Adding new host; ${HOST_NAME}."
@@ -3229,7 +3229,7 @@ setup_vnc_desktop()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -3243,7 +3243,7 @@ setup_vnc_desktop()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	# Update pkgng repositories
+	# Update pkgng repositories.
 	echo -e "\n${YELL}Next we need to update pkg (pkgng) repositories...${NRML}\n"
 	pkg update
 	if [ ${?} -ne 0 ]
@@ -3252,7 +3252,7 @@ setup_vnc_desktop()
 		return 1
 	fi
 
-	# Install desktop / vnc packages
+	# Install desktop / vnc packages.
 	echo -e "\n${YELL}Next we need to install some required packages...${NRML}\n"
 	pause_prompt 8
 	pkg update -f
@@ -3265,10 +3265,10 @@ setup_vnc_desktop()
 
 	FDO_USERNAME=`cat configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf`
 
-	# Copy setup-vnc-desktop template configs to this hosts' repo profile
+	# Copy setup-vnc-desktop template configs to this hosts' repo profile.
 	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/
 
-	# Rename FDO_USERNAME home folder in host config profile
+	# Rename FDO_USERNAME home folder in host config profile.
 	if [ -d configs/${HOST_NAME}/home/${FDO_USERNAME} ]
 	then
 		mv configs/${HOST_NAME}/home/FDO_USERNAME/* configs/${HOST_NAME}/home/FDO_USERNAME/.[!.]* configs/${HOST_NAME}/home/${FDO_USERNAME}/
@@ -3276,30 +3276,30 @@ setup_vnc_desktop()
 		mv configs/${HOST_NAME}/home/FDO_USERNAME configs/${HOST_NAME}/home/${FDO_USERNAME}
 	fi
 
-	# Enable DBUS in rc.conf
+	# Enable DBUS in rc.conf.
 	sed -i "" "s/dbus_enable=\"NO\"/dbus_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 
-	# Substitute FDo username in rc.local and rc.shutdown.local
+	# Substitute FDo username in rc.local and rc.shutdown.local.
 	sed -i "" "s|FDO_USERNAME|${FDO_USERNAME}|" configs/${HOST_NAME}/etc/rc.local
 	sed -i "" "s|FDO_USERNAME|${FDO_USERNAME}|" configs/${HOST_NAME}/etc/rc.shutdown.local
 
-	# Uncomment VNC related lines in rc.local and rc.shutdown.local
+	# Uncomment VNC related lines in rc.local and rc.shutdown.local.
 	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.local
 	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.shutdown.local
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
-	# Change ownership of the FDO_USERNAME home folder
+	# Change ownership of the FDO_USERNAME home folder.
 	chown -R ${FDO_USERNAME}:${FDO_USERNAME} /home/${FDO_USERNAME}
 
-	# Start dbus
+	# Start dbus.
 	service dbus start
 
 	echo -e "\n${YELL}The next prompt will ask for the VNC session password...${NRML}\n"
 	pause_prompt 8
 
-	# Run vncserver for the first time, will prompt for vnc passwords
+	# Run vncserver for the first time, will prompt for vnc passwords.
 	sh /etc/rc.local
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -3320,7 +3320,7 @@ setup_vnc_desktop()
 		fi
 	fi
 
-	# Get the LAN interface for this host
+	# Get the LAN interface for this host.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -3337,18 +3337,18 @@ setup_vnc_desktop()
 		fi
 	done
 
-	# Get the LAN IP address of this host
+	# Get the LAN IP address of this host.
 	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
 	do
-		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP.
 		HOST_LAN_IP="${IP_ADDRESS}"
 		break
 	done
 
-	# Get the default route IP for accessing this host from outside the LAN
+	# Get the default route IP for accessing this host from outside the LAN.
 	DEFAULT_ROUTE_IP=`route -nv get 1 | tail -1 | awk '{print $5}'`
 
-	# Get the default route IP for accessing this host from outside the LAN
+	# Get the default route IP for accessing this host from outside the LAN.
 	FULL_HOST_NAME=`hostname -f`
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up a VNC accessible desktop.${NRML}\n"
@@ -3375,7 +3375,7 @@ init_hotdesking ()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -3444,7 +3444,7 @@ init_hotdesking ()
 		fi
 	done
 
-	# Get the LAN interface of this host
+	# Get the LAN interface of this host.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -3461,7 +3461,7 @@ init_hotdesking ()
 		fi
 	done
 
-	# Exit if the LAN subnet interface was not found
+	# Exit if the LAN subnet interface was not found.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
@@ -3500,7 +3500,7 @@ init_hotdesking ()
 	sed -i "" "s/NIS_DOMAIN_NAME/${NIS_DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/NIS_HOST_IP/${NIS_HOST_IP}/" configs/${HOST_NAME}/etc/rc.conf
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
 	question_yes "\nNow we need to restart the network to register the NIS domain name.\nCan we proceed?"
@@ -3517,7 +3517,7 @@ init_hotdesking ()
 	touch /var/yp/master.passwd
 	chmod 600 /var/yp/master.passwd
 
-	# Start rpcbind required by ypinit
+	# Start rpcbind required by ypinit.
 	service rpcbind start
 
 	echo -e "\n${YELL}Now we will initialise the NIS maps. Follow the steps below:${NRML}\n"
@@ -3536,16 +3536,16 @@ init_hotdesking ()
 		return 2
 	fi
 
-	# Start the NIS/NFS services
+	# Start the NIS/NFS services.
 	service ypserv start
 	service ypbind start
 	service lockd start
 	service nfsd start
 
-	# Let's add a group called users to support a Slackware based workstation / client
+	# Let's add a group called users to support a Slackware based workstation / client.
 	pw group add users -g 100 > /dev/null 2>&1
 
-	# Create the ZFS filesystem for the root of hotdesk users home folders
+	# Create the ZFS filesystem for the root of hotdesk users home folders.
 	zfs create -o mountpoint=/fdo-hotdesk-home ${HOTDESK_POOL_NAME}/fdo-hotdesk-home
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -3666,7 +3666,7 @@ init_jails ()
 		return 1
 	fi
  
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -3680,7 +3680,7 @@ init_jails ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	# Get the LAN interface that the jails will run on
+	# Get the LAN interface that the jails will run on.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -3697,7 +3697,7 @@ init_jails ()
 		fi
 	done
 
-	# Exit if the LAN subnet interface was not found
+	# Exit if the LAN subnet interface was not found.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
@@ -4032,7 +4032,7 @@ init_sshfs_daemon ()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -4082,10 +4082,10 @@ init_sshfs_daemon ()
 		echo "sshfsd_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
 	fi
 
-	# Copy init-sshfs-daemon template configs to this hosts' repo profile
+	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
 	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
 	echo -e "\n"
@@ -4882,7 +4882,7 @@ create_vm_image_handler ()
 					fi
 				done
 
-				# Image filename is concatenation of its filesystem/directory <IMAGE_NAME> and file name <IMAGE_NAME>.img
+				# Image filename is concatenation of its filesystem/directory <IMAGE_NAME> and file name <IMAGE_NAME>.img.
 				IMAGE_FILENAME="${IMAGE_NAME}/${IMAGE_NAME}.img"
 
 				echo -e "\n${YELL}Creating additional disk image filesystem...${NRML}\n"
@@ -5356,7 +5356,7 @@ create_vm_template ()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -5380,11 +5380,11 @@ create_vm_template ()
 		return 1
 	fi
 
-	# Get the bridge id and it's net interface name set in init-vms
+	# Get the bridge id and it's net interface name set in init-vms.
 	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
 	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
 
-	# Get the network interface used for the bridge interface
+	# Get the network interface used for the bridge interface.
 	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
@@ -5466,10 +5466,10 @@ create_vm_template ()
 		fi
 	done
 
-	# TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	# TODO: get VM_NIC_DRIVER (e1000|virtio-net).
 	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
 
-	# TODO: get VM_BOOT_LOADER (UEFI|grub)
+	# TODO: get VM_BOOT_LOADER (UEFI|grub).
 	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
 
 	# Ask if the older standard HDD sector size is required.
@@ -5517,11 +5517,11 @@ create_vm_template ()
 			fi
 		done
 
-		# Get the installer ISO path
+		# Get the installer ISO path.
 		OS_INSTALLER_ISO=""
 		while [ "${OS_INSTALLER_ISO}" = "" ]
 		do
-			# Ask for installer ISO file
+			# Ask for installer ISO file.
 			dialog --title "Select OS installer ISO" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
 			if [ -e "${OS_INSTALLER_ISO_TEMP}" ]
@@ -5555,11 +5555,11 @@ create_vm_template ()
 
 	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
 	then
-		# Get the existing VM OS image file path
+		# Get the existing VM OS image file path.
 		EXISTING_IMAGE_PATH=""
 		while [ "${EXISTING_IMAGE_PATH}" = "" ]
 		do
-			# Ask for existing disk image path
+			# Ask for existing disk image path.
 			dialog --title "Select existing disk image (raw)" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 			EXISTING_IMAGE_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
 			if [ -e "${EXISTING_IMAGE_PATH_TEMP}" ]
@@ -5617,11 +5617,11 @@ create_vm_template ()
 		done
 	fi
 
-	# Get next available VNC port
+	# Get next available VNC port.
 	get_next_vnc_port_num
 	VM_VNC_PORT=${VNC_PORT_NUM}
 
-	# Get next available tap interface id
+	# Get next available tap interface id.
 	VM_TAP_ID=-1
 	VM_TAP_ID_TEMP=0
 	while [ ${VM_TAP_ID} -lt 0 ]
@@ -5703,7 +5703,7 @@ create_vm_template ()
 	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
 	CREATE_VM_TEMPLATE_MODIFIED=true
 
-	# Create new tap interface and add it to the VM bridge
+	# Create new tap interface and add it to the VM bridge.
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
@@ -5716,7 +5716,7 @@ create_vm_template ()
 		return 2
 	fi
 
-	# Create ZFS filesystem for VM images
+	# Create ZFS filesystem for VM images.
 	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	if [ ${?} -ne 0 ]
 	then
@@ -5730,7 +5730,7 @@ create_vm_template ()
 		echo -e "\n${YELL}ZFS filesystem for the template VM image already exists...${NRML}\n"
 	fi
 
-	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
+	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint.
 	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
 	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
 	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
@@ -5873,7 +5873,7 @@ create_vm_template ()
 		return 2
 	fi
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -5995,7 +5995,7 @@ create_vm_instance ()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -6019,11 +6019,11 @@ create_vm_instance ()
 		return 1
 	fi
 
-	# Get the bridge id and it's net interface name set in init-vms
+	# Get the bridge id and it's net interface name set in init-vms.
 	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
 	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
 
-	# Get the network interface used for the bridge interface
+	# Get the network interface used for the bridge interface.
 	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
@@ -6105,10 +6105,10 @@ create_vm_instance ()
 		fi
 	done
 
-	# TODO: get VM_NIC_DRIVER (e1000|virtio-net)
+	# TODO: get VM_NIC_DRIVER (e1000|virtio-net).
 	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
 
-	# TODO: get VM_BOOT_LOADER (UEFI|grub)
+	# TODO: get VM_BOOT_LOADER (UEFI|grub).
 	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
 
 	# Get IP to use for VNC.
@@ -6131,11 +6131,11 @@ create_vm_instance ()
 		done
 	fi
 
-	# Get next available VNC port
+	# Get next available VNC port.
 	get_next_vnc_port_num
 	VM_VNC_PORT=${VNC_PORT_NUM}
 
-	# Get next available tap interface id
+	# Get next available tap interface id.
 	VM_TAP_ID=-1
 	VM_TAP_ID_TEMP=0
 	while [ ${VM_TAP_ID} -lt 0 ]
@@ -6229,7 +6229,7 @@ create_vm_instance ()
 	echo -e "\n${YELL}Creating new instance VM...${NRML}\n"
 	CREATE_VM_INSTANCE_MODIFIED=true
 
-	# Create new tap interface and add it to the VM bridge
+	# Create new tap interface and add it to the VM bridge.
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	ifconfig ${VM_BRIDGE_IFACE} addm ${VM_TAP_IFACE} > /dev/null 2>&1
@@ -6249,7 +6249,7 @@ create_vm_instance ()
 	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint
+	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint.
 	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
 	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
 	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
@@ -6375,7 +6375,7 @@ create_vm_instance ()
 		return 2
 	fi
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
@@ -6403,9 +6403,9 @@ create_vm_instance ()
 
 start_jail_service ()
 {
-	# ${1} is jail name
-	# ${2} is service name
-	# ${3} may be --allow-restart
+	# ${1} is jail name.
+	# ${2} is service name.
+	# ${3} may be --allow-restart.
 
 	get_jail_id_from_name "${1}"
 
@@ -6470,8 +6470,8 @@ revert_create_jail ()
 		return 1
 	fi
 
-	# NOTE: commit after create jail is not much use, since we can't remove a previous range
-	#       of commits using 'git revert' without creating conflicts that need manual intervention.
+	# ASSUME: commit after create jail is not much use, since we can't remove a previous range.
+	# of commits using 'git revert' without creating conflicts that need manual intervention.
 	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
 
 	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
@@ -6512,7 +6512,7 @@ revert_create_jail ()
 
 	echo -e "\n"
 
-	# Destroy additional jail recipe filesystems in reverse order
+	# Destroy additional jail recipe filesystems in reverse order.
 	REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
 	for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
 	do
@@ -6521,40 +6521,40 @@ revert_create_jail ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	done
 
-	# Destroy the jail filesystem
+	# Destroy the jail filesystem.
 	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	cd "/${REPO_NAME}"
 
-	# Delete jail config directory from local repo
+	# Delete jail config directory from local repo.
 	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
 
-	# Roll back local repo to last good commit (!!!DANGEROUS!!!)
+	# Roll back local repo to last good commit (!!!DANGEROUS!!!).
 	if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
 	then
 		git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Remove untracked config files from host and config repo
+	# Remove untracked config files from host and config repo.
 	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install back old host configs
+	# Install back old host configs.
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install back affected jail configs
+	# Install back affected jail configs.
 	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
 	do
 		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${NRML}${AFFECTED_JAIL_RECIPE}${YELL}':${NRML}"
 		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
 		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
 		do
-			# Use install_config to reinstate configs for jail found to be affected
+			# Use install_config to reinstate configs for jail found to be affected.
 			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
 			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
 			if [ ${?} -ne 0 ]
@@ -6591,7 +6591,7 @@ create_jail ()
 
 	ERROR_COUNT=0
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
 	if [ ${?} -gt 0 ]
@@ -6639,7 +6639,7 @@ create_jail ()
 		fi
 	fi
 
-	# Get version strings
+	# Get version strings.
 	FREEBSD_VERSION_STRING=`freebsd-version`
 	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
@@ -6678,8 +6678,8 @@ create_jail ()
 		return 2
 	fi
 
-	# Install template jails' configs to new jails' config repo directory
-	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state
+	# Install template jails' configs to new jails' config repo directory.
+	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state.
 	mkdir configs/${JAIL_NAME}@${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
@@ -6714,11 +6714,11 @@ create_jail ()
 		return 2
 	fi
 
-	# Save the previous git commit reference to file, for later use in reverting operations
+	# Save the previous git commit reference to file, for later use in reverting operations.
 	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Create entry in configs/${HOST_NAME}/etc/jail.conf
+	# Create entry in 'configs/${HOST_NAME}/etc/jail.conf'.
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
@@ -6734,13 +6734,13 @@ create_jail ()
 	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Prepare the jail fstab
+	# Prepare the jail fstab.
 	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Add jail to jail_list in /etc/rc.conf
+	# Add jail to jail_list in '/etc/rc.conf'.
 	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -6757,15 +6757,15 @@ create_jail ()
 		return 2
 	fi
 
-	# Install latest scripts to the jail
+	# Install latest scripts to the jail.
 	install_scripts /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install initial config templates to the new jail
+	# Install initial config templates to the new jail.
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
@@ -6778,7 +6778,7 @@ create_jail ()
 
 	if [ "${IS_INTERACTIVE}" = "yes" ]
 	then
-		# Add changes to the local config repo
+		# Add changes to the local config repo.
 		git add configs/${HOST_NAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git add configs/${JAIL_NAME}@${HOST_NAME}
@@ -6830,7 +6830,7 @@ edit_recipe_configs ()
 
 	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
 	do
-		# Skip directories and certain unintersting files
+		# Skip directories and certain unintersting files.
 		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
 		FILE_NAME=`basename ${CONFIG_FILE}`
 		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
@@ -6839,14 +6839,14 @@ edit_recipe_configs ()
 			continue
 		fi
 
-		# Skip files modified prior to recipe (e.g. from create_jail)
+		# Skip files modified prior to recipe (e.g. from create_jail).
 		CONFIG_FILE_MODIFIED_TIMESTAMP=`stat -f "%Sm" -t "%s" ${CONFIG_FILE}`
 		if [ ${PRE_RECIPE_TIMESTAMP} -gt ${CONFIG_FILE_MODIFIED_TIMESTAMP} ]
 		then
 			continue
 		fi
 
-		# Prompt user and if yes, display the config file in EDITOR
+		# Prompt user and if yes, display the config file in EDITOR.
 		question_yes_no "Would you like to edit the recipe config '${NRML}${CONFIG_FILE}${LCYN}'?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -6877,7 +6877,7 @@ create_jail_from_recipe ()
 
 	get_enabled_nat_services
 
-	# Source the recipe
+	# Source the recipe.
 	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
 	then
 		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
@@ -6944,7 +6944,7 @@ create_jail_from_recipe ()
 
 	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
 
-	# Create a blank jail (non-interactively)
+	# Create a blank jail (non-interactively).
 	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
 	if [ ${?} -ne 0 ]
 	then
@@ -6954,11 +6954,11 @@ create_jail_from_recipe ()
 		return ${EXIT_CODE}
 	fi
 
-	# Source the recipe again to pick up any updated variables
+	# Source the recipe again to pick up any updated variables.
 	. jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Sleep for 1 second to avoid timestamp conflicts
+	# Sleep for 1 second to avoid timestamp conflicts.
 	sleep 1
 
 	PRE_RECIPE_TIMESTAMP=`date "+%s"`
@@ -6973,7 +6973,7 @@ create_jail_from_recipe ()
 
 	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
 
-	# Create additional jail recipe filesystems
+	# Create additional jail recipe filesystems.
 	COUNT_SIDES_FILESYSTEMS=0
 	for SIDES_FILESYSTEM in ${SIDES_FILESYSTEMS}
 	do
@@ -6989,15 +6989,15 @@ create_jail_from_recipe ()
 		fi
 	done
 
-	# Install recipe config templates to new jails' config repo directory
+	# Install recipe config templates to new jails' config repo directory.
 	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Set the correct jail ABI in the jails' pkg repo conf file
+	# Set the correct jail ABI in the jails' pkg repo conf file.
 	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install initial config templates to the new jail
+	# Install initial config templates to the new jail.
 	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
@@ -7012,10 +7012,10 @@ create_jail_from_recipe ()
 
 	echo -e "\n\n${YELL}Cooking '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
 
-	# Cook the sourced recipe
+	# Cook the sourced recipe.
 	cook_recipe
 
-	# Add any port forwarding rules
+	# Add any port forwarding rules.
 	if [ ${RECIPE_TCP_PORTS} ] && [ ${RECIPE_UDP_PORTS} ]
 	then
 		IS_REPO_CONF="yes" PF_CONF_PATH="configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
@@ -7034,18 +7034,18 @@ create_jail_from_recipe ()
 
 	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
-		# Interactively edit the configs touched by the recipe
+		# Interactively edit the configs touched by the recipe.
 		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		edit_recipe_configs
 
-		# Save recipe name to information file
+		# Save recipe name to information file.
 		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-		# Install any new or modfied configs
+		# Install any new or modfied configs.
 		install_file_tree configs/${HOST_NAME} /
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
@@ -7058,7 +7058,7 @@ create_jail_from_recipe ()
 			return 2
 		fi
 
-		# Restart pf if required
+		# Restart pf if required.
 		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
 		then
 			echo -e "\n"
@@ -7083,14 +7083,14 @@ create_jail_from_recipe ()
 			fi
 		fi
 
-		# Restart jail if required
+		# Restart jail if required.
 		if [ "${RECIPE_REQUIRES_JAIL_RESTART}" = "yes" ]
 		then
 			service jail restart ${JAIL_NAME}
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		# Start jail recipe services
+		# Start jail recipe services.
 		for SERVICE in ${START_JAIL_SERVICES}
 		do
 			start_jail_service ${JAIL_NAME} ${SERVICE} --allow-restart
@@ -7185,7 +7185,7 @@ init_partimag ()
 		return 1
 	fi
 
-	# Check for unsaved registered host config files
+	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -7225,7 +7225,7 @@ init_partimag ()
 		done
 	fi
 
-	# Get the LAN interface that the NFS share will run on
+	# Get the LAN interface that the NFS share will run on.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
@@ -7242,17 +7242,17 @@ init_partimag ()
 		fi
 	done
 
-	# Exit if the LAN subnet interface was not found
+	# Exit if the LAN subnet interface was not found.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
 		return 1
 	fi
 
-	# Get the LAN IP address of the NFS host
+	# Get the LAN IP address of the NFS host.
 	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
 	do
-		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP
+		# Let's ASSUME that the first and lowest (numerically) IP is the primary LAN IP.
 		HOST_LAN_IP="${IP_ADDRESS}"
 		break
 	done
@@ -7270,22 +7270,22 @@ init_partimag ()
 	sed -i "" "s/rpc_statd_enable=\"NO\"/rpc_statd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/rpcbind_enable=\"NO\"/rpcbind_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 
-	# Install host configs to the system
+	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
-	# Create the ZFS filesystem for the partimag
+	# Create the ZFS filesystem for the partimag.
 	zfs create -o mountpoint=/usr/home/partimag ${PARTIMAG_POOL_NAME}/partimag
 
 	touch /etc/exports
 
 	echo -e ""
 
-	# Start the NFS services
+	# Start the NFS services.
 	service rpcbind start
 	service lockd start
 	service nfsd start
 
-	# Add mountpoint to NFS exports file
+	# Add mountpoint to NFS exports file.
 	cat /etc/exports | egrep "^/usr/home/partimag " > /dev/null 2>&1
 	if  [ ${?} -ne 0 ]
 	then
@@ -7319,7 +7319,7 @@ init_partimag ()
 
 merge_local_repo_to_remote ()
 {
-	# Test that we are actually using a local repo
+	# Test that we are actually using a local repo.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears you are already using a remote repo!\n"
@@ -7337,12 +7337,12 @@ merge_local_repo_to_remote ()
 	do
 		echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
 		readee REMOTE_REPO_URI_TEMP
-		# Allow use to change their mind about type of repo
+		# Allow use to change their mind about type of repo.
 		if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
 		then
 			break
 		fi
-		# Test the input to see if it is a valid URI (URL)
+		# Test the input to see if it is a valid URI (URL).
 		test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
 		if [ "${VALID_URL}" = "yes" ]
 		then
@@ -7518,7 +7518,7 @@ case "${SUB_CMD}" in
 		;;
 
 	add-script)
-		# Add new script to local and remote git repo
+		# Add new script to local and remote git repo.
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		add_script "${SUB_ARG1}"
@@ -7526,7 +7526,7 @@ case "${SUB_CMD}" in
 		;;
 
 	update-script)
-		# Update a script to local and remote git repo
+		# Update a script to local and remote git repo.
 		test_num_mandatory_sub_args 1
 		update_local_repo
 		update_script "${SUB_ARG1}"
@@ -7681,7 +7681,7 @@ case "${SUB_CMD}" in
 		;;
 
 	init-sshfs-daemon)
-		# Initiaze the sshfs (SFTP) daemon subsystem
+		# Initiaze the sshfs (SFTP) daemon subsystem.
 		update_local_repo
 		init_sshfs_daemon
 		exit ${?}
