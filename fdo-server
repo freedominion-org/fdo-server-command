@@ -1216,7 +1216,7 @@ install_file_tree ()
 	DEST_FILES_ROOT="${2}"
 	CHOWN_USER="${3}"
 	CHOWN_GROUP="${4}"
-	INSTALL_FILE_ERROR_COUNT=0
+	ERROR_COUNT=0
 
 	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort`
 	do
@@ -1231,41 +1231,53 @@ install_file_tree ()
 			if [ ! -d "${DEST_FILE_PATH}" ]
 			then
 				mkdir "${DEST_FILE_PATH}"
+				if [ ${?} -ne 0 ]
+				then
+					ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+				fi
 				chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
+				if [ ${?} -ne 0 ]
+				then
+					ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+				fi
 			fi
 		else
 			diff -q "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
 				cp "${SOURCE_FILE_PATH}" "${DEST_FILE_PATH}"
+				if [ ${?} -ne 0 ]
+				then
+					ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+				fi
 				chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
+				if [ ${?} -ne 0 ]
+				then
+					ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+				fi
 			fi
-		fi
-		if [ ${?} -ne 0 ]
-		then
-			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
 		fi
 
 		if [ "${CHOWN_USER}" != "" ]
 		then
 			chown ${CHOWN_USER} "${DEST_FILE_PATH}"
-		fi
-		if [ ${?} -ne 0 ]
-		then
-			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
 		fi
 
 		if [ "${CHOWN_GROUP}" != "" ]
 		then
 			chown :${CHOWN_GROUP} "${DEST_FILE_PATH}"
-		fi
-		if [ ${?} -ne 0 ]
-		then
-			INSTALL_FILE_ERROR_COUNT=$(( ${INSTALL_FILE_ERROR_COUNT} + 1 ))
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
 		fi
 	done
 
-	return 0
+	return ${ERROR_COUNT}
 }
 
 compare_file_tree ()
@@ -1609,7 +1621,7 @@ install_scripts ()
 
 	install_file_tree scripts ${INSTALL_PATH}
 
-	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
+	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more scripts to target location:"
 		echo -e "       ${ORNG}(${INSTALL_PATH})${NRML}\n"
@@ -1779,8 +1791,7 @@ install_configs ()
 	fi
 
 	install_file_tree ${CONFIG_REPO_ROOT} ${INSTALL_PATH}
-
-	if [ ${INSTALL_FILE_ERROR_COUNT} -ne 0 ]
+	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to copy one or more config files to the target location:\n       ${ORNG}${CONFIG_REPO_ROOT}${NRML}\n"
 		return 2
