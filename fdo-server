@@ -2181,6 +2181,159 @@ update_local_repo ()
 	return 0
 }
 
+merge_local_repo_to_remote ()
+{
+	# Test that we are actually using a local repo.
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears you are already using a remote repo!\n"
+		question_yes_no "Would you like to proceed regardless?"
+		if [ "${ANSWER}" = "no" ]
+		then
+			echo "\nAborting.\n"
+			return 1
+		fi
+	fi
+
+	# Ask for the URI of the remote repo.
+	REMOTE_REPO_URI=""
+	while [ "${REMOTE_REPO_URI}" = "" ]
+	do
+		echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
+		readee REMOTE_REPO_URI_TEMP
+		# Allow use to change their mind about type of repo.
+		if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
+		then
+			break
+		fi
+		# Test the input to see if it is a valid URI (URL).
+		test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
+		if [ "${VALID_URL}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} remote git repo URI is invalid!\n"
+		fi
+	done
+
+	# Check that the remote repo is valid and that this hostname does not already exist.
+	cd /tmp
+	rm -rf "${REPO_NAME}"
+	echo -e "\n${YELL}We need to check that this host does not already exist in the remote repo.${NRML}"
+	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
+	git clone "${REMOTE_REPO_URI}" "${REPO_NAME}"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to clone the remote repo!\n       Aborting.\n"
+		return 2
+	fi
+	if [ ! -d "${REPO_NAME}/configs/" ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The remote repo does not contain a config directory."
+		echo -e "         This usually means that it is a newly created, empty repo.\n"
+	elif [ -d  "${REPO_NAME}/configs/${HOST_NAME}" ]
+	then
+		rm -rf "${REPO_NAME}"
+		echo -e "\n${LRED}ERROR:${NRML} This host already exists in the remote repo!"
+		echo -e "       Consider removing or renaming the stale host config directory in the"
+		echo -e "       remote repo.\n       Aborting.\n"
+		return 1
+	else
+		echo -e "\n${LGRN}The remote repo seems to be ok!${NRML}\n"
+	fi
+	rm -rf "${REPO_NAME}"
+
+	# Move into the local repo.
+	cd "/${REPO_NAME}"
+
+	# Record last local commit, so that we can rewind if needed.
+	LAST_LOCAL_COMMIT=`git log -1 | head -1 | awk '{print $2}'`
+
+	# Check for an existing (stale) remote repo, and if user agrees, proceed and delete it.
+	EXISTING_REMOTE=`git remote -v | egrep "^origin" | grep '(push)$' | awk '{print $2}'`
+	if [ "${EXISTING_REMOTE}" != "" ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote origin in the local repo!"
+		echo -e "         Git URI of origin:\n         '${ORNG}${EXISTING_REMOTE}${NRML}'\n"
+		question_yes_no "Would you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			git remote remove origin
+		else
+			return 1
+		fi
+	fi
+
+	# Add the remote repo URI as this local repos' remote.
+	git remote add origin "${REMOTE_REPO_URI}" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Fetch the remote repo.
+	echo -e "\n${YELL}Next we need to fetch the remote repo into our local repo.${NRML}"
+	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
+	git fetch
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!\n       Aborting.\n"
+		git remote remove origin
+		return 1
+	fi
+
+	# Align the master branch on both local and remote repo.
+	git branch --set-upstream-to=origin/master master > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Remote is non-empty. Perform a merge of the local and remote master branch.
+		echo -e "\n${YELL}Next we need to merge the remote repo and our local repo...${NRML}\n"
+		pause_prompt 8
+		git merge origin/master --allow-unrelated-histories -m "Merging local repo from host '${HOST_NAME}'."
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
+			git remote remove origin
+			return 2
+		fi
+	else
+		NEEDS_UPSTREAM_BRANCH_SET="yes"
+	fi
+
+	# Lastly, push the local repo deltas to the remote repo.
+	echo -e "\n${YELL}Now we need to push the local repo changes to the remote repo.${NRML}"
+	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
+	pause_prompt 8
+	git_push origin master
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!\n       Aborting.\n"
+		git remote remove origin
+		git reset --soft "${LAST_LOCAL_COMMIT}"
+		return 1
+	fi
+
+	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" = "yes" ]
+	then
+		# Align the master branch on both local and remote repo.
+		git branch --set-upstream-to=origin/master master > /dev/null 2>&1
+	fi
+
+	REPO_URI="${REMOTE_REPO_URI}"
+	echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
+	
+	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
+
+	return 0
+}
+
 connect_internet ()
 {
 
@@ -3585,6 +3738,99 @@ init_hotdesking ()
 	return 0
 }
 
+init_sshfs_daemon ()
+{
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check for unsaved registered host config files.
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		return 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	ERROR_COUNT=0
+
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	pkg update -f
+	pkg install -y ${SSHFS_DAEMON_PACKAGES}
+
+	kldstat | grep fuse.ko > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		kldload fuse 2> /dev/null
+	fi
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
+		return 2
+	fi
+
+	cat configs/${HOST_NAME}/boot/loader.conf | egrep "^fuse_load=\"(YES|NO)\"" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		sed -i "" "s/fuse_load=\"NO\"/fuse_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	else
+		echo "fuse_load=\"YES\"" >> configs/${HOST_NAME}/boot/loader.conf
+	fi
+
+	cat configs/${HOST_NAME}/etc/rc.conf | egrep "^sshfsd_enable=\"(YES|NO)\"" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		sed -i "" "s/sshfsd_enable=\"NO\"/sshfsd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+	else
+		echo "sshfsd_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
+	fi
+
+	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
+	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
+
+	# Install host configs to the system.
+	install_file_tree configs/${HOST_NAME} /
+
+	echo -e "\n"
+
+	# Start sshfsd service for the first time.
+	service sshfsd onestart
+
+	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+	git add configs/${HOST_NAME}
+	git commit -m "Updating host after 'init-sshfs-daemon'; ${HOST_NAME}."
+
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+		fi
+	fi
+
+	echo -e "\n${LGRN}Congratulations! We have now finished initialising the sshfs daemon subsystem.${NRML}\n"
+	echo -e "\n${YELL}To create a sshfs connection, use the command:${NRML}"
+	echo -e "${LBLU}fdo-sshfs-add-connection${NRML}\n"
+
+	return 0
+}
+
 init_jails_cleanup ()
 {
 
@@ -4032,95 +4278,775 @@ init_jails ()
 	return 0
 }
 
-init_sshfs_daemon ()
+start_jail_service ()
 {
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
+	# ${1} is jail name.
+	# ${2} is service name.
+	# ${3} may be --allow-restart.
+
+	get_jail_id_from_name "${1}"
+
+	echo -e "\n${YELL}Starting the service '${NRML}${2}${YELL}' in the jail '${NRML}${1}${YELL}'...${NRML}\n"
+
+	jexec ${JAIL_ID} service "${2}" start > /dev/null 2>&1
+
+	if [ ${?} -ne 0 ] && [ "${3}" = "--allow-restart" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		jexec ${JAIL_ID} service "${2}" restart > /dev/null 2>&1
+	fi
+
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORGN}${1}${NRML}'!\n"
+		return 2
+	else
+		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORGN}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		return 0
+	fi
+
+}
+
+find_jails_from_recipe_name ()
+{
+	FIND_RECIPE_NAME="${1}"
+	FOUND_RECIPE_JAILS=""
+	for TEST_JAIL_NAME in `ls -1 /jls | cut -d/ -f1`
+	do
+		if [ -f "/jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf" ]
+		then
+			TEST_RECIPE_NAME=`cat /jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf`
+			if [ "${TEST_RECIPE_NAME}" = "${FIND_RECIPE_NAME}" ]
+			then
+				if [ "${FOUND_RECIPE_JAILS}" = "" ]
+				then
+					FOUND_RECIPE_JAILS="${TEST_JAIL_NAME}"
+				else
+					FOUND_RECIPE_JAILS="${FOUND_RECIPE_JAILS} ${TEST_JAIL_NAME}"
+				fi
+			fi
+		fi
+	done
+
+	return 0
+}
+
+# WARNING: Only for use by developers on a 'local' only repo.
+# Only to be used on last created jail directly afterwards.
+# It does a hard reset of the git repo.
+revert_create_jail ()
+{
+	JAIL_TO_REVERT=${1}
+	ERROR_COUNT=0
+
+	# Sanity tests.
+	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
+	zfs list -H ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
 		return 1
 	fi
 
+	# ASSUME: commit after create jail is not much use, since we can't remove a previous range.
+	# of commits using 'git revert' without creating conflicts that need manual intervention.
+	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
+
+	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
+	then
+		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
+	else
+		AFFECTED_JAIL_RECIPES=""
+	fi
+
+	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
+
+	service jail status | egrep "^ ${JAIL_TO_REVERT} " > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Stop the jail.
+		echo -e "\n${YELL}Stopping the jail '${JAIL_TO_REVERT}'...\n"
+		service jail stop ${JAIL_TO_REVERT} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		echo -e "\n${YELL}The jail '${JAIL_TO_REVERT}' appears to be stopped.\n"
+	fi
+
+	# Wait for I/O to settle.
+	sleep 8
+
+	# Check if the jail did not stop or appears to be still running.
+	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Remove the jail and unmount nullfs mounted certificates directory.
+		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
+		JAIL_ID=`cat ${JAIL_ID_FILE}`
+		jail -r ${JAIL_ID} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	echo -e "\n"
+
+	# Destroy additional jail recipe filesystems in reverse order.
+	REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
+	for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
+	do
+		SIDES_FILESYSTEM=`echo ${REV_SIDES_FILESYSTEM} | rev`
+		zfs destroy -f ${SIDES_FILESYSTEM} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	done
+
+	# Destroy the jail filesystem.
+	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	cd "/${REPO_NAME}"
+
+	# Delete jail config directory from local repo.
+	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
+
+	# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+	if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
+	then
+		git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Remove untracked config files from host and config repo.
+	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install back old host configs.
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install back affected jail configs.
+	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
+	do
+		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${NRML}${AFFECTED_JAIL_RECIPE}${YELL}':${NRML}"
+		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
+		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
+		do
+			# Use install_config to reinstate configs for jail found to be affected.
+			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
+			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${ORNG}WARNING:${NRML} Something went wrong reverting repo configs to the '${ORNG}${AFFECTED_JAIL}${NRML}' jail!\n"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		done
+	done
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error reverting the jail creation!\n"
+		return 2
+	fi
+
+	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\nAborting.\n"
+	return 0
+}
+
+create_jail ()
+{
+
+	JAIL_NAME=${1}
+	JAIL_HOST_NAME=${2}
+	if [ "${3}" = "--non-interactive" ]
+	then
+		IS_INTERACTIVE="no"
+	else
+		IS_INTERACTIVE="yes"
+	fi
+
+	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
+
 	# Check for unsaved registered host config files.
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
-	echo -e "${YELL}config files...${NRML}\n"
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
 	if [ ${?} -gt 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
 		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommannd to keep the repo up-to-date.\n       Aborting.\n"
 		return 1
 	fi
 
-	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
 
-	ERROR_COUNT=0
-
-	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
-	pause_prompt 8
-	pkg update -f
-	pkg install -y ${SSHFS_DAEMON_PACKAGES}
-
-	kldstat | grep fuse.ko > /dev/null 2>&1
+	# Check that the jails subsystem is initialised and therefore we know the pool name.
+	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
 	if [ ${?} -ne 0 ]
 	then
-		kldload fuse 2> /dev/null
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n       Aborting.\n"
+		return 1
 	fi
+
+	# Check that the jail_name has not already been used.
+	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${ORNG}${JAIL_NAME}${NRML}' is already in use.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check that, if specified, the jail IP address is not already in use.
+	if [ "${JAIL_IP}" != "" ]
+	then
+		test_ping_host ${JAIL_IP}
+		if [ "${VALID_HOST_PING}" = "yes" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The jail IP address '${ORNG}${JAIL_IP}${NRML}' is already in use.\n       Aborting.\n"
+			return 1
+		fi
+	fi
+
+	# Get version strings.
+	FREEBSD_VERSION_STRING=`freebsd-version`
+	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
+	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
+	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
+	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
+	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
+	FREEBSD_ARCH=`uname -m`
+
+	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
+
+	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+
+	if [ "${JAIL_IP}" = "" ]
+	then
+		FIRST_AVAILABLE_IP=51
+		while true
+		do
+			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
+			if [ ${?} -ne 0 ]
+			then
+				break
+			else
+				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} + 1 ))
+			fi
+		done
+		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
+	fi
+
+	# Create new jail filesystem by zfs send/recv from the template jail snapshot.
+	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
+	zfs send -e ${JAIL_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAIL_POOL_NAME}/jails/${JAIL_NAME}
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "${LRED}ERROR:${NRML} Failed to zfs send the jail template snapshot to the new jail filesystem!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	# Install template jails' configs to new jails' config repo directory.
+	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state.
+	mkdir configs/${JAIL_NAME}@${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
+	do
+		if [ -f "/jls/template/${CONFIG_FILE}" ]
+		then
+			# If the config file is etc/resolv.conf, then copy it directly to the new jail, otherwise add to the registered config files.
+			if [ "${CONFIG_FILE}" = "etc/resolv.conf" ]
+			then
+				cp /jls/template/${CONFIG_FILE} /jls/${JAIL_NAME}/${CONFIG_FILE}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				CONFIG_FILE_DIR=`dirname ${CONFIG_FILE}`
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				if [ ! -d ${CONFIG_FILE_DIR} ]
+				then
+					mkdir -p configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE_DIR}
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				fi
+				cp /jls/template/${CONFIG_FILE} configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		fi
+	done
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in copying template configs to the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	# Save the previous git commit reference to file, for later use in reverting operations.
+	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Create entry in 'configs/${HOST_NAME}/etc/jail.conf'.
+	echo "" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "        exec.prestart += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "        exec.poststop += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 -alias\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "        host.hostname = \"${JAIL_HOST_NAME}\";" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "        ip4.addr = ${JAIL_IP};" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Prepare the jail fstab.
+	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add jail to jail_list in '/etc/rc.conf'.
+	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${ORNG}${JAIL_NAME}${NRML}' already exists in jail_list (/etc/rc.conf)!\n"
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	# Install latest scripts to the jail.
+	install_scripts /jls/${JAIL_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install host configs to the system.
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install initial config templates to the new jail.
+	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
+		revert_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
-	cat configs/${HOST_NAME}/boot/loader.conf | egrep "^fuse_load=\"(YES|NO)\"" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
+	if [ "${IS_INTERACTIVE}" = "yes" ]
 	then
-		sed -i "" "s/fuse_load=\"NO\"/fuse_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+		# Add changes to the local config repo.
+		git add configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		git add configs/${JAIL_NAME}@${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		if [ "${REPO_URI}" != "local" ]
+		then
+			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+			git_push origin master
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			fi
+		fi
+
+		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
+		echo -e "\n${YELL}To login to the jail, use the command:${NRML}"
+		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
+
+		question_yes_no "Would you like to start the jail '${NRML}${JAIL_NAME}${LCYN}' now?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			service jail start ${JAIL_NAME}
+		fi
 	else
-		echo "fuse_load=\"YES\"" >> configs/${HOST_NAME}/boot/loader.conf
+		service jail start ${JAIL_NAME}
 	fi
 
-	cat configs/${HOST_NAME}/etc/rc.conf | egrep "^sshfsd_enable=\"(YES|NO)\"" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		sed -i "" "s/sshfsd_enable=\"NO\"/sshfsd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	else
-		echo "sshfsd_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
-	fi
+	echo -e ""
+	return 0
+}
 
-	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
-
-	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+edit_recipe_configs ()
+{
 
 	echo -e "\n"
 
-	# Start sshfsd service for the first time.
-	service sshfsd onestart
-
-	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
-	git add configs/${HOST_NAME}
-	git commit -m "Updating host after 'init-sshfs-daemon'; ${HOST_NAME}."
-
-	if [ "${REPO_URI}" != "local" ]
-	then
-		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-		git_push origin master
-		if [ ${?} -ne 0 ]
+	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
+	do
+		# Skip directories and certain unintersting files.
+		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
+		FILE_NAME=`basename ${CONFIG_FILE}`
+		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
+			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ] || [ "${FILE_NAME}" = ".empty" ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			continue
+		fi
+
+		# Skip files modified prior to recipe (e.g. from create_jail).
+		CONFIG_FILE_MODIFIED_TIMESTAMP=`stat -f "%Sm" -t "%s" ${CONFIG_FILE}`
+		if [ ${PRE_RECIPE_TIMESTAMP} -gt ${CONFIG_FILE_MODIFIED_TIMESTAMP} ]
+		then
+			continue
+		fi
+
+		# Prompt user and if yes, display the config file in EDITOR.
+		question_yes_no "Would you like to edit the recipe config '${NRML}${CONFIG_FILE}${LCYN}'?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			if [ "${EDITOR}" = "" ]
+			then
+				EDITOR=ee
+			fi
+			echo ""
+			${EDITOR} ${CONFIG_FILE}
+			echo ""
+		fi
+	done
+
+	return 0
+}
+
+create_jail_from_recipe ()
+{
+
+	JAIL_NAME="${1}"
+	JAIL_HOST_NAME="${2}"
+	JAIL_RECIPE_NAME="${3}"
+	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
+
+	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
+
+	get_enabled_nat_services
+
+	# Source the recipe.
+	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
+	then
+		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
+		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
+	# This should not involve any persistent changes to the system or any other jails.
+	prep_recipe
+
+	if [ "${PREP_SUCCESS}" = "yes" ]
+	then
+		echo -e "${LGRN}Recipe prep successful.${NRML}\n"
+	elif [ "${PREP_SUCCESS}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
+		return 1
+	else
+		# We should never get here.
+		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
+	fi
+
+	# Check if SIDES_POOL_NAME is used for this recipe.
+	echo "${SIDES_FILESYSTEMS}" | egrep "${SIDES_POOL_NAME}" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Get pool name to use for additional recipe filesystems.
+		SIDES_POOL_NAME=""
+		POOLS_AVAILABLE=`zpool list -H -o name`
+		NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+		if [ ${NUM_POOLS} -lt 1 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
+			return 1
+		fi
+		if [ ${NUM_POOLS} -lt 2 ]
+		then
+			SIDES_POOL_NAME=${POOLS_AVAILABLE}
+		else
+			while [ "${SIDES_POOL_NAME}" = "" ]
+			do
+				dialog --no-items --no-cancel --menu "Select pool to use for additional ZFS filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+				SIDES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${NRML}${SIDES_POOL_NAME_TEMP}${LCYN}' to use for additional filesystems.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					SIDES_POOL_NAME="${SIDES_POOL_NAME_TEMP}"
+				fi
+			done
 		fi
 	fi
 
-	echo -e "\n${LGRN}Congratulations! We have now finished initialising the sshfs daemon subsystem.${NRML}\n"
-	echo -e "\n${YELL}To create a sshfs connection, use the command:${NRML}"
-	echo -e "${LBLU}fdo-sshfs-add-connection${NRML}\n"
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [1]\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
+
+	# Create a blank jail (non-interactively).
+	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
+	if [ ${?} -ne 0 ]
+	then
+		EXIT_CODE=${?}
+		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
+		revert_create_jail ${JAIL_NAME}
+		return ${EXIT_CODE}
+	fi
+
+	# Source the recipe again to pick up any updated variables.
+	. jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Sleep for 1 second to avoid timestamp conflicts.
+	sleep 1
+
+	PRE_RECIPE_TIMESTAMP=`date "+%s"`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [2]\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
+
+	# Create additional jail recipe filesystems.
+	COUNT_SIDES_FILESYSTEMS=0
+	for SIDES_FILESYSTEM in ${SIDES_FILESYSTEMS}
+	do
+		COUNT_SIDES_FILESYSTEMS=$(( ${COUNT_SIDES_FILESYSTEMS} + 1 ))
+		SIDES_MOUNTPOINT=`echo ${SIDES_MOUNTPOINTS} | awk -v column="${COUNT_SIDES_FILESYSTEMS}" '{print $column}'`
+		zfs create -o mountpoint=${SIDES_MOUNTPOINT} ${SIDES_FILESYSTEM} > /dev/null 2>&1
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to create filesystem for the following additional filesystem:"
+			echo -e "       ${ORNG}${SIDES_FILESYSTEM}${NRML}\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
+	done
+
+	# Install recipe config templates to new jails' config repo directory.
+	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set the correct jail ABI in the jails' pkg repo conf file.
+	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install initial config templates to the new jail.
+	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the jail recipe configs!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	question_yes "\nShall we proceed to cook the recipe?"
+
+	echo -e "\n\n${YELL}Cooking '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+
+	# Cook the sourced recipe.
+	cook_recipe
+
+	# Add any port forwarding rules.
+	if [ ${RECIPE_TCP_PORTS} ] && [ ${RECIPE_UDP_PORTS} ]
+	then
+		IS_REPO_CONF="yes" PF_CONF_PATH="configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to pf!\n"
+			RECIPE_SUCCESS="no"
+		fi
+		IS_REPO_CONF="yes" PPP_CONF_PATH="configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to ppp nat!\n"
+			RECIPE_SUCCESS="no"
+		fi
+	fi
+
+	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
+	then
+		# Interactively edit the configs touched by the recipe.
+		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		edit_recipe_configs
+
+		# Save recipe name to information file.
+		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		# Install any new or modfied configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		# Restart pf if required.
+		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
+		then
+			echo -e "\n"
+			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				echo -e ""
+				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+				then
+					# TODO: resolve why ppp can't reconnect on service restart.
+					#service ppp restart > /dev/null 2>&1
+					service ppp stop > /dev/null 2>&1
+					sleep 4
+					service ppp start > /dev/null 2>&1
+					sleep 4
+					service ppp start > /dev/null 2>&1
+				fi
+				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+				then
+					service pf reload > /dev/null 2>&1
+				fi
+			fi
+		fi
+
+		# Restart jail if required.
+		if [ "${RECIPE_REQUIRES_JAIL_RESTART}" = "yes" ]
+		then
+			service jail restart ${JAIL_NAME}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Start jail recipe services.
+		for SERVICE in ${START_JAIL_SERVICES}
+		do
+			start_jail_service ${JAIL_NAME} ${SERVICE} --allow-restart
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sleep 4
+		done
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			# ASSUME: the jail restart and jail services restart are not errors critical to jail recipe creation.
+			echo -e "\n${ORNG}WARNING:${NRML} Something went wrong whilst restarting the jail or it's services!\n"
+		fi
+
+	elif [ "${RECIPE_SUCCESS}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Jail recipe failed!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 1
+	else
+		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
+		echo -e "         Consider reverting the jail creation by running the command:${NRML}"
+		echo -e "${LBLU}         ${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
+	fi
+
+	if [ "${RECIPE_SUCCESS}" = "devel" ]
+	then
+		echo -e "\n${LGRN}After tasting your new recipe, you may run the command:${NRML}"
+		echo -e "${LBLU}${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
+
+		question_yes_no "Would you like to commit the changes to the config repo?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			RECIPE_SUCCESS="yes"
+		else
+			echo -e ""
+		fi
+	fi
+
+	if [ "${RECIPE_SUCCESS}" = "yes" ]
+	then
+		git add configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		git add configs/${JAIL_NAME}@${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		if [ "${REPO_URI}" != "local" ]
+		then
+			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+			git_push origin master
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			fi
+		fi
+ 
+		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
+		then
+			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
+			echo -e "         '${ORNG}/usr/local/etc/ssl/certs${NRML}'. They can be copied or symlinked to the     "
+			echo -e "         correct file name either manually or by using the '${LBLU}fdo-cert-manager${NRML}'   "
+			echo -e "         utility. To see a list of the required certificate files, use the      "
+			echo -e "         following command:                                                     "
+			echo -e "         ${LBLU}cat /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list${NRML}\n"
+		fi
+
+		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
+		echo -e "${YELL}To login to the jail, use the command:${NRML}"
+		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
+	fi
 
 	return 0
 }
@@ -6411,779 +7337,6 @@ create_vm_instance ()
 	return 0
 }
 
-start_jail_service ()
-{
-	# ${1} is jail name.
-	# ${2} is service name.
-	# ${3} may be --allow-restart.
-
-	get_jail_id_from_name "${1}"
-
-	echo -e "\n${YELL}Starting the service '${NRML}${2}${YELL}' in the jail '${NRML}${1}${YELL}'...${NRML}\n"
-
-	jexec ${JAIL_ID} service "${2}" start > /dev/null 2>&1
-
-	if [ ${?} -ne 0 ] && [ "${3}" = "--allow-restart" ]
-	then
-		jexec ${JAIL_ID} service "${2}" restart > /dev/null 2>&1
-	fi
-
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORGN}${1}${NRML}'!\n"
-		return 2
-	else
-		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORGN}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
-		return 0
-	fi
-
-}
-
-find_jails_from_recipe_name ()
-{
-	FIND_RECIPE_NAME="${1}"
-	FOUND_RECIPE_JAILS=""
-	for TEST_JAIL_NAME in `ls -1 /jls | cut -d/ -f1`
-	do
-		if [ -f "/jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf" ]
-		then
-			TEST_RECIPE_NAME=`cat /jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf`
-			if [ "${TEST_RECIPE_NAME}" = "${FIND_RECIPE_NAME}" ]
-			then
-				if [ "${FOUND_RECIPE_JAILS}" = "" ]
-				then
-					FOUND_RECIPE_JAILS="${TEST_JAIL_NAME}"
-				else
-					FOUND_RECIPE_JAILS="${FOUND_RECIPE_JAILS} ${TEST_JAIL_NAME}"
-				fi
-			fi
-		fi
-	done
-
-	return 0
-}
-
-# WARNING: Only for use by developers on a 'local' only repo.
-# Only to be used on last created jail directly afterwards.
-# It does a hard reset of the git repo.
-revert_create_jail ()
-{
-	JAIL_TO_REVERT=${1}
-	ERROR_COUNT=0
-
-	# Sanity tests.
-	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	zfs list -H ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
-		return 1
-	fi
-
-	# ASSUME: commit after create jail is not much use, since we can't remove a previous range.
-	# of commits using 'git revert' without creating conflicts that need manual intervention.
-	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
-
-	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
-	then
-		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
-	else
-		AFFECTED_JAIL_RECIPES=""
-	fi
-
-	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
-
-	service jail status | egrep "^ ${JAIL_TO_REVERT} " > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		# Stop the jail.
-		echo -e "\n${YELL}Stopping the jail '${JAIL_TO_REVERT}'...\n"
-		service jail stop ${JAIL_TO_REVERT} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		echo -e "\n${YELL}The jail '${JAIL_TO_REVERT}' appears to be stopped.\n"
-	fi
-
-	# Wait for I/O to settle.
-	sleep 8
-
-	# Check if the jail did not stop or appears to be still running.
-	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		# Remove the jail and unmount nullfs mounted certificates directory.
-		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
-		JAIL_ID=`cat ${JAIL_ID_FILE}`
-		jail -r ${JAIL_ID} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
-
-	echo -e "\n"
-
-	# Destroy additional jail recipe filesystems in reverse order.
-	REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
-	for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
-	do
-		SIDES_FILESYSTEM=`echo ${REV_SIDES_FILESYSTEM} | rev`
-		zfs destroy -f ${SIDES_FILESYSTEM} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	done
-
-	# Destroy the jail filesystem.
-	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	cd "/${REPO_NAME}"
-
-	# Delete jail config directory from local repo.
-	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
-
-	# Roll back local repo to last good commit (!!!DANGEROUS!!!).
-	if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
-	then
-		git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
-
-	# Remove untracked config files from host and config repo.
-	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	rm configs/${HOST_NAME}/etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Install back old host configs.
-	install_file_tree configs/${HOST_NAME} /
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Install back affected jail configs.
-	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
-	do
-		echo -e "\n${YELL}Reverting configs for jails affected by recipe '${NRML}${AFFECTED_JAIL_RECIPE}${YELL}':${NRML}"
-		find_jails_from_recipe_name ${AFFECTED_JAIL_RECIPE}
-		for AFFECTED_JAIL in ${FOUND_RECIPE_JAILS}
-		do
-			# Use install_config to reinstate configs for jail found to be affected.
-			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
-			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${ORNG}WARNING:${NRML} Something went wrong reverting repo configs to the '${ORNG}${AFFECTED_JAIL}${NRML}' jail!\n"
-				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
-			fi
-		done
-	done
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error reverting the jail creation!\n"
-		return 2
-	fi
-
-	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\nAborting.\n"
-	return 0
-}
-
-create_jail ()
-{
-
-	JAIL_NAME=${1}
-	JAIL_HOST_NAME=${2}
-	if [ "${3}" = "--non-interactive" ]
-	then
-		IS_INTERACTIVE="no"
-	else
-		IS_INTERACTIVE="yes"
-	fi
-
-	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
-
-	ERROR_COUNT=0
-
-	# Check for unsaved registered host config files.
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
-	if [ ${?} -gt 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommannd to keep the repo up-to-date.\n       Aborting.\n"
-		return 1
-	fi
-
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		return 1
-	fi
-
-	# Check that the jails subsystem is initialised and therefore we know the pool name.
-	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
-		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n       Aborting.\n"
-		return 1
-	fi
-
-	# Check that the jail_name has not already been used.
-	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${ORNG}${JAIL_NAME}${NRML}' is already in use.\n       Aborting.\n"
-		return 1
-	fi
-
-	# Check that, if specified, the jail IP address is not already in use.
-	if [ "${JAIL_IP}" != "" ]
-	then
-		test_ping_host ${JAIL_IP}
-		if [ "${VALID_HOST_PING}" = "yes" ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} The jail IP address '${ORNG}${JAIL_IP}${NRML}' is already in use.\n       Aborting.\n"
-			return 1
-		fi
-	fi
-
-	# Get version strings.
-	FREEBSD_VERSION_STRING=`freebsd-version`
-	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
-	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
-	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
-	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
-	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
-	FREEBSD_ARCH=`uname -m`
-
-	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
-
-	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
-
-	if [ "${JAIL_IP}" = "" ]
-	then
-		FIRST_AVAILABLE_IP=51
-		while true
-		do
-			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
-			if [ ${?} -ne 0 ]
-			then
-				break
-			else
-				FIRST_AVAILABLE_IP=$(( ${FIRST_AVAILABLE_IP} + 1 ))
-			fi
-		done
-		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
-	fi
-
-	# Create new jail filesystem by zfs send/recv from the template jail snapshot.
-	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
-	zfs send -e ${JAIL_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAIL_POOL_NAME}/jails/${JAIL_NAME}
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "${LRED}ERROR:${NRML} Failed to zfs send the jail template snapshot to the new jail filesystem!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	# Install template jails' configs to new jails' config repo directory.
-	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state.
-	mkdir configs/${JAIL_NAME}@${HOST_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
-	do
-		if [ -f "/jls/template/${CONFIG_FILE}" ]
-		then
-			# If the config file is etc/resolv.conf, then copy it directly to the new jail, otherwise add to the registered config files.
-			if [ "${CONFIG_FILE}" = "etc/resolv.conf" ]
-			then
-				cp /jls/template/${CONFIG_FILE} /jls/${JAIL_NAME}/${CONFIG_FILE}
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			else
-				CONFIG_FILE_DIR=`dirname ${CONFIG_FILE}`
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				if [ ! -d ${CONFIG_FILE_DIR} ]
-				then
-					mkdir -p configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE_DIR}
-					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				fi
-				cp /jls/template/${CONFIG_FILE} configs/${JAIL_NAME}@${HOST_NAME}/${CONFIG_FILE}
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			fi
-		fi
-	done
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in copying template configs to the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	# Save the previous git commit reference to file, for later use in reverting operations.
-	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Create entry in 'configs/${HOST_NAME}/etc/jail.conf'.
-	echo "" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "        exec.prestart += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 alias\";" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "        exec.poststop += \"/sbin/ifconfig ${LAN_NET_IFACE} inet ${JAIL_IP} netmask 255.255.255.255 -alias\";" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "        host.hostname = \"${JAIL_HOST_NAME}\";" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "        ip4.addr = ${JAIL_IP};" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	echo "}" >> configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Prepare the jail fstab.
-	cp configs/${HOST_NAME}/etc/fstab.template configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Add jail to jail_list in '/etc/rc.conf'.
-	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${ORNG}${JAIL_NAME}${NRML}' already exists in jail_list (/etc/rc.conf)!\n"
-	fi
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	# Install latest scripts to the jail.
-	install_scripts /jls/${JAIL_NAME}/
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Install initial config templates to the new jail.
-	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	if [ "${IS_INTERACTIVE}" = "yes" ]
-	then
-		# Add changes to the local config repo.
-		git add configs/${HOST_NAME}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git add configs/${JAIL_NAME}@${HOST_NAME}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
-		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-			revert_create_jail ${JAIL_NAME}
-			return 2
-		fi
-
-		if [ "${REPO_URI}" != "local" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-			fi
-		fi
-
-		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
-		echo -e "\n${YELL}To login to the jail, use the command:${NRML}"
-		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
-
-		question_yes_no "Would you like to start the jail '${NRML}${JAIL_NAME}${LCYN}' now?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			service jail start ${JAIL_NAME}
-		fi
-	else
-		service jail start ${JAIL_NAME}
-	fi
-
-	echo -e ""
-	return 0
-}
-
-edit_recipe_configs ()
-{
-
-	echo -e "\n"
-
-	for CONFIG_FILE in ${RECIPE_CONFIG_FILES}
-	do
-		# Skip directories and certain unintersting files.
-		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
-		FILE_NAME=`basename ${CONFIG_FILE}`
-		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
-			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ] || [ "${FILE_NAME}" = ".empty" ]
-		then
-			continue
-		fi
-
-		# Skip files modified prior to recipe (e.g. from create_jail).
-		CONFIG_FILE_MODIFIED_TIMESTAMP=`stat -f "%Sm" -t "%s" ${CONFIG_FILE}`
-		if [ ${PRE_RECIPE_TIMESTAMP} -gt ${CONFIG_FILE_MODIFIED_TIMESTAMP} ]
-		then
-			continue
-		fi
-
-		# Prompt user and if yes, display the config file in EDITOR.
-		question_yes_no "Would you like to edit the recipe config '${NRML}${CONFIG_FILE}${LCYN}'?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			if [ "${EDITOR}" = "" ]
-			then
-				EDITOR=ee
-			fi
-			echo ""
-			${EDITOR} ${CONFIG_FILE}
-			echo ""
-		fi
-	done
-
-	return 0
-}
-
-create_jail_from_recipe ()
-{
-
-	JAIL_NAME="${1}"
-	JAIL_HOST_NAME="${2}"
-	JAIL_RECIPE_NAME="${3}"
-	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
-
-	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
-
-	ERROR_COUNT=0
-
-	get_enabled_nat_services
-
-	# Source the recipe.
-	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
-	then
-		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		echo -e "\n${LRED}ERROR:${NRML} Unable to find the referenced recipe!"
-		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
-		return 1
-	fi
-
-	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
-	# This should not involve any persistent changes to the system or any other jails.
-	prep_recipe
-
-	if [ "${PREP_SUCCESS}" = "yes" ]
-	then
-		echo -e "${LGRN}Recipe prep successful.${NRML}\n"
-	elif [ "${PREP_SUCCESS}" = "no" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
-		return 1
-	else
-		# We should never get here.
-		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
-	fi
-
-	# Check if SIDES_POOL_NAME is used for this recipe.
-	echo "${SIDES_FILESYSTEMS}" | egrep "${SIDES_POOL_NAME}" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		# Get pool name to use for additional recipe filesystems.
-		SIDES_POOL_NAME=""
-		POOLS_AVAILABLE=`zpool list -H -o name`
-		NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
-		if [ ${NUM_POOLS} -lt 1 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
-			return 1
-		fi
-		if [ ${NUM_POOLS} -lt 2 ]
-		then
-			SIDES_POOL_NAME=${POOLS_AVAILABLE}
-		else
-			while [ "${SIDES_POOL_NAME}" = "" ]
-			do
-				dialog --no-items --no-cancel --menu "Select pool to use for additional ZFS filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-				SIDES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
-				echo -e "\n"
-				question_yes_no "\nYou have selected '${NRML}${SIDES_POOL_NAME_TEMP}${LCYN}' to use for additional filesystems.\nIs this correct?"
-				if [ "${ANSWER}" = "yes" ]
-				then
-					SIDES_POOL_NAME="${SIDES_POOL_NAME_TEMP}"
-				fi
-			done
-		fi
-	fi
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [1]\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	echo -e "\n\n${YELL}Creating a blank jail with the IP address '${NRML}${JAIL_IP}${YELL}'...${NRML}\n"
-
-	# Create a blank jail (non-interactively).
-	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
-	if [ ${?} -ne 0 ]
-	then
-		EXIT_CODE=${?}
-		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
-		revert_create_jail ${JAIL_NAME}
-		return ${EXIT_CODE}
-	fi
-
-	# Source the recipe again to pick up any updated variables.
-	. jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Sleep for 1 second to avoid timestamp conflicts.
-	sleep 1
-
-	PRE_RECIPE_TIMESTAMP=`date "+%s"`
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [2]\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
-
-	# Create additional jail recipe filesystems.
-	COUNT_SIDES_FILESYSTEMS=0
-	for SIDES_FILESYSTEM in ${SIDES_FILESYSTEMS}
-	do
-		COUNT_SIDES_FILESYSTEMS=$(( ${COUNT_SIDES_FILESYSTEMS} + 1 ))
-		SIDES_MOUNTPOINT=`echo ${SIDES_MOUNTPOINTS} | awk -v column="${COUNT_SIDES_FILESYSTEMS}" '{print $column}'`
-		zfs create -o mountpoint=${SIDES_MOUNTPOINT} ${SIDES_FILESYSTEM} > /dev/null 2>&1
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to create filesystem for the following additional filesystem:"
-			echo -e "       ${ORNG}${SIDES_FILESYSTEM}${NRML}\n"
-			revert_create_jail ${JAIL_NAME}
-			return 2
-		fi
-	done
-
-	# Install recipe config templates to new jails' config repo directory.
-	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Set the correct jail ABI in the jails' pkg repo conf file.
-	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Install initial config templates to the new jail.
-	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	if [ ${ERROR_COUNT} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the jail recipe configs!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 2
-	fi
-
-	question_yes "\nShall we proceed to cook the recipe?"
-
-	echo -e "\n\n${YELL}Cooking '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
-
-	# Cook the sourced recipe.
-	cook_recipe
-
-	# Add any port forwarding rules.
-	if [ ${RECIPE_TCP_PORTS} ] && [ ${RECIPE_UDP_PORTS} ]
-	then
-		IS_REPO_CONF="yes" PF_CONF_PATH="configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to pf!\n"
-			RECIPE_SUCCESS="no"
-		fi
-		IS_REPO_CONF="yes" PPP_CONF_PATH="configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to ppp nat!\n"
-			RECIPE_SUCCESS="no"
-		fi
-	fi
-
-	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
-	then
-		# Interactively edit the configs touched by the recipe.
-		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		edit_recipe_configs
-
-		# Save recipe name to information file.
-		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		# Install any new or modfied configs.
-		install_file_tree configs/${HOST_NAME} /
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
-			revert_create_jail ${JAIL_NAME}
-			return 2
-		fi
-
-		# Restart pf if required.
-		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
-		then
-			echo -e "\n"
-			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				echo -e ""
-				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
-				then
-					# TODO: resolve why ppp can't reconnect on service restart.
-					#service ppp restart > /dev/null 2>&1
-					service ppp stop > /dev/null 2>&1
-					sleep 4
-					service ppp start > /dev/null 2>&1
-					sleep 4
-					service ppp start > /dev/null 2>&1
-				fi
-				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
-				then
-					service pf reload > /dev/null 2>&1
-				fi
-			fi
-		fi
-
-		# Restart jail if required.
-		if [ "${RECIPE_REQUIRES_JAIL_RESTART}" = "yes" ]
-		then
-			service jail restart ${JAIL_NAME}
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-
-		# Start jail recipe services.
-		for SERVICE in ${START_JAIL_SERVICES}
-		do
-			start_jail_service ${JAIL_NAME} ${SERVICE} --allow-restart
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			sleep 4
-		done
-
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			# ASSUME: the jail restart and jail services restart are not errors critical to jail recipe creation.
-			echo -e "\n${ORNG}WARNING:${NRML} Something went wrong whilst restarting the jail or it's services!\n"
-		fi
-
-	elif [ "${RECIPE_SUCCESS}" = "no" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Jail recipe failed!\n"
-		revert_create_jail ${JAIL_NAME}
-		return 1
-	else
-		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
-		echo -e "         Consider reverting the jail creation by running the command:${NRML}"
-		echo -e "${LBLU}         ${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
-	fi
-
-	if [ "${RECIPE_SUCCESS}" = "devel" ]
-	then
-		echo -e "\n${LGRN}After tasting your new recipe, you may run the command:${NRML}"
-		echo -e "${LBLU}${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
-
-		question_yes_no "Would you like to commit the changes to the config repo?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			RECIPE_SUCCESS="yes"
-		else
-			echo -e ""
-		fi
-	fi
-
-	if [ "${RECIPE_SUCCESS}" = "yes" ]
-	then
-		git add configs/${HOST_NAME}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git add configs/${JAIL_NAME}@${HOST_NAME}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-			revert_create_jail ${JAIL_NAME}
-			return 2
-		fi
-
-		if [ "${REPO_URI}" != "local" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-			fi
-		fi
- 
-		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
-		then
-			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
-			echo -e "         '${ORNG}/usr/local/etc/ssl/certs${NRML}'. They can be copied or symlinked to the     "
-			echo -e "         correct file name either manually or by using the '${LBLU}fdo-cert-manager${NRML}'   "
-			echo -e "         utility. To see a list of the required certificate files, use the      "
-			echo -e "         following command:                                                     "
-			echo -e "         ${LBLU}cat /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list${NRML}\n"
-		fi
-
-		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
-		echo -e "${YELL}To login to the jail, use the command:${NRML}"
-		echo -e "${LBLU}jlogin ${JAIL_NAME}${NRML}\n"
-	fi
-
-	return 0
-}
-
 init_partimag ()
 {
 
@@ -7323,159 +7476,6 @@ init_partimag ()
 	echo -e "${YELL}partimag NFS version:      3${NRML}"
 	echo -e "${YELL}partimag host address:     ${HOST_LAN_IP}${NRML}"
 	echo -e "${YELL}partimag server directory: /home/partimag${NRML}\n"
-
-	return 0
-}
-
-merge_local_repo_to_remote ()
-{
-	# Test that we are actually using a local repo.
-	if [ "${REPO_URI}" != "local" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears you are already using a remote repo!\n"
-		question_yes_no "Would you like to proceed regardless?"
-		if [ "${ANSWER}" = "no" ]
-		then
-			echo "\nAborting.\n"
-			return 1
-		fi
-	fi
-
-	# Ask for the URI of the remote repo.
-	REMOTE_REPO_URI=""
-	while [ "${REMOTE_REPO_URI}" = "" ]
-	do
-		echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
-		readee REMOTE_REPO_URI_TEMP
-		# Allow use to change their mind about type of repo.
-		if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
-		then
-			break
-		fi
-		# Test the input to see if it is a valid URI (URL).
-		test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
-		if [ "${VALID_URL}" = "yes" ]
-		then
-			question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} remote git repo URI is invalid!\n"
-		fi
-	done
-
-	# Check that the remote repo is valid and that this hostname does not already exist.
-	cd /tmp
-	rm -rf "${REPO_NAME}"
-	echo -e "\n${YELL}We need to check that this host does not already exist in the remote repo.${NRML}"
-	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-	pause_prompt 8
-	git clone "${REMOTE_REPO_URI}" "${REPO_NAME}"
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to clone the remote repo!\n       Aborting.\n"
-		return 2
-	fi
-	if [ ! -d "${REPO_NAME}/configs/" ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The remote repo does not contain a config directory."
-		echo -e "         This usually means that it is a newly created, empty repo.\n"
-	elif [ -d  "${REPO_NAME}/configs/${HOST_NAME}" ]
-	then
-		rm -rf "${REPO_NAME}"
-		echo -e "\n${LRED}ERROR:${NRML} This host already exists in the remote repo!"
-		echo -e "       Consider removing or renaming the stale host config directory in the"
-		echo -e "       remote repo.\n       Aborting.\n"
-		return 1
-	else
-		echo -e "\n${LGRN}The remote repo seems to be ok!${NRML}\n"
-	fi
-	rm -rf "${REPO_NAME}"
-
-	# Move into the local repo.
-	cd "/${REPO_NAME}"
-
-	# Record last local commit, so that we can rewind if needed.
-	LAST_LOCAL_COMMIT=`git log -1 | head -1 | awk '{print $2}'`
-
-	# Check for an existing (stale) remote repo, and if user agrees, proceed and delete it.
-	EXISTING_REMOTE=`git remote -v | egrep "^origin" | grep '(push)$' | awk '{print $2}'`
-	if [ "${EXISTING_REMOTE}" != "" ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote origin in the local repo!"
-		echo -e "         Git URI of origin:\n         '${ORNG}${EXISTING_REMOTE}${NRML}'\n"
-		question_yes_no "Would you like to proceed?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			git remote remove origin
-		else
-			return 1
-		fi
-	fi
-
-	# Add the remote repo URI as this local repos' remote.
-	git remote add origin "${REMOTE_REPO_URI}" > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to add the remote repo as the origin!\n       Aborting.\n"
-		return 2
-	fi
-
-	# Fetch the remote repo.
-	echo -e "\n${YELL}Next we need to fetch the remote repo into our local repo.${NRML}"
-	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-	pause_prompt 8
-	git fetch
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!\n       Aborting.\n"
-		git remote remove origin
-		return 1
-	fi
-
-	# Align the master branch on both local and remote repo.
-	git branch --set-upstream-to=origin/master master > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		# Remote is non-empty. Perform a merge of the local and remote master branch.
-		echo -e "\n${YELL}Next we need to merge the remote repo and our local repo...${NRML}\n"
-		pause_prompt 8
-		git merge origin/master --allow-unrelated-histories -m "Merging local repo from host '${HOST_NAME}'."
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
-			git remote remove origin
-			return 2
-		fi
-	else
-		NEEDS_UPSTREAM_BRANCH_SET="yes"
-	fi
-
-	# Lastly, push the local repo deltas to the remote repo.
-	echo -e "\n${YELL}Now we need to push the local repo changes to the remote repo.${NRML}"
-	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
-	pause_prompt 8
-	git_push origin master
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!\n       Aborting.\n"
-		git remote remove origin
-		git reset --soft "${LAST_LOCAL_COMMIT}"
-		return 1
-	fi
-
-	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" = "yes" ]
-	then
-		# Align the master branch on both local and remote repo.
-		git branch --set-upstream-to=origin/master master > /dev/null 2>&1
-	fi
-
-	REPO_URI="${REMOTE_REPO_URI}"
-	echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
-	
-	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
 
 	return 0
 }
