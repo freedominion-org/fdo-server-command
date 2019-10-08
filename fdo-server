@@ -2650,7 +2650,7 @@ connect_internet ()
 	return 0
 }
 
-init_host_cleanup ()
+undo_init_host ()
 {
 	# TODO: replace with 'git reset --hard'; see create_vm_template.
 	rm -rf configs/${HOST_NAME}
@@ -2659,7 +2659,7 @@ init_host_cleanup ()
 init_host ()
 {
 
-	trap 'init_host_cleanup ; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_init_host ; exit 3' HUP INT QUIT KILL TERM
 
 	ERROR_COUNT=0
 
@@ -2757,7 +2757,7 @@ init_host ()
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
-		init_host_cleanup
+		undo_init_host
 		return 1
 	fi
 
@@ -2801,7 +2801,7 @@ init_host ()
 			if [ ${NUM_NET_IFACES} -lt 2 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Not enough network interfaces found (2 required)!\n       Aborting.\n"
-				init_host_cleanup
+				undo_init_host
 				return 1
 			fi
 			;;
@@ -3127,7 +3127,7 @@ init_host ()
 	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
 	if [ "${ANSWER}" = "no" ]
 	then
-		init_host_cleanup
+		undo_init_host
 		return 1
 	fi
 
@@ -3161,7 +3161,7 @@ init_host ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${{NRML} Unable to change the shell for the user '${ORNG}toor${NRML}'!\n"
-		init_host_cleanup
+		undo_init_host
 		return 2
 	fi
 
@@ -3196,7 +3196,7 @@ init_host ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to add the arbitrary user '${ORNG}${FDO_USERNAME}${NRML}'!\n"
-		init_host_cleanup
+		undo_init_host
 		return 2
 	fi
 	echo -e "\n${YELL}And now give this user account a password.${NRML}\n"
@@ -3831,7 +3831,7 @@ init_sshfs_daemon ()
 	return 0
 }
 
-init_jails_cleanup ()
+undo_init_jails ()
 {
 
 	ERROR_COUNT=0
@@ -3905,7 +3905,7 @@ init_jails ()
 	INIT_JAILS_FILESYSTEMS_CREATED=false
 	INIT_JAILS_HOST_MODIFIED=false
 
-	trap 'init_jails_cleanup ; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_init_jails ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_INIT_JAILS=`git log --format=format:%H -1`
@@ -4027,7 +4027,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error preparing 'init-jails'!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4035,7 +4035,7 @@ init_jails ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4058,7 +4058,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to download the base system tarballs.\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 1
 	fi
 
@@ -4106,7 +4106,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the template jail filesystem!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4189,7 +4189,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the template jail!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4205,7 +4205,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst updating the template jail base!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4220,7 +4220,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the template jail packages!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4243,7 +4243,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the template jail packages!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -4256,7 +4256,7 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-		init_jails_cleanup
+		undo_init_jails
 		return 2
 	fi
 
@@ -5051,7 +5051,7 @@ create_jail_from_recipe ()
 	return 0
 }
 
-init_vms_cleanup ()
+undo_init_vms ()
 {
 
 	ERROR_COUNT=0
@@ -5153,7 +5153,7 @@ init_vms ()
 	INIT_VMS_FILESYSTEMS_CREATED=false
 	INIT_VMS_HOST_MODIFIED=false
 
-	trap 'init_vms_cleanup ; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_init_vms ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_INIT_VMS=`git log --format=format:%H -1`
@@ -5271,7 +5271,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5315,7 +5315,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading the VM subsystem kernel modules!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5352,7 +5352,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the VM subsystem!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5394,7 +5394,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst creating VM subsystem filesystems!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5427,7 +5427,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst mounting VM subsystem filesystems!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5478,7 +5478,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the VMs initialisation!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5491,7 +5491,7 @@ init_vms ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-		init_vms_cleanup
+		undo_init_vms
 		return 2
 	fi
 
@@ -5513,7 +5513,7 @@ init_vms ()
 	return 0
 }
 
-create_vm_template_cleanup ()
+undo_create_vm_template ()
 {
 	if [ ${CREATE_VM_TEMPLATE_MODIFIED} = true ]
 	then
@@ -5541,7 +5541,7 @@ create_vm_template_cleanup ()
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-template!\n"
+			echo -e "\n${ORGN}WARNING:${NRML} There was an error during the undo of create-vm-template!\n"
 		fi
 	fi
 
@@ -5549,7 +5549,7 @@ create_vm_template_cleanup ()
 	return 0
 }
 
-create_vm_instance_cleanup ()
+undo_create_vm_instance ()
 {
 	if [ ${CREATE_VM_INSTANCE_MODIFIED} = true ]
 	then
@@ -5577,7 +5577,7 @@ create_vm_instance_cleanup ()
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			echo -e "\n${ORGN}WARNING:${NRML} There was an error during cleanup of create-vm-instance!\n"
+			echo -e "\n${ORGN}WARNING:${NRML} There was an error during the undo of create-vm-instance!\n"
 		fi
 	fi
 
@@ -6249,7 +6249,7 @@ create_vm_template ()
 	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
 	CREATE_VM_TEMPLATE_MODIFIED=false
 
-	trap 'create_vm_template_cleanup ; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_create_vm_template ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_CREATE_VM_TEMPLATE=`git log --format=format:%H -1`
@@ -6648,7 +6648,7 @@ create_vm_template ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the template VM!\n"
-		create_vm_template_cleanup
+		undo_create_vm_template
 		return 2
 	fi
 
@@ -6754,7 +6754,7 @@ create_vm_template ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
-		create_vm_template_cleanup
+		undo_create_vm_template
 		return 2
 	fi
 
@@ -6789,7 +6789,7 @@ create_vm_template ()
 	EXIT_CODE=${?}
 	if [ ${EXIT_CODE} -ne 0 ]
 	then
-		create_vm_template_cleanup
+		undo_create_vm_template
 		return ${EXIT_CODE}
 	fi
 
@@ -6805,7 +6805,7 @@ create_vm_template ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the template VM filesystem!\n"
-		create_vm_template_cleanup
+		undo_create_vm_template
 		return 2
 	fi
 
@@ -6844,7 +6844,7 @@ create_vm_instance ()
 	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
 	CREATE_VM_INSTANCE_MODIFIED=false
 
-	trap 'create_vm_instance_cleanup ; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_create_vm_instance ; exit 3' HUP INT QUIT KILL TERM
 
 	# Save git commit reference so we can roll back changes later.
 	COMMIT_BEFORE_CREATE_VM_INSTANCE=`git log --format=format:%H -1`
@@ -7174,7 +7174,7 @@ create_vm_instance ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network for the instance VM!\n"
-		create_vm_instance_cleanup
+		undo_create_vm_instance
 		return 2
 	fi
 
@@ -7259,7 +7259,7 @@ create_vm_instance ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
-		create_vm_instance_cleanup
+		undo_create_vm_instance
 		return 2
 	fi
 
@@ -7283,7 +7283,7 @@ create_vm_instance ()
 	EXIT_CODE=${?}
 	if [ ${EXIT_CODE} -ne 0 ]
 	then
-		create_vm_instrance_cleanup
+		undo_create_vm_instance
 		return ${EXIT_CODE}
 	fi
 
@@ -7307,7 +7307,7 @@ create_vm_instance ()
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong trying to snapshot the instance VM filesystem!\n"
-		create_vm_instance_cleanup
+		undo_create_vm_instance
 		return 2
 	fi
 
