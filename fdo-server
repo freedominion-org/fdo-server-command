@@ -7416,8 +7416,87 @@ create_vm_instance ()
 	return 0
 }
 
+undo_init_partimag ()
+{
+
+	ERROR_COUNT=0
+
+	# Stop / reload any affected services.
+	if [ ${INIT_PARTIMAG_NFSD_START} = true ]
+	then
+		service nfsd stop > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_PARTIMAG_MOUNTD_RELOAD} = true ]
+	then
+		service mountd reload > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_PARTIMAG_MOUNTD_START} = true ]
+	then
+		service mountd stop > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_PARTIMAG_LOCKD_START} = true ]
+	then
+		service lockd stop > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_PARTIMAG_RPCBIND_START} = true ]
+	then
+		service rpcbind stop > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo host system modifications.
+	if [ ${INIT_PARTIMAG_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_PARTIMAG}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_PARTIMAG}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Destroy any created filesystems.
+	if [ ${INIT_PARTIMAG_FILESYSTEMS_CREATED} = true ]
+	then
+		# Destroy the partimag filesystem.
+		zfs destroy -rf ${PARTIMAG_POOL_NAME}/partimag > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-partimag process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+}
+
 init_partimag ()
 {
+
+	INIT_PARIMAG_MODIFIED=false
+	INIT_PARTIMAG_RPCBIND_START=false
+	INIT_PARTIMAG_LOCKD_START=false
+	INIT_PARTIMAG_MOUNTD_START=false
+	INIT_PARTIMAG_MOUNTD_RELOAD=false
+	INIT_PARTIMAG_NFSD_START=false
+
+	trap 'undo_init_partimag ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_PARTIMAG=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
@@ -7467,6 +7546,36 @@ init_partimag ()
 		done
 	fi
 
+	# Test for existing partimag filesystem and prompt how to proceed.
+	PARTIMAG_FILESYSTEM_EXISTS="no"
+	zfs list -H ${PARTIMAG_POOL_NAME}/partimag > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
+		question_yes_no "\nIt seems as though '${NRML}init-partimag${LCYN}' has already been applied to this host.\nWould you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Ask whether to purge, archive or reuse exsiting partimag filesystem.
+			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing partimag filesystem\nand all it's children filesystems? [CAUTION]"
+			if [ "${ANSWER}" = "purge" ]
+			then
+				zfs destroy -Rf ${PARTIMAG_POOL_NAME}/partimag
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "archive" ]
+			then
+				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+				zfs rename -f ${PARTIMAG_POOL_NAME}/partimag ${PARTIMAG_POOL_NAME}/partimag_renamed-by-init-partimag-${NOW}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "reuse" ]
+			then
+				PARTIMAG_FILESYSTEM_EXISTS="yes"
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
+			return 1
+		fi
+	fi
+
 	# Get the LAN interface that the NFS share will run on.
 	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
 	LAN_NET_IFACE=""
@@ -7499,46 +7608,125 @@ init_partimag ()
 		break
 	done
 
-	# Warn if partimag filesystem already exists.
-	zfs list ${PARTIMAG_POOL_NAME}/partimag 2> /dev/null
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
-	fi
+	INIT_PARTIMAG_MODIFIED=true
 
-	sed -i "" "s/mountd_enable=\"NO\"/mountd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/nfs_server_enable=\"NO\"/nfs_server_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/rpc_lockd_enable=\"NO\"/rpc_lockd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/rpc_statd_enable=\"NO\"/rpc_statd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	sed -i "" "s/rpcbind_enable=\"NO\"/rpcbind_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+	# Set mountd service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "mountd_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set nfs_server service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nfs_server_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set rpc_lockd service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_lockd_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set rpc_statd service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_statd_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set rpcbind service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpcbind_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Create or update the exports file in the local repo.
+	touch /etc/exports > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	cp /etc/exports configs/${HOST_NAME}/etc/exports
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add mountpoint to NFS exports file.
+	cat configs/${HOST_NAME}/etc/exports | egrep "^/usr/home/partimag " > /dev/null 2>&1
+	if  [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} It seems that the partimag NFS share already exists in the '/etc/exports' file.\n"
+	else
+		echo "/usr/home/partimag -maproot=root -network ${FDO_LAN_SUBNET_B}.0.0 -mask ${FDO_LAN_SUBNET_MASK}" >> configs/${HOST_NAME}/etc/exports
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Create the ZFS filesystem for the partimag.
-	zfs create -o mountpoint=/usr/home/partimag ${PARTIMAG_POOL_NAME}/partimag
-
-	touch /etc/exports
-
-	echo -e ""
-
-	# Start the NFS services.
-	service rpcbind start
-	service lockd start
-	service nfsd start
-
-	# Add mountpoint to NFS exports file.
-	cat /etc/exports | egrep "^/usr/home/partimag " > /dev/null 2>&1
-	if  [ ${?} -ne 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo "/usr/home/partimag -maproot=root -network ${FDO_LAN_SUBNET_B}.0.0 -mask ${FDO_LAN_SUBNET_MASK}" >> /etc/exports
-		echo -e ""
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the system for the partimag NFS share!\n"
+		undo_init_partimag
+		return 2
+	fi
+
+	# Create the ZFS filesystem for the partimag share.
+	if [ "${PARTIMAG_FILESYSTEM_EXISTS}" = "no" ]
+	then
+		INIT_PARTIMAG_FILESYSTEMS_CREATED=true
+		echo -e "\n${YELL}Creating ZFS filesystems for partimag NFS share...${NRML}\n"
+		zfs create -o mountpoint=/usr/home/partimag ${PARTIMAG_POOL_NAME}/partimag
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst creating the filesystem for the partimag NFS share!\n"
+		undo_init_partimag
+		return 2
+	fi
+
+	# Start / reload the NFS services.
+	echo -e "\n${YELL}Starting NFS services...${NRML}\n"
+	service rpcbind status > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_PARTIMAG_RPCBIND_START=true
+		service rpcbind start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	service lockd status > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_PARTIMAG_LOCKD_START=true
+		service lockd start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	service mountd status > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_PARTIMAG_MOUNTD_START=true
+		service mountd start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		INIT_PARTIMAG_MOUNTD_RELOAD=true
 		service mountd reload
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	service nfsd status > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_PARTIMAG_NFSD_START=true
+		service nfsd start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst initialising the partimag NFS share!\n"
+		undo_init_partimag
+		return 2
 	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	git commit -m "Updating host after 'init-partimag'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_init_partimag
+		return 2
+	fi
 
 	if [ "${REPO_URI}" != "local" ]
 	then
