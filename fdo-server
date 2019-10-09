@@ -3946,7 +3946,7 @@ undo_init_jails ()
 	if [ ${INIT_JAILS_FILESYSTEMS_CREATED} = true ]
 	then
 		# Destroy the template jail filesystem.
-		zfs destroy -rf ${JAIL_POOL_NAME}/jails/template > /dev/null 2>&1
+		zfs destroy -rf ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -4066,19 +4066,8 @@ init_jails ()
 		done
 	fi
 
-	# Warn if jail base filesystem already exists.
-	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
-		JAILS_FILESYSTEM_EXISTS="yes"
-	else
-		JAILS_FILESYSTEM_EXISTS="no"
-	fi
-
-	pause_prompt 8
-
 	# Test for existing jail base filesystem and prompt how to proceed.
+	JAILS_FILESYSTEM_EXISTS="no"
 	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
@@ -4097,6 +4086,9 @@ init_jails ()
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
 				zfs rename -f ${JAIL_POOL_NAME}/jails ${JAIL_POOL_NAME}/jails_renamed-by-init-jails-${NOW}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "reuse" ]
+			then
+				JAILS_FILESYSTEM_EXISTS="yes"
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
@@ -4143,15 +4135,19 @@ init_jails ()
 	fi
 
 	# Create ZFS filesystems for service jail template.
-	INIT_JAILS_FILESYSTEMS_CREATED=true
-	echo -e "\n${YELL}Creating ZFS filesystems for template jail...${NRML}\n"
 	if [ "${JAILS_FILESYSTEM_EXISTS}" = "no" ]
 	then
+		INIT_JAILS_FILESYSTEMS_CREATED=true
+		echo -e "\n${YELL}Creating ZFS filesystems for template jail...${NRML}\n"
 		zfs create -o mountpoint=/jls ${JAIL_POOL_NAME}/jails
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs create ${JAIL_POOL_NAME}/jails/template
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	zfs list ${JAIL_POOL_NAME}/jails/template > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		zfs create ${JAIL_POOL_NAME}/jails/template
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
 	# Mount the filesystems if they are not already.
 	zfs mount | egrep "^${JAIL_POOL_NAME}/jails " > /dev/null 2>&1
