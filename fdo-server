@@ -3738,8 +3738,63 @@ init_hotdesking ()
 	return 0
 }
 
+undo_init_sshfs_daemon ()
+{
+
+	ERROR_COUNT=0
+
+	# Undo host system modifications.
+	if [ ${INIT_SSHFS_DAEMON_MODIFIED} = true ]
+	then
+		service sshfsd onestatus  > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			service sshfsd onestop
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_SSHFS_DAEMON}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_SSHFS_DAEMON}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Unload any loaded kernel modules.
+	if [ ${INIT_VMS_TAP_LOAD} = true ]
+	then
+		kldunload if_tap
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-sshfs-daemon process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+}
+
 init_sshfs_daemon ()
 {
+
+	INIT_SSHFS_FUSE_LOAD=false
+	INIT_SSHFS_DAEMON_MODIFIED=false
+
+	trap 'undo_init_sshfs_daemon ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_SSHFS_DAEMON=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
@@ -3762,56 +3817,81 @@ init_sshfs_daemon ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	ERROR_COUNT=0
-
 	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
 	pause_prompt 8
 	pkg update -f
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	pkg install -y ${SSHFS_DAEMON_PACKAGES}
-
-	kldstat | grep fuse.ko > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
-	then
-		kldload fuse 2> /dev/null
-	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered when loading the FUSE kernel modules.\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
+		undo_init_sshfs_daemon
 		return 2
 	fi
 
-	cat configs/${HOST_NAME}/boot/loader.conf | egrep "^fuse_load=\"(YES|NO)\"" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
+	kldstat | grep fuse.ko > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
 	then
-		sed -i "" "s/fuse_load=\"NO\"/fuse_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
-	else
-		echo "fuse_load=\"YES\"" >> configs/${HOST_NAME}/boot/loader.conf
+		INIT_SSHFS_FUSE_LOAD=true
+		kldload fuse 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	cat configs/${HOST_NAME}/etc/rc.conf | egrep "^sshfsd_enable=\"(YES|NO)\"" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		sed -i "" "s/sshfsd_enable=\"NO\"/sshfsd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-	else
-		echo "sshfsd_enable=\"YES\"" >> configs/${HOST_NAME}/etc/rc.conf
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading required kernel modules.\n"
+		undo_init_sshfs_daemon
+		return 2
 	fi
+
+	INIT_SSHFS_DAEMON_MODIFIED=true
+
+	# Set FUSE support to load on boot.
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf "fuse_load=NO" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set sshfsd service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "sshfsd_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
 	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the sshfs daemon!\n"
+		undo_init_sshfs_daemon
+		return 2
+	fi
 
 	echo -e "\n"
 
 	# Start sshfsd service for the first time.
 	service sshfsd onestart
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} Something went wrong starting the 'sshfsd' service!"
+	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	git commit -m "Updating host after 'init-sshfs-daemon'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_init_sshfs_daemon
+		return 2
+	fi
 
 	if [ "${REPO_URI}" != "local" ]
 	then
@@ -3921,7 +4001,7 @@ init_jails ()
 		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
 		return 1
 	fi
- 
+
 	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
@@ -3985,7 +4065,7 @@ init_jails ()
 			fi
 		done
 	fi
- 
+
 	# Warn if jail base filesystem already exists.
 	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
@@ -5032,7 +5112,7 @@ create_jail_from_recipe ()
 				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
 			fi
 		fi
- 
+
 		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
 		then
 			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
@@ -5168,7 +5248,7 @@ init_vms ()
 		echo -e "       Aborting.\n"
 		return 1
 	fi
- 
+
 	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
 	echo -e "${YELL}config files...${NRML}\n"
