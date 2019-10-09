@@ -3849,7 +3849,7 @@ init_sshfs_daemon ()
 	INIT_SSHFS_DAEMON_MODIFIED=true
 
 	# Set FUSE support to load on boot.
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf "fuse_load=NO" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf "fuse_load=YES" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set sshfsd service to start on boot.
