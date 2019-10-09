@@ -5311,6 +5311,7 @@ init_vms ()
 	fi
 
 	# Test for existing VMs filesystems and prompt how to proceed.
+	VMS_FILESYSTEM_EXISTS="no"
 	zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
@@ -5329,6 +5330,9 @@ init_vms ()
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
 				zfs rename -f ${VMS_POOL_NAME}/${VMS_ROOT_FS} ${VMS_POOL_NAME}/${VMS_ROOT_FS}_renamed-by-init-vms-${NOW}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "reuse" ]
+			then
+				VMS_FILESYSTEM_EXISTS="yes"
 			fi
 		else
 			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
@@ -5433,11 +5437,10 @@ init_vms ()
 	fi
 
 	# Create ZFS filesystems for VM images.
-	echo -e "\n${YELL}Creating ZFS filesystems for VM images...${NRML}\n"
-	INIT_VMS_FILESYSTEMS_CREATED=true
-	zfs list ${VMS_POOL_NAME}/${VMS_ROOT_FS} > /dev/null 2>&1
-	if [ ${?} -ne 0 ]
+	if [ "${VMS_FILESYSTEM_EXISTS}" = "no" ]
 	then
+		echo -e "\n${YELL}Creating ZFS filesystems for VM images...${NRML}\n"
+		INIT_VMS_FILESYSTEMS_CREATED=true
 		zfs create -o mountpoint="${VMS_ROOT_PATH}" -o compression=on -o recordsize=8k ${VMS_POOL_NAME}/${VMS_ROOT_FS}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
