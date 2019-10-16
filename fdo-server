@@ -26,17 +26,39 @@
 
 ##### GLOBAL STATIC VARIABLE DECLARATIONS ##########
 
+TERM="xterm"
+LRED="\033[1;31m"
+LGRN="\033[1;32m"
+LBLU="\033[1;34m"
+LCYN="\033[1;36m"
+CYAN="\033[0;36m"
+YELL="\033[1;33m"
+ORNG="\033[0;33m"
+GREY="\033[0;37m"
+DGRY="\033[1;30m"
+NRML="\033[0;00m"
+CARRIAGE_RETURN="
+"
+
+
 SCRIPT_NAME=`basename $0`
 DEBUG=${DEBUG:-false}
+DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 REPO_NAME=${REPO_NAME:-"fdo-server"}
 FDO_CONFIG_ROOT=${FDO_CONFIG_ROOT:-"/usr/local/etc/fdo"}
+HOST_CONF_PATH=${HOST_CONF_PATH:-"/usr/local/etc/fdo/host.conf"}
 UCL_CMD="/usr/local/bin/uclcmd"
+LOGIN_SHELL=${LOGIN_SHELL:-"/usr/local/bin/bash"}
 FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py27-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
 ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
+PKG_REPO_CONF_FILE="FDo-pkg.conf"
+PKG_REPO_CERT_FILE="FDo-pkg.cert"
+
+
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
 VMS_CONF_PATH=${VMS_CONF_PATH:-"/usr/local/etc/fdo/vms.conf"}
 VMS_ROOT_FS="fdo-vms"
@@ -60,19 +82,33 @@ VM_DEFAULT_BOOT_LOADER="UEFI"
 FDO_VMS_LIST_PATH="/usr/local/sbin/fdo-vms-list"
 FDO_VMS_START_PATH="/usr/local/sbin/fdo-vms-start"
 FDO_VMS_STOP_PATH="/usr/local/sbin/fdo-vms-stop"
+
+
 VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
 SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
-DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
+
+
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
 AUX_LOCAL_SERVER_IP_MIN=2
 AUX_LOCAL_SERVER_IP_MAX=9
-PKG_REPO_CONF_FILE="FDo-pkg.conf"
-PKG_REPO_CERT_FILE="FDo-pkg.cert"
-
+WAN_PPP_TUN_ID=0
+NET_CONNECT_TIMEOUT_SECS=${NET_CONNECT_TIMEOUT_SECS:-16}
+INET_TEST_IPV4="8.8.8.8"
+INET_TEST_HOSTNAME="freedominion.org"
 DEFAULT_LAN_SUBNET_B="10.0"
-CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf 2> /dev/null`
-if [ ${?} -ne 0 ]
+if [ -e "${UCL_CMD}" ] && [ -e "${HOST_CONF_PATH}" ]
+then
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} It appears that there is a problem accessing the host config file!\n"
+		CONFIG_LAN_NET_IFACE="null"
+	fi
+else
+	CONFIG_LAN_NET_IFACE="null"
+fi
+if [ "${CONFIG_LAN_NET_IFACE}" = "null" ]
 then
 	SET_LAN_SUBNET_B="${DEFAULT_LAN_SUBNET_B}"
 else
@@ -93,24 +129,7 @@ HOTDESKS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.40"
 MOBILES_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.50"
 GUESTS_LAN_SUBNET_C="${FDO_LAN_SUBNET_B}.60"
 FDO_LAN_GATEWAY_IP="${SERVERS_LAN_SUBNET_C}.1"
-NET_CONNECT_TIMEOUT_SECS=${NET_CONNECT_TIMEOUT_SECS:-16}
-INET_TEST_IPV4="8.8.8.8"
-INET_TEST_HOSTNAME="freedominion.org"
 
-TERM="xterm"
-LRED="\033[1;31m"
-LGRN="\033[1;32m"
-LBLU="\033[1;34m"
-LCYN="\033[1;36m"
-CYAN="\033[0;36m"
-YELL="\033[1;33m"
-ORNG="\033[0;33m"
-GREY="\033[0;37m"
-DGRY="\033[1;30m"
-NRML="\033[0;00m"
-
-CARRIAGE_RETURN="
-"
 
 
 usage ()
@@ -1359,6 +1378,14 @@ init_git_config ()
 
 	echo -e "\n\n${YELL}Initialising git config...${NRML}\n"
 
+	# Move into local repo directory.
+	cd "/${REPO_NAME}"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!"
+		return 2
+	fi
+
 	git config user.name > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -1419,11 +1446,18 @@ init_git_config ()
 upgrade_repo_from_upstream ()
 {
 
-	if [ "${1}" = "--push" ]
+	if [ "${1}" = "--push" ] || [ "${2}" = "--push" ]
 	then
 		DO_GIT_PUSH="yes"
 	else
 		DO_GIT_PUSH="no"
+	fi
+
+	if [ "${1}" = "--no-install-scripts" ] || [ "${2}" = "--no-install-scripts" ]
+	then
+		ASK_INSTALL_SCRIPTS="no"
+	else
+		ASK_INSTALL_SCRIPTS="yes"
 	fi
 
 	# Move into local repo directory.
@@ -1434,6 +1468,8 @@ upgrade_repo_from_upstream ()
 		return 2
 	fi
 
+	# ASSUME: the local repo exists and is initialised properly.
+
 	# Get the pre-upgrade git commit reference.
 	PRE_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
 
@@ -1441,6 +1477,7 @@ upgrade_repo_from_upstream ()
 	git remote add upstream "${FDO_SERVER_SKELETON_REPO}"
 	if [ ${?} -ne 0 ]
 	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to add upstream remote git repo to local git repo!\n"
 		return 2
 	fi
 
@@ -1448,6 +1485,7 @@ upgrade_repo_from_upstream ()
 	git fetch upstream
 	if [ ${?} -ne 0 ]
 	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to fetch upstream remote git repo!\n"
 		return 2
 	fi
 
@@ -1455,6 +1493,7 @@ upgrade_repo_from_upstream ()
 	git merge upstream/master --allow-unrelated-histories -m "Upgrading private repo from upstream skeleton repo on host '${HOST_NAME}'."
 	if [ ${?} -ne 0 ]
 	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to merge upstream remote git repo with local git repo!\n"
 		return 2
 	fi
 
@@ -1462,6 +1501,7 @@ upgrade_repo_from_upstream ()
 	git remote remove upstream
 	if [ ${?} -ne 0 ]
 	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo!\n"
 		return 2
 	fi
 
@@ -1495,7 +1535,7 @@ upgrade_repo_from_upstream ()
 	echo -e "\n${YELL}Checking if any scripts have been updated in this upgrade...${NRML}\n"
 	git diff-tree --no-commit-id --name-only -r ${PRE_UPGRADE_COMMIT_REF} ${POST_UPGRADE_COMMIT_REF} | grep "^scripts/"
 
-	if [ ${?} -eq 0 ]
+	if [ ${?} -eq 0 ] && [ "${ASK_INSTALL_SCRIPTS}" = "yes" ]
 	then
 		# Ask whether to perform an 'install-scripts'.
 		question_yes_no "\nIt seems that one or more scripts have been updated in this upgrade.\nWould you like to perform an '${NRML}install-scripts${LCYN}' now?"
@@ -2355,7 +2395,7 @@ connect_internet ()
 	IS_WAN_IFACE_DHCP=""
 	WAN_IFACE_IP=""
 	WAN_IFACE_NETMASK=""
-	WAN_ROUTER_IP=""
+	WAN_GATEWAY_IP=""
 
 	# Configure WAN interface.
 	if [ ${NUM_NET_IFACES} -lt 2 ]
@@ -2488,20 +2528,20 @@ connect_internet ()
 		done
 
 		# Set default router.
-		while [ "${WAN_ROUTER_IP}" = "" ]
+		while [ "${WAN_GATEWAY_IP}" = "" ]
 		do
 			echo -e ""
-			readee -p "${LCYN}Enter the default router IP address for this host: ${NRML}" WAN_ROUTER_IP_TEMP
-			test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
+			readee -p "${LCYN}Enter the gateway (default router) IP address for this host: ${NRML}" WAN_GATEWAY_IP_TEMP
+			test_valid_inet_address "${WAN_GATEWAY_IP_TEMP}"
 			if [ "${VALID_INET_ADDRESS}" = "yes" ]
 			then
-				question_yes_no "\nYou have entered '${NRML}${WAN_ROUTER_IP_TEMP}${LCYN}' as the default router.\nIs this correct?"
+				question_yes_no "\nYou have entered '${NRML}${WAN_GATEWAY_IP_TEMP}${LCYN}' as the gateway (default router).\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
 				then
-					WAN_ROUTER_IP=${WAN_ROUTER_IP_TEMP}
+					WAN_GATEWAY_IP=${WAN_GATEWAY_IP_TEMP}
 				fi
 			else
-				echo -e "\n${LRED}ERROR:${NRML} Default router IP address is invalid!\n"
+				echo -e "\n${LRED}ERROR:${NRML} Gateway (default router) IP address is invalid!\n"
 			fi
 		done
 	fi
@@ -2570,7 +2610,7 @@ connect_internet ()
 		then
 			echo " set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.255 0.0.0.0" >> /etc/ppp/ppp.conf
 		else
-			echo " set ifaddr ${WAN_IFACE_IP} ${WAN_ROUTER_IP} ${WAN_IFACE_NETMASK} 0.0.0.0" >> /etc/ppp/ppp.conf
+			echo " set ifaddr ${WAN_IFACE_IP} ${WAN_GATEWAY_IP} ${WAN_IFACE_NETMASK} 0.0.0.0" >> /etc/ppp/ppp.conf
 		fi
 		echo " add default HISADDR" >> /etc/ppp/ppp.conf
 		ppp -ddial
@@ -2587,7 +2627,7 @@ connect_internet ()
 			fi
 		else
 			ifconfig ${WAN_NET_IFACE} inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK} up
-			route add default ${WAN_ROUTER_IP} > /dev/null 2>&1
+			route add default ${WAN_GATEWAY_IP} > /dev/null 2>&1
 		fi
 	fi
 
@@ -2652,18 +2692,87 @@ connect_internet ()
 
 undo_init_host ()
 {
-	# TODO: replace with 'git reset --hard'; see create_vm_template.
-	rm -rf configs/${HOST_NAME}
+
+	ERROR_COUNT=0
+
+	if [ ${INIT_HOST_TZSETUP_DONE} = true ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The timezone has been changed via 'tzsetup'"
+		echo -e "		and won't be reverted automatically.\n"
+	fi
+
+	if [ ${INIT_HOST_ARBITRARY_USER_ADDED} = true ]
+	then
+		rmuser -y "${ARBITRARY_USERNAME}" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${INIT_HOST_TOOR_SHELL_CHANGED} = true ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The shell has been changed for the 'toor' user"
+		echo -e "		and won't be reverted automatically.\n"
+	fi
+
+	if [ ${INIT_HOST_TOOR_PASSWORD_CHANGED} = true ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The password has been changed for the 'toor' user"
+		echo -e "		and can't be reverted automatically.\n"
+	fi
+
+	if [ ${INIT_HOST_SYSTEM_MODIFIED} = true ]
+	then
+		# Restore pre-existing core system conf files.
+		for CONFIG_FILE in `find config-templates/init-host/ -type f -print | sed "s|^config-templates/init-host||"`
+		do
+			# Try to find the most  up-to--date backup file for current CONFIG_FILE.
+			BACKUP_CONFIG_FILE=`ls -1 ${CONFIG_FILE}.init-host_backup_* 2> /dev/null | sort | tail -1`
+			if [ -e "${BACKUP_CONFIG_FILE}" ]
+			then
+				cp ${BACKUP_CONFIG_FILE} ${CONFIG_FILE}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		done
+	fi
+
+	if [ ${INIT_HOST_REPO_MODIFIED} = true ]
+	then
+		# TODO: consider replacing with 'git reset --hard'; see create_vm_template.
+		rm -rf configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${INIT_HOST_ROOT_POOL_COMPRESS_TURN_ON} = true ]
+	then
+		zfs set compression=on ${ROOT_POOL}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-host process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
 }
 
 init_host ()
 {
 
+	INIT_HOST_ROOT_POOL_COMPRESS_TURN_ON=false
+	INIT_HOST_REPO_MODIFIED=false
+	INIT_HOST_SYSTEM_MODIFIED=false
+	INIT_HOST_TOOR_PASSWORD_CHANGED=false
+	INIT_HOST_TOOR_SHELL_CHANGED=false
+	INIT_HOST_ARBITRARY_USER_ADDED=false
+	INIT_HOST_TZSETUP_DONE=false
+
 	trap 'undo_init_host ; exit 3' HUP INT QUIT KILL TERM
 
 	ERROR_COUNT=0
 
-	# NOTE: we have to assume we only have base userland at this point. No local repo either.
+	# ASSUME: we have to assume we only have base userland at this point. No local repo either.
 
 	HOST_NAME=${1}
 	DOMAIN_NAME=${2}
@@ -2703,24 +2812,34 @@ init_host ()
 	echo -e "\n${YELL}Next we need to install some essential packages...${NRML}\n"
 	pause_prompt 8
 	pkg update -f
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	pkg install -y ${ESSENTIAL_PACKAGES}
-	if [ ${?} -ne 0 ]
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to install essential packages.\n       Aborting.\n"
-		return 1
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
+		undo_init_host
+		return 2
 	fi
 
 	# Initialise the local private repo.
 	init_local_repo
-	EXIT_CODE=${?}
-	if [ ${EXIT_CODE} -ne 0 ]
+	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to initialise the local git repo.\n       Aborting.\n"
-		return ${EXIT_CODE}
+		echo -e "\n${LRED}ERROR:${NRML} Failed to initialise the local git repo.\n"
+		undo_init_host
+		return 2
 	fi
 
 	# Initialise the git config, so we can commit and push without warnings.
 	init_git_config
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to initialise the git configuration.\n"
+		undo_init_host
+		return 2
+	fi
 
 	# Check that the local repo is not empty, otherwise pull a fresh skeleton.
 	if [ ! -d "/${REPO_NAME}/configs" ]
@@ -2729,12 +2848,12 @@ init_host ()
 		echo -e "\n${ORNG}WARNING:${NRML} Repo is invalid! It is missing the configs directory."
 	    echo -e "         we will attempt to fetch the upstream skeleton git repo...${NRML}\n"
 		pause_prompt 8
-		upgrade_repo_from_upstream
-		EXIT_CODE=${?}
-		if [ ${EXIT_CODE} -ne 0 ]
+		upgrade_repo_from_upstream --no-install-scripts
+		if [ ${?} -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo.\n       Aborting.\n"
-			return ${EXIT_CODE}
+			echo -e "\n${LRED}ERROR:${NRML} Failed to get a skeleton from the public upstream skeleton git repo.\n"
+			undo_init_host
+			return 2
 		fi
 	fi
 
@@ -2743,13 +2862,24 @@ init_host ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The hostname can not be '${ORNG}${HOST_NAME}${NRML}'!"
 		echo -e "       It is already registered as a host in the repo."
-		echo -e "       Aborting.\n"
+		undo_init_host
 		return 1
 	fi
 
+	INIT_HOST_REPO_MODIFIED=true
+
 	# Copy init-host template configs to the repo.
 	mkdir configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	install_file_tree config-templates/init-host configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst creating the host entry in the local repo!\n"
+		undo_init_host
+		return 2
+	fi
 
 	# Get available interfaces and the quantity thereof.
 	NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}" | cut -d: -f1`
@@ -2775,7 +2905,9 @@ init_host ()
 		if [ "${ANSWER}" = "yes" ]
 		then
 			SERVER_TYPE="${SERVER_TYPE_TEMP}"
+			break
 		fi
+		sleep 4
 	done
 
 	WAN_NET_IFACE=""
@@ -2791,7 +2923,7 @@ init_host ()
 	LAN_IFACE_IP=""
 	WAN_IFACE_NETMASK=""
 	LAN_IFACE_NETMASK=""
-	WAN_ROUTER_IP=""
+	WAN_GATEWAY_IP=""
 
 	case ${SERVER_TYPE} in
 		remote)
@@ -2829,11 +2961,23 @@ init_host ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
+					break
 				fi
 			done
+			sleep 4
 		fi
 
 		sed -i "" "s/WAN_NET_IFACE/${WAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.nic_id "${WAN_NET_IFACE}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the WAN interface NIC ID!\n"
+			undo_init_host
+			return 2
+		fi
 
 		# Optionally configure PPP.
 		question_yes_no "\nDo you want to use PPPoE for the WAN interface (internet facing)?"
@@ -2859,15 +3003,24 @@ init_host ()
 						if [ "${ANSWER}" = "yes" ]
 						then
 							VLAN_ID=${VLAN_ID_TEMP}
+							break
 						fi
 					fi
+					sleep 4
 				done
 				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"up\"\\${CARRIAGE_RETURN}ifconfig_${WAN_NET_IFACE}_${VLAN_ID}=\"up\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/^#vlans_${WAN_NET_IFACE}=\"\"/vlans_${WAN_NET_IFACE}=\"${VLAN_ID}\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}_${VLAN_ID}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.vlan_id "${VLAN_ID}"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
 				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"up\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 	
 			# Get PPP authname.
@@ -2884,8 +3037,10 @@ init_host ()
 					if [ "${ANSWER}" = "yes" ]
 					then
 						PPP_AUTHNAME=${PPP_AUTHNAME_TEMP}
+						break
 					fi
 				fi
+				sleep 4
 			done
 
 			# Get PPP authkey.
@@ -2903,23 +3058,47 @@ init_host ()
 					echo -e "\n${LRED}ERROR:${NRML} Authkey not entered, try again!\n"
 				else
 					PPP_AUTHKEY=${PPP_AUTHKEY_TEMP1}
+					break
 				fi
+				sleep 4
 			done
 
 			echo -e ""
 
-			sed -i "" "s/isp_username/${PPP_AUTHNAME}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
-			sed -i "" "s/isp_password/${PPP_AUTHKEY}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
-			sed -i "" "s/ppp_enable=\"NO\"/ppp_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-			sed -i "" "s/ppp_nat=\"NO\"/ppp_nat=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
-			echo "tun0" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_wan.conf
+			sed -i "" "s/isp_authname/${PPP_AUTHNAME}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sed -i "" "s/isp_authkey/${PPP_AUTHKEY}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sysrc -f configs/${HOST_NAME}/etc/rc.conf "ppp_enable=YES" > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sysrc -f configs/${HOST_NAME}/etc/rc.conf "ppp_nat=YES" > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.id "tun${WAN_PPP_TUN_ID}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "pppoe"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_authname "${PPP_AUTHNAME}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_authkey "${PPP_AUTHKEY}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_nat_enabled true
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
-			echo "${WAN_NET_IFACE}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_wan.conf
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.id "${WAN_NET_IFACE}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: configure PPP.
 
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring PPPoE!\n"
+			undo_init_host
+			return 2
+		fi
 
-		# Configure WAN interface IP address and subnet mask.
+		# Configure WAN interface IP address, subnet mask and gateway.
 		question_yes_no "\nDo you want to use DHCP for the WAN interface?"
 		IS_WAN_IFACE_DHCP=${ANSWER}
 		if [ "${IS_WAN_IFACE_DHCP}" = "no" ]
@@ -2945,11 +3124,13 @@ init_host ()
 						if [ "${ANSWER}" = "yes" ]
 						then
 							WAN_IFACE_IP=${WAN_IFACE_IP_TEMP}
+							break
 						fi
 					fi
 				else
 					echo -e "\n${LRED}ERROR:${NRML} IP address is invalid!\n"
 				fi
+				sleep 4
 			done
 
 			while [ "${WAN_IFACE_NETMASK}" = "" ]
@@ -2963,47 +3144,75 @@ init_host ()
 					if [ "${ANSWER}" = "yes" ]
 					then
 						WAN_IFACE_NETMASK=${WAN_IFACE_NETMASK_TEMP}
+						break
 					fi
 				else
 					echo -e "\n${LRED}ERROR:${NRML} Subnet mask is invalid!\n"
 				fi
+				sleep 4
 			done
 
 			# Set default router.
-			while [ "${WAN_ROUTER_IP}" = "" ]
+			while [ "${WAN_GATEWAY_IP}" = "" ]
 			do
 				echo -e ""
-				readee -p "${LCYN}Enter the default router IP address for this host: ${NRML}" WAN_ROUTER_IP_TEMP
-				test_valid_inet_address "${WAN_ROUTER_IP_TEMP}"
+				readee -p "${LCYN}Enter the gateway (default router) IP address for this host: ${NRML}" WAN_GATEWAY_IP_TEMP
+				test_valid_inet_address "${WAN_GATEWAY_IP_TEMP}"
 				if [ "${VALID_INET_ADDRESS}" = "yes" ]
 				then
-					question_yes_no "\nYou have entered '${NRML}${WAN_ROUTER_IP_TEMP}${LCYN}' as the default router.\nIs this correct?"
+					question_yes_no "\nYou have entered '${NRML}${WAN_GATEWAY_IP_TEMP}${LCYN}' as the gateway (default router).\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						WAN_ROUTER_IP=${WAN_ROUTER_IP_TEMP}
+						WAN_GATEWAY_IP=${WAN_GATEWAY_IP_TEMP}
+						break
 					fi
 				else
-					echo -e "\n${LRED}ERROR:${NRML} Default router IP address is invalid!\n"
+					echo -e "\n${LRED}ERROR:${NRML} Gateway (default router) IP address is invalid!\n"
 				fi
+				sleep 4
 			done
 	
 			if [ "${USES_PPP}" = "yes" ]
 			then
-				sed -i "" "s|^ set ifaddr .*| set ifaddr ${WAN_IFACE_IP} ${WAN_ROUTER_IP} ${WAN_IFACE_NETMASK} 0.0.0.0|" configs/${HOST_NAME}/etc/ppp/ppp.conf
+				sed -i "" "s|^ set ifaddr .*| set ifaddr ${WAN_IFACE_IP} ${WAN_GATEWAY_IP} ${WAN_IFACE_NETMASK} 0.0.0.0|" configs/${HOST_NAME}/etc/ppp/ppp.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
 				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
-				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_ROUTER_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_GATEWAY_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
-		elif [ "${USES_PPP}" = "yes" ]
-		then
-			# WAN PPP connection uses Dynamic IP.
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_assignment "static"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_address "${WAN_IFACE_IP}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_netmask "${WAN_IFACE_NETMASK}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_gateway "${WAN_GATEWAY_IP}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
-			# WAN IP interface uses DHCP.
-			sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_assignment "dhcp"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ "${USES_PPP}" = "no" ]
+			then
+				# WAN IP interface is pure ethernet and uses DHCP.
+				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
 		fi
 		# END: if IS_WAN_IFACE_DHCP = no.
 
-		sed -i "" "s/^gateway_enable\=.*/gateway_enable\=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+		sysrc -f configs/${HOST_NAME}/etc/rc.conf "gateway_enable=YES" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.is_gateway_router true
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the WAN interface IP!\n"
+			undo_init_host
+			return 2
+		fi
 
 	fi
 	# END: configure WAN interface.
@@ -3030,7 +3239,9 @@ init_host ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					LAN_NET_IFACE="${LAN_NET_IFACE_TEMP}"
+					break
 				fi
+				sleep 4
 			done
 		fi
 	fi
@@ -3038,25 +3249,44 @@ init_host ()
 	if [ "${SERVER_TYPE}" = "remote" ]
 	then
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${LAN_NET_IFACE}" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "loopback"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	echo "${LAN_NET_IFACE}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/net_iface_lan.conf
 	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.nic_id "${LAN_NET_IFACE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.id "${LAN_NET_IFACE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	LAN_SUBNET_C="${SERVERS_LAN_SUBNET_C}"
 	LAN_IFACE_NETMASK="${FDO_LAN_SUBNET_MASK}"
 
 	if [ "${WAN_NET_IFACE}" != "NULL" ]
 	then
-		# ASSUME this host is a remote or primary_local type server.
+		# ASSUME: this host is a remote or primary_local type server.
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
 		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${USES_PPP}" = "yes" ]
 		then
 			sed -i "" "s/^ #nat/ nat/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			sed -i "" "s/LAN_SUBNET_C/${LAN_SUBNET_C}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	else
-		# ASSUME this host is an aux_local type server.
+		# ASSUME: this host is an aux_local type server.
 		question_yes_no "\nDo you want to use DHCP for the LAN interface?"
 		IS_LAN_IFACE_DHCP=${ANSWER}
 		if [ "${IS_LAN_IFACE_DHCP}" = "no" ]
@@ -3085,45 +3315,89 @@ init_host ()
 					if [ "${ANSWER}" = "yes" ]
 					then
 						LAN_IFACE_IP=${LAN_IFACE_IP_TEMP}
+						break
 					fi
 				fi
+				sleep 4
 			done
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "dhcp"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: if IS_LAN_IFACE_DHCP = no.
+
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.is_gateway_router false
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	# END: if WAN_NET_IFACE != NULL.
 
-	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/rc.conf
+	# Pre-configure jail.conf with network configuration.
 	sed -i "" "s|JAILS_LAN_SUBNET_C|${JAILS_LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Update hostname.
-	sed -i "" "s/^hostname\=.*/hostname\=\"${HOST_NAME}\.${DOMAIN_NAME}\"/" configs/${HOST_NAME}/etc/rc.conf
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostname=${HOST_NAME}.${DOMAIN_NAME}" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/FDO_LAN_IP/${LAN_IFACE_IP}/g" configs/${HOST_NAME}/etc/hosts
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/FDO_HOST_NAME/${HOST_NAME}/g" configs/${HOST_NAME}/etc/hosts
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/FDO_DOMAIN_NAME/${DOMAIN_NAME}/g" configs/${HOST_NAME}/etc/hosts
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	hostname ${HOST_NAME}.${DOMAIN_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the LAN interface!\n"
+		undo_init_host
+		return 2
+	fi
 
 	# END: configure LAN interface.
+
 
 	# Configure firewall / NAT router.
 	if [ "${WAN_NET_IFACE}" != "NULL" ] && [ "${USES_PPP}" = "no" ]
 	then
 		sed -i "" "s|WAN_NET_IFACE|${WAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
-		sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/pf.conf
-		sed -i "" "s|^pf_enable=.*|pf_enable\=\"YES\"|" configs/${HOST_NAME}/etc/rc.conf
-		sed -i "" "s|^pflog_enable=.*|pflog_enable\=\"YES\"|" configs/${HOST_NAME}/etc/rc.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pf_enable=YES" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pflog_enable=YES" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Additional network configuration.
-	sed -i "" "s|LAN_SUBNET_C|${LAN_SUBNET_C}|" configs/${HOST_NAME}/etc/resolv.conf.static
+	# Configure DNS resolution in a static, persistent resolv.conf file.
 	sed -i "" "s|DOMAIN_NAME|${DOMAIN_NAME}|" configs/${HOST_NAME}/etc/resolv.conf.static
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Ask if we want to continue past point of no returna.
+	# Save server type to host config.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .general.server_type "${SERVER_TYPE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the network configuration!\n"
+		undo_init_host
+		return 2
+	fi
+
+	# Ask if we want to continue past point of no return.
 	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
 	if [ "${ANSWER}" = "no" ]
 	then
@@ -3134,20 +3408,51 @@ init_host ()
 	#### POINT OF NO RETURN ####
 
 	# Backup existing core system conf files.
-	backup_file /etc/rc.conf init-host
-	backup_file /etc/sysctl.conf init-host
-	backup_file /boot/loader.conf init-host
+	for CONFIG_FILE in `find config-templates/init-host/ -type f -print | sed "s|^config-templates/init-host||"`
+	do
+		if [ -e "${CONFIG_FILE}" ]
+		then
+			backup_file ${CONFIG_FILE} init-host
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	done
+
+	# Turn on compression on root pool if it's off.
+	ROOT_POOL=`df -l / 2> /dev/null | tail -1 | cut -d/ -f1`
+	if [ "${}" != "" ]
+	then
+		if [ `zfs get -H -o value compression ${ROOT_POOL}` = "off" ]
+		then
+			INIT_HOST_ROOT_POOL_COMPRESS_TURN_ON=true
+			zfs set compression=on ${ROOT_POOL}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
+
+	INIT_HOST_SYSTEM_MODIFIED=true
 
 	# Remove any cloud provider init.
 	if [ -e /usr/local/etc/rc.d/digitalocean ]
 	then
-		zfs set compression=on zroot
 		chmod -x /usr/local/etc/rc.d/digitalocean
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ -e /usr/local/etc/rc.d/digitaloceanpre ]
+	then
 		chmod -x /usr/local/etc/rc.d/digitaloceanpre
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Install init-host configs to the system so that FDO user has a useful profile.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the host configuration!\n"
+		undo_init_host
+		return 2
+	fi
 
 	# Set password for toor user.
 	echo -e "\n${YELL}Next we need to set a password for the toor user (interactive root shell${NRML}"
@@ -3156,14 +3461,18 @@ init_host ()
 	passwd toor
 	echo -e "${NRML}"
 
+	INIT_HOST_TOOR_PASSWORD_CHANGED=true
+
 	# Set login shell for toor user.
-	chsh -s bash toor > /dev/null 2>&1
+	chsh -s ${LOGIN_SHELL} toor > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${{NRML} Unable to change the shell for the user '${ORNG}toor${NRML}'!\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to change the shell for the user '${ORNG}toor${NRML}'!\n"
 		undo_init_host
 		return 2
 	fi
+
+	INIT_HOST_TOOR_SHELL_CHANGED=true
 
 	# Add arbitrary ssh login user.
 	echo -e "\n${YELL}Next we will add an arbitrary user so that we can login via SSH.${NRML}"
@@ -3171,50 +3480,71 @@ init_host ()
 	echo -e "${YELL}name.${NRML}"
 
 	# Get valid login name.
-	FDO_USERNAME=""
-	while [ "${FDO_USERNAME}" = "" ]
+	ARBITRARY_USERNAME=""
+	while [ "${ARBITRARY_USERNAME}" = "" ]
 	do
 		echo -e ""
-		readee -p "${LCYN}Enter login account username: ${NRML}" FDO_USERNAME_TEMP
+		readee -p "${LCYN}Enter login account username: ${NRML}" ARBITRARY_USERNAME_TEMP
+
 		# Check that the username only contains letters, numbers, periods, underscores and hyphens with a minimum of 3 characters.
-		TEST=`echo "${FDO_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-		if [ ${TEST} -ne 0 ] || [ "${FDO_USERNAME_TEMP}" = "" ]
+		TEST=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
+		if [ ${TEST} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${FDO_USERNAME_TEMP}${NRML}'."
+			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}'."
 			echo -e "       It must be at least three characters and only contain lower case"
 			echo -e "       letters, numbers, periods, underscores and hyphens.\n"
+		elif [ `cat /etc/passwd | cut -d: -f1 | egrep "^${ARBITRARY_USERNAME_TEMP}$" | wc -l` -lt 1 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The username '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}' already exists on this host.\n"
 		else
-			question_yes_no "\nYou have entered '${NRML}${FDO_USERNAME_TEMP}${LCYN}' as the login account username.\nIs this correct?"
+			question_yes_no "\nYou have entered '${NRML}${ARBITRARY_USERNAME_TEMP}${LCYN}' as the login account username.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				FDO_USERNAME=${FDO_USERNAME_TEMP}
+				ARBITRARY_USERNAME=${ARBITRARY_USERNAME_TEMP}
+				break
 			fi
 		fi
+		sleep 4
 	done
 
-	pw useradd ${FDO_USERNAME} -m -s /usr/local/bin/bash -c "FDo login user" -G "operator wheel"
+	# Add arbitrary user to the system.
+	pw useradd ${ARBITRARY_USERNAME} -m -s ${LOGIN_SHELL} -c "FDo login user" -G "operator wheel"
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Unable to add the arbitrary user '${ORNG}${FDO_USERNAME}${NRML}'!\n"
+		echo -e "\n${LRED}ERROR:${NRML} Unable to add the arbitrary user '${ORNG}${ARBITRARY_USERNAME}${NRML}'!\n"
 		undo_init_host
 		return 2
 	fi
+
+	INIT_HOST_ARBITRARY_USER_ADDED=true
+
+	# Set a password for the arbitrary user.
 	echo -e "\n${YELL}And now give this user account a password.${NRML}\n"
 	echo -e "${LCYN}"
-	passwd ${FDO_USERNAME}
+	passwd ${ARBITRARY_USERNAME}
 	echo -e "${NRML}"
 
-	echo -e "\n${LGRN}You should now be able to switch user from ${FDO_USERNAME}${NRML}"
+	echo -e "\n${LGRN}You should now be able to switch user from ${ARBITRARY_USERNAME}${NRML}"
 	echo -e "${LGRN}to toor using the command:${NRML}"
 	echo -e "${LBLU}root${NRML}\n"
 
-	# Store FDO_USERNAME in it's config file.
-	echo ${FDO_USERNAME} > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf
+	# Store ARBITRARY_USERNAME in the host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .general.arbitrary_username "${ARBITRARY_USERNAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Timezone setup.
 	echo -e ""
-	readee -p "${LCYN}Let's perform the hosts timezone setup. Press enter to proceed... ${NRML}" ENTER_PRESSED
+	question_yes "\nLet's perform the hosts timezone setup.\nCan we proceed?"
 	tzsetup
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} System timezone setup via 'tzsetup' failed!\n"
+		undo_init_host
+		return 2
+	fi
+
+	INIT_HOST_TZSETUP_DONE=true
+
 	TZ_AVAILABLE=`cat /usr/share/zoneinfo/zone.tab | egrep -v "^#" | awk '{print $3}' | sort`
 	TZ=""
 	while [ "${TZ}" = "" ]
@@ -3226,10 +3556,14 @@ init_host ()
 		if [ "${ANSWER}" = "yes" ]
 		then
 			TZ="${TZ_TEMP}"
+			break
 		fi
+		sleep 4
 	done
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/profile
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/csh.login
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set correct time/date from ntp.org.
 	echo -e "\n${YELL}Setting correct time and date from ntp.org...${NRML}\n"
@@ -3253,57 +3587,97 @@ init_host ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				LOCALE="${LOCALE_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 		LOCALE_CHARSET=$(echo ${LOCALE} | cut -d. -f2)
 		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/etc/profile
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/etc/profile
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/etc/csh.login
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/etc/csh.login
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/profile
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/etc/profile
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during the host configuration!\n"
+		undo_init_host
+		return 2
 	fi
 
 	#### CONFIG PROFILE FINISHED ####
 
 	# Install scripts to the system.
 	install_scripts /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install final init-host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create ssl certs directory.
 	mkdir -p /usr/local/etc/ssl/certs
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# If not using DHCP, symlink resolv.conf.static to resolv.conf.
 	if [ "${IS_PRIMARY_IFACE_DHCP}" = "no" ] || [ "${USES_PPP}" = "yes" ]
 	then
-		backup_file /etc/resolv.conf init-host
-		rm /etc/resolv.conf
+		if [ -e "/etc/resolv.conf" ]
+		then
+			backup_file /etc/resolv.conf init-host
+			rm /etc/resolv.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
 		ln -s /etc/resolv.conf.static /etc/resolv.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Remove the .gitignore from the local repo configs directory (if it exists).
 	git rm configs/.gitignore 2> /dev/null
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the host configuration!\n"
+		undo_init_host
+		return 2
+	fi
 
 	# Commit this hosts config to the local repo.
 	echo -e "\n${YELL}Committing this hosts config to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	git commit -m "Adding new host; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_init_jails
+		return 2
+	fi
 
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the private remote repo...${NRML}\n"
 		git_push origin master
-		RETURN_CODE=${?}
-		if [ ${RETURN_CODE} -ne 0 ]
+		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${RETURN_CODE} ))
 		fi
 	fi
 
@@ -3316,12 +3690,7 @@ init_host ()
 		reboot
 	fi
 
-	if [ ${ERROR_COUNT} -gt 0 ]
-	then
-		return 2
-	else
-		return 0
-	fi
+	return 0
 }
 
 patch_host()
@@ -3426,25 +3795,30 @@ setup_vnc_desktop()
 		return 1
 	fi
 
-	FDO_USERNAME=`cat configs/${HOST_NAME}${FDO_CONFIG_ROOT}/fdo_username.conf`
+	ARBITRARY_USERNAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .general.arbitrary_username`
+	if [ ${?} -ne 0 ] || [ "${ARBITRARY_USERNAME}" = "null" ] || [ "${ARBITRARY_USERNAME}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was a problem retrieving the arbitrary username for this host!\n"
+		return 2
+	fi
 
 	# Copy setup-vnc-desktop template configs to this hosts' repo profile.
 	install_file_tree config-templates/setup-vnc-desktop configs/${HOST_NAME}/
 
-	# Rename FDO_USERNAME home folder in host config profile.
-	if [ -d configs/${HOST_NAME}/home/${FDO_USERNAME} ]
+	# Rename ARBITRARY_USERNAME home folder in host config profile.
+	if [ -d configs/${HOST_NAME}/home/${ARBITRARY_USERNAME} ]
 	then
-		mv configs/${HOST_NAME}/home/FDO_USERNAME/* configs/${HOST_NAME}/home/FDO_USERNAME/.[!.]* configs/${HOST_NAME}/home/${FDO_USERNAME}/
+		mv configs/${HOST_NAME}/home/ARBITRARY_USERNAME/* configs/${HOST_NAME}/home/ARBITRARY_USERNAME/.[!.]* configs/${HOST_NAME}/home/${ARBITRARY_USERNAME}/
 	else
-		mv configs/${HOST_NAME}/home/FDO_USERNAME configs/${HOST_NAME}/home/${FDO_USERNAME}
+		mv configs/${HOST_NAME}/home/ARBITRARY_USERNAME configs/${HOST_NAME}/home/${ARBITRARY_USERNAME}
 	fi
 
 	# Enable DBUS in rc.conf.
 	sed -i "" "s/dbus_enable=\"NO\"/dbus_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 
 	# Substitute FDo username in rc.local and rc.shutdown.local.
-	sed -i "" "s|FDO_USERNAME|${FDO_USERNAME}|" configs/${HOST_NAME}/etc/rc.local
-	sed -i "" "s|FDO_USERNAME|${FDO_USERNAME}|" configs/${HOST_NAME}/etc/rc.shutdown.local
+	sed -i "" "s|ARBITRARY_USERNAME|${ARBITRARY_USERNAME}|" configs/${HOST_NAME}/etc/rc.local
+	sed -i "" "s|ARBITRARY_USERNAME|${ARBITRARY_USERNAME}|" configs/${HOST_NAME}/etc/rc.shutdown.local
 
 	# Uncomment VNC related lines in rc.local and rc.shutdown.local.
 	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.local
@@ -3453,8 +3827,8 @@ setup_vnc_desktop()
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
-	# Change ownership of the FDO_USERNAME home folder.
-	chown -R ${FDO_USERNAME}:${FDO_USERNAME} /home/${FDO_USERNAME}
+	# Change ownership of the ARBITRARY_USERNAME home folder.
+	chown -R ${ARBITRARY_USERNAME}:${ARBITRARY_USERNAME} /home/${ARBITRARY_USERNAME}
 
 	# Start dbus.
 	service dbus start
@@ -3518,11 +3892,11 @@ setup_vnc_desktop()
 	echo -e "${YELL}To access the VNC session, use a VNC Viewer (e.g. TigerVNC or SSVNC) with SSH${NRML}"
 	echo -e "${YELL}enabled and one of the following URIs:${NRML}"
 	echo -e "Remotely:"
-	echo -e "${LGRN}${FDO_USERNAME}@${FULL_HOST_NAME}:10${NRML}"
-	echo -e "${LGRN}${FDO_USERNAME}@${DEFAULT_ROUTE_IP}:10${NRML}"
+	echo -e "${LGRN}${ARBITRARY_USERNAME}@${FULL_HOST_NAME}:10${NRML}"
+	echo -e "${LGRN}${ARBITRARY_USERNAME}@${DEFAULT_ROUTE_IP}:10${NRML}"
 	echo -e "Locally:"
-	echo -e "${LGRN}${FDO_USERNAME}@${HOST_NAME}:10${NRML}"
-	echo -e "${LGRN}${FDO_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
+	echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_NAME}:10${NRML}"
+	echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
 
 	return 0
 }
