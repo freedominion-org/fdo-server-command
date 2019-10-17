@@ -3385,6 +3385,8 @@ init_host ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pflog_enable=YES" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.pf_nat_enabled true
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Configure DNS resolution in a static, persistent resolv.conf file.
