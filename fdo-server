@@ -3858,7 +3858,12 @@ setup_vnc_desktop()
 	fi
 
 	# Get the LAN interface for this host.
-	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} Failed to get the LAN interface id from the host config file!\n"
+		return 2
+	fi
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
 	NET_IFACES=`ifconfig -l`
@@ -3894,9 +3899,12 @@ setup_vnc_desktop()
 	echo -e "Remotely:"
 	echo -e "${LGRN}${ARBITRARY_USERNAME}@${FULL_HOST_NAME}:10${NRML}"
 	echo -e "${LGRN}${ARBITRARY_USERNAME}@${DEFAULT_ROUTE_IP}:10${NRML}"
-	echo -e "Locally:"
-	echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_NAME}:10${NRML}"
-	echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
+	if [ "${LAN_NET_IFACE}" != "" ]
+	then
+		echo -e "Locally:"
+		echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_NAME}:10${NRML}"
+		echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
+	fi
 
 	return 0
 }
@@ -3952,37 +3960,13 @@ init_hotdesking ()
 		done
 	fi
 
-	# Warn if hotdesk user home directory base filesystem already exists.
-	zfs list ${HOTDESK_POOL_NAME}/fdo-hotdesk-home 2> /dev/null
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
-	fi
-
-	# Get the NIS domainname.
-	NIS_DOMAIN_NAME=""
-	while [ "${NIS_DOMAIN_NAME}" = "" ]
-	do
-		echo -e ""
-		readee -p "${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}" NIS_DOMAIN_NAME_TEMP
-		# Check that the nisdomainname is a valid domain name.
-		test_valid_fqhn "${NIS_DOMAIN_NAME_TEMP}"
-		if [ "${VALID_FQHN}" = "yes" ]
-		then
-			question_yes_no "\nYou have entered '${NRML}${NIS_DOMAIN_NAME_TEMP}${LCYN}' as the NIS domain name.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				NIS_DOMAIN_NAME=${NIS_DOMAIN_NAME_TEMP}
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The NIS domain name can not be '${ORNG}${NIS_DOMAIN_NAME_TEMP}${NRML}'."
-			echo -e "       It must only contain letters, numbers, periods and hyphens."
-			echo -e "       It must not begin or end with a hyphen or a period.\n"
-		fi
-	done
-
 	# Get the LAN interface of this host.
-	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
 	NET_IFACES=`ifconfig -l`
@@ -4024,6 +4008,35 @@ init_hotdesking ()
 			fi
 		done
 	fi
+
+	# Warn if hotdesk user home directory base filesystem already exists.
+	zfs list ${HOTDESK_POOL_NAME}/fdo-hotdesk-home 2> /dev/null
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
+	fi
+
+	# Get the NIS domainname.
+	NIS_DOMAIN_NAME=""
+	while [ "${NIS_DOMAIN_NAME}" = "" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}" NIS_DOMAIN_NAME_TEMP
+		# Check that the nisdomainname is a valid domain name.
+		test_valid_fqhn "${NIS_DOMAIN_NAME_TEMP}"
+		if [ "${VALID_FQHN}" = "yes" ]
+		then
+			question_yes_no "\nYou have entered '${NRML}${NIS_DOMAIN_NAME_TEMP}${LCYN}' as the NIS domain name.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				NIS_DOMAIN_NAME=${NIS_DOMAIN_NAME_TEMP}
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} The NIS domain name can not be '${ORNG}${NIS_DOMAIN_NAME_TEMP}${NRML}'."
+			echo -e "       It must only contain letters, numbers, periods and hyphens."
+			echo -e "       It must not begin or end with a hyphen or a period.\n"
+		fi
+	done
 
 	sed -i "" "s/mountd_enable=\"NO\"/mountd_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/nfs_server_enable=\"NO\"/nfs_server_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -4391,7 +4404,12 @@ init_jails ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Get the LAN interface that the jails will run on.
-	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
 	NET_IFACES=`ifconfig -l`
@@ -4977,7 +4995,12 @@ create_jail ()
 
 	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
 
-	LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
 
 	if [ "${JAIL_IP}" = "" ]
 	then
@@ -5045,7 +5068,7 @@ create_jail ()
 	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Create entry in 'configs/${HOST_NAME}/etc/jail.conf'.
+	# Create entry in /etc/jail.conf.
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
@@ -5634,8 +5657,12 @@ init_vms ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Get the LAN interface for this host.
-	# TODO: replace with UCL config file.
-	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
 	NET_IFACES=`ifconfig -l`
@@ -7920,38 +7947,13 @@ init_partimag ()
 		done
 	fi
 
-	# Test for existing partimag filesystem and prompt how to proceed.
-	PARTIMAG_FILESYSTEM_EXISTS="no"
-	zfs list -H ${PARTIMAG_POOL_NAME}/partimag > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
-		question_yes_no "\nIt seems as though '${NRML}init-partimag${LCYN}' has already been applied to this host.\nWould you like to proceed?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			# Ask whether to purge, archive or reuse exsiting partimag filesystem.
-			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing partimag filesystem\nand all it's children filesystems? [CAUTION]"
-			if [ "${ANSWER}" = "purge" ]
-			then
-				zfs destroy -Rf ${PARTIMAG_POOL_NAME}/partimag
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			elif [ "${ANSWER}" = "archive" ]
-			then
-				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
-				zfs rename -f ${PARTIMAG_POOL_NAME}/partimag ${PARTIMAG_POOL_NAME}/partimag_renamed-by-init-partimag-${NOW}
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			elif [ "${ANSWER}" = "reuse" ]
-			then
-				PARTIMAG_FILESYSTEM_EXISTS="yes"
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
-			return 1
-		fi
-	fi
-
 	# Get the LAN interface that the NFS share will run on.
-	CONFIG_LAN_NET_IFACE=`cat ${FDO_CONFIG_ROOT}/net_iface_lan.conf`
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
 	LAN_NET_IFACE=""
 	HOST_LAN_IP_ADDRESSES=""
 	NET_IFACES=`ifconfig -l`
@@ -7981,6 +7983,36 @@ init_partimag ()
 		HOST_LAN_IP="${IP_ADDRESS}"
 		break
 	done
+
+	# Test for existing partimag filesystem and prompt how to proceed.
+	PARTIMAG_FILESYSTEM_EXISTS="no"
+	zfs list -H ${PARTIMAG_POOL_NAME}/partimag > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
+		question_yes_no "\nIt seems as though '${NRML}init-partimag${LCYN}' has already been applied to this host.\nWould you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Ask whether to purge, archive or reuse exsiting partimag filesystem.
+			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing partimag filesystem\nand all it's children filesystems? [CAUTION]"
+			if [ "${ANSWER}" = "purge" ]
+			then
+				zfs destroy -Rf ${PARTIMAG_POOL_NAME}/partimag
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "archive" ]
+			then
+				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+				zfs rename -f ${PARTIMAG_POOL_NAME}/partimag ${PARTIMAG_POOL_NAME}/partimag_renamed-by-init-partimag-${NOW}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "reuse" ]
+			then
+				PARTIMAG_FILESYSTEM_EXISTS="yes"
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
+			return 1
+		fi
+	fi
 
 	INIT_PARTIMAG_MODIFIED=true
 
