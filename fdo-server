@@ -2414,7 +2414,9 @@ connect_internet ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -3956,7 +3958,9 @@ init_hotdesking ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				HOTDESK_POOL_NAME="${HOTDESK_POOL_NAME_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -4005,7 +4009,9 @@ init_hotdesking ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				NIS_HOST_IP="${NIS_HOST_IP_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -4454,7 +4460,9 @@ init_jails ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				JAIL_POOL_NAME="${JAIL_POOL_NAME_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -5280,7 +5288,9 @@ create_jail_from_recipe ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					SIDES_POOL_NAME="${SIDES_POOL_NAME_TEMP}"
+					break
 				fi
+				sleep 4
 			done
 		fi
 	fi
@@ -5707,7 +5717,9 @@ init_vms ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VMS_POOL_NAME="${VMS_POOL_NAME_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -6224,6 +6236,7 @@ create_vm_image_handler ()
 						if [ "${ANSWER}" = "yes" ]
 						then
 							ATTACH_IMAGE_FILE="${ATTACH_IMAGE_FILE_TEMP}"
+							break
 						fi
 					else
 						echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
@@ -6235,6 +6248,7 @@ create_vm_image_handler ()
 						fi
 						echo -e ""
 					fi
+					sleep 4
 				done
 			else
 				ATTACH_EXISTING_IMAGE=false
@@ -6428,6 +6442,7 @@ create_vm_image_handler ()
 						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
 						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
 						IMAGE_NAME=`echo ${IMAGE_FILENAME} | cut -d/ -f1`
+						break
 					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
@@ -6439,6 +6454,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
+				sleep 4
 			done
 
 			IFS="${CURRENT_IFS}"
@@ -6550,6 +6566,7 @@ create_vm_image_handler ()
 						if [ "${ANSWER}" = "yes" ]
 						then
 							INSERT_IMAGE_FILE="${INSERT_IMAGE_FILE_TEMP}"
+							break
 						fi
 					else
 						echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
@@ -6565,6 +6582,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
+				sleep 4
 			done
 
 			if [ "${INSERT_IMAGE_FILE}" != "" ]
@@ -6679,6 +6697,7 @@ create_vm_image_handler ()
 					then
 						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
 						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
+						break
 					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} No file selected!\n"
@@ -6690,6 +6709,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
+				sleep 4
 			done
 
 			IFS="${CURRENT_IFS}"
@@ -6951,6 +6971,7 @@ create_vm_template ()
 					then
 						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
 						VM_OS_INSTALL_ISO_FILE=`basename "${OS_INSTALLER_ISO}"`
+						break
 					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is not an ISO!\n"
@@ -6966,6 +6987,7 @@ create_vm_template ()
 				fi
 				echo -e ""
 			fi
+			sleep 4
 		done
 	fi
 
@@ -6995,6 +7017,7 @@ create_vm_template ()
 					if [ "${ANSWER}" = "yes" ]
 					then
 						EXISTING_IMAGE_PATH="${EXISTING_IMAGE_PATH_TEMP}"
+						break
 					fi
 				else
 					echo -e "\n\n${ORNG}WARNING:${NRML} File selected is less than 1GB, too small!\n"
@@ -7010,6 +7033,7 @@ create_vm_template ()
 				fi
 				echo -e ""
 			fi
+			sleep 4
 		done
 	fi
 
@@ -7029,7 +7053,9 @@ create_vm_template ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -7065,7 +7091,9 @@ create_vm_template ()
 		if [ "${ANSWER}" = "yes" ]
 		then
 			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+			break
 		fi
+		sleep 4
 	done
 
 	# Get the VMs' VNC password.
@@ -7543,7 +7571,9 @@ create_vm_instance ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
@@ -7579,7 +7609,9 @@ create_vm_instance ()
 		if [ "${ANSWER}" = "yes" ]
 		then
 			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+			break
 		fi
+		sleep 4
 	done
 
 	# Get the VMs' VNC password.
@@ -7943,7 +7975,9 @@ init_partimag ()
 			if [ "${ANSWER}" = "yes" ]
 			then
 				PARTIMAG_POOL_NAME="${PARTIMAG_POOL_NAME_TEMP}"
+				break
 			fi
+			sleep 4
 		done
 	fi
 
