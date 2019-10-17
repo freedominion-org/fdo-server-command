@@ -100,7 +100,7 @@ DEFAULT_LAN_SUBNET_B="10.0"
 if [ -e "${UCL_CMD}" ] && [ -e "${HOST_CONF_PATH}" ]
 then
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} It appears that there is a problem accessing the host config file!\n"
 		CONFIG_LAN_NET_IFACE="null"
@@ -3859,7 +3859,7 @@ setup_vnc_desktop()
 
 	# Get the LAN interface for this host.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} Failed to get the LAN interface id from the host config file!\n"
 		return 2
@@ -3962,7 +3962,7 @@ init_hotdesking ()
 
 	# Get the LAN interface of this host.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
 		return 2
@@ -4405,7 +4405,7 @@ init_jails ()
 
 	# Get the LAN interface that the jails will run on.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
 		return 2
@@ -4996,7 +4996,7 @@ create_jail ()
 	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
 
 	LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${LAN_NET_IFACE}" = "null" ] || [ "${LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
 		return 2
@@ -5658,7 +5658,7 @@ init_vms ()
 
 	# Get the LAN interface for this host.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
 		return 2
@@ -7949,7 +7949,7 @@ init_partimag ()
 
 	# Get the LAN interface that the NFS share will run on.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
-	if [ ${?} -ne 0 ]
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
 		return 2
