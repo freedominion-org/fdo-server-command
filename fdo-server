@@ -59,6 +59,9 @@ PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
 
+LATEST_JAILS_SUBSYS_COMPAT=1
+
+
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
 VMS_CONF_PATH=${VMS_CONF_PATH:-"/usr/local/etc/fdo/vms.conf"}
 VMS_ROOT_FS="fdo-vms"
@@ -4339,7 +4342,7 @@ undo_init_jails ()
 	if [ ${INIT_JAILS_FILESYSTEMS_CREATED} = true ]
 	then
 		# Destroy the template jail filesystem.
-		zfs destroy -rf ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
+		zfs destroy -rf ${JAILS_POOL_NAME}/jails > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -4439,7 +4442,7 @@ init_jails ()
 	fi
 
 	# Get pool name to use for base of jails.
-	JAIL_POOL_NAME=""
+	JAILS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
 	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
@@ -4449,17 +4452,17 @@ init_jails ()
 	fi
 	if [ ${NUM_POOLS} -lt 2 ]
 	then
-		JAIL_POOL_NAME=${POOLS_AVAILABLE}
+		JAILS_POOL_NAME=${POOLS_AVAILABLE}
 	else
-		while [ "${JAIL_POOL_NAME}" = "" ]
+		while [ "${JAILS_POOL_NAME}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select pool to use for jails filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
-			JAIL_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			JAILS_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${JAIL_POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${JAILS_POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				JAIL_POOL_NAME="${JAIL_POOL_NAME_TEMP}"
+				JAILS_POOL_NAME="${JAILS_POOL_NAME_TEMP}"
 				break
 			fi
 			sleep 4
@@ -4468,10 +4471,10 @@ init_jails ()
 
 	# Test for existing jail base filesystem and prompt how to proceed.
 	JAILS_FILESYSTEM_EXISTS="no"
-	zfs list -H ${JAIL_POOL_NAME}/jails > /dev/null 2>&1
+	zfs list -H ${JAILS_POOL_NAME}/jails > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAIL_POOL_NAME}/jails${NRML}' already exists!\n"
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${JAILS_POOL_NAME}/jails${NRML}' already exists!\n"
 		question_yes_no "\nIt seems as though '${NRML}init-jails${LCYN}' has already been applied to this host.\nWould you like to proceed?"
 		if [ "${ANSWER}" = "yes" ]
 		then
@@ -4479,12 +4482,12 @@ init_jails ()
 			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing jail base filesystem\nand all it's children filesystems? [CAUTION]"
 			if [ "${ANSWER}" = "purge" ]
 			then
-				zfs destroy -Rf ${JAIL_POOL_NAME}/jails
+				zfs destroy -Rf ${JAILS_POOL_NAME}/jails
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			elif [ "${ANSWER}" = "archive" ]
 			then
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
-				zfs rename -f ${JAIL_POOL_NAME}/jails ${JAIL_POOL_NAME}/jails_renamed-by-init-jails-${NOW}
+				zfs rename -f ${JAILS_POOL_NAME}/jails ${JAILS_POOL_NAME}/jails_renamed-by-init-jails-${NOW}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			elif [ "${ANSWER}" = "reuse" ]
 			then
@@ -4539,28 +4542,28 @@ init_jails ()
 	then
 		INIT_JAILS_FILESYSTEMS_CREATED=true
 		echo -e "\n${YELL}Creating ZFS filesystems for template jail...${NRML}\n"
-		zfs create -o mountpoint=/jls ${JAIL_POOL_NAME}/jails
+		zfs create -o mountpoint=/jls ${JAILS_POOL_NAME}/jails
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	zfs list ${JAIL_POOL_NAME}/jails/template > /dev/null 2>&1
+	zfs list ${JAILS_POOL_NAME}/jails/template > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs create ${JAIL_POOL_NAME}/jails/template
+		zfs create ${JAILS_POOL_NAME}/jails/template
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Mount the filesystems if they are not already.
-	zfs mount | egrep "^${JAIL_POOL_NAME}/jails " > /dev/null 2>&1
+	zfs mount | egrep "^${JAILS_POOL_NAME}/jails " > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${JAIL_POOL_NAME}/jails
+		zfs mount ${JAILS_POOL_NAME}/jails
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	zfs mount | egrep "^${JAIL_POOL_NAME}/jails/template "
+	zfs mount | egrep "^${JAILS_POOL_NAME}/jails/template "
 	if [ ${?} -ne 0 ]
 	then
-		zfs mount ${JAIL_POOL_NAME}/jails/template
+		zfs mount ${JAILS_POOL_NAME}/jails/template
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4587,7 +4590,8 @@ init_jails ()
 	fi
 
 	INIT_JAILS_HOST_MODIFIED=true
-	echo "${JAIL_POOL_NAME}" > configs/${HOST_NAME}${FDO_CONFIG_ROOT}/jails_pool.conf
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#template/template/" configs/${HOST_NAME}/etc/jail.conf
@@ -4708,12 +4712,16 @@ init_jails ()
 	sed -i "" "s/^template/#template/" configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.jails_compat "${LATEST_JAILS_SUBSYS_COMPAT}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	# Install updated host configs to the system (after disabling template jail).
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Take snapshot of the template for use in create-jail*.
-	zfs snapshot ${JAIL_POOL_NAME}/jails/template@${FREEBSD_VERSION_STRING}
+	zfs snapshot ${JAILS_POOL_NAME}/jails/template@${FREEBSD_VERSION_STRING}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -4815,8 +4823,14 @@ revert_create_jail ()
 	ERROR_COUNT=0
 
 	# Sanity tests.
-	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	zfs list -H ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	JAILS_POOL_NAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .storage.jails_pool`
+	if [ ${?} -ne 0 ] || [ "${JAILS_POOL_NAME}" = "null" ] || [ "${JAILS_POOL_NAME}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the jails pool name from the host config file!\n       Aborting.\n"
+		return 2
+	fi
+
+	zfs list -H ${JAILS_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
@@ -4875,7 +4889,7 @@ revert_create_jail ()
 	done
 
 	# Destroy the jail filesystem.
-	zfs destroy -rf ${JAIL_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	zfs destroy -rf ${JAILS_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	cd "/${REPO_NAME}"
@@ -4963,14 +4977,22 @@ create_jail ()
 		return 1
 	fi
 
-	# Check that the jails subsystem is initialised and therefore we know the pool name.
-	JAIL_POOL_NAME=`cat ${FDO_CONFIG_ROOT}/jails_pool.conf 2> /dev/null`
-	if [ ${?} -ne 0 ]
+	# Check that the jails subsystem is initialised.
+	JAILS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.jails_compat`
+	if [ ${?} -ne 0 ] || [ "${JAILS_SUBSYS_COMPAT}" = "null" ] || [ "${JAILS_SUBSYS_COMPAT}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-jails${NRML}\n       Aborting.\n"
 		return 1
+	fi
+
+	# Get the jails pool name from the host config file.
+	JAILS_POOL_NAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .storage.jails_pool`
+	if [ ${?} -ne 0 ] || [ "${JAILS_POOL_NAME}" = "null" ] || [ "${JAILS_POOL_NAME}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the jails pool name from the host config file!\n       Aborting.\n"
+		return 2
 	fi
 
 	# Check that the jail_name has not already been used.
@@ -5001,7 +5023,7 @@ create_jail ()
 	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
 	FREEBSD_ARCH=`uname -m`
 
-	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAIL_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
+	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAILS_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
 
 	LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
 	if [ ${?} -ne 0 ] || [ "${LAN_NET_IFACE}" = "null" ] || [ "${LAN_NET_IFACE}" = "" ]
@@ -5028,7 +5050,7 @@ create_jail ()
 
 	# Create new jail filesystem by zfs send/recv from the template jail snapshot.
 	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
-	zfs send -e ${JAIL_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAIL_POOL_NAME}/jails/${JAIL_NAME}
+	zfs send -e ${JAILS_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAILS_POOL_NAME}/jails/${JAIL_NAME}
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "${LRED}ERROR:${NRML} Failed to zfs send the jail template snapshot to the new jail filesystem!\n"
