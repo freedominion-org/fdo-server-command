@@ -60,6 +60,7 @@ PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
 
 LATEST_JAILS_SUBSYS_COMPAT=1
+LATEST_VMS_SUBSYS_COMPAT=1
 
 
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
@@ -79,7 +80,7 @@ VM_MAX_MEM_SIZE_MB=65536
 VM_MIN_IMAGE_SIZE_GB=1
 VM_MAX_IMAGE_SIZE_GB=16384
 VM_DEFAULT_SECTOR_SIZE=4096
-VM_VNC_PORT_NUM_START=6000
+DEFAULT_VM_VNC_PORT_NUM_START=6000
 VM_DEFAULT_NIC_DRIVER="e1000"
 VM_DEFAULT_BOOT_LOADER="UEFI"
 FDO_VMS_LIST_PATH="/usr/local/sbin/fdo-vms-list"
@@ -718,6 +719,15 @@ get_jail_id_from_name ()
 get_next_vnc_port_num ()
 {
 
+	# ASSUME: that before calling this function, we have tested that the vms.conf file is accessible.
+
+	VM_VNC_PORT_NUM_START=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .network.vnc_port_offset`
+	if [ ${?} -ne 0 ] || [ "${VM_VNC_PORT_NUM_START}" = "null" ] || [ "${VM_VNC_PORT_NUM_START}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that there is a problem accessing the VMs config file!\n"
+		return 2
+	fi
+
 	VNC_PORT_NUM=-1
 	VNC_PORT_NUM_TEMP=${VM_VNC_PORT_NUM_START}
 	while [ ${VNC_PORT_NUM} -lt 0 ]
@@ -754,6 +764,8 @@ get_next_vnc_port_num ()
 			VNC_PORT_NUM=${VNC_PORT_NUM_TEMP}
 		fi
 	done
+
+	return 0
 }
 
 test_num_mandatory_sub_args ()
@@ -4414,6 +4426,24 @@ init_jails ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the jails subsystem is not already initialised.
+	JAILS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.jails_compat`
+	if [ ${?} -eq 0 ] && [ "${JAILS_SUBSYS_COMPAT}" != "null" ] && [ "${JAILS_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-jails${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
 	# Get the LAN interface that the jails will run on.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
 	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
@@ -4592,6 +4622,8 @@ init_jails ()
 	fi
 
 	INIT_JAILS_HOST_MODIFIED=true
+
+	# Set some basic configuration for the jail subsystem.
 	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -4960,6 +4992,14 @@ create_jail ()
 
 	ERROR_COUNT=0
 
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
 	# Check for unsaved registered host config files.
 	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered\nconfig files...${NRML}\n"
 	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
@@ -4971,12 +5011,20 @@ create_jail ()
 		return 1
 	fi
 
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		return 1
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the jails.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${JAILS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${JAILS_CONF_PATH}'!\n       Aborting.\n"
+		return 2
 	fi
 
 	# Check that the jails subsystem is initialised.
@@ -5690,6 +5738,24 @@ init_vms ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the VMs subsystem is not already initialised.
+	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
+	if [ ${?} -eq 0 ] && [ "${VMS_SUBSYS_COMPAT}" != "null" ] && [ "${VMS_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-vms${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
 	# Get the LAN interface for this host.
 	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
 	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
@@ -5980,12 +6046,19 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Store subsystem configuration details.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.pool_name "${VMS_POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.vms_pool "${VMS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_id "${VM_BRIDGE_ID}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.bridge_id_num "${VM_BRIDGE_ID}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .general.bridge_net_iface "${LAN_NET_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.bridge_nic_id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.vnc_port_offset "${DEFAULT_VM_VNC_PORT_NUM_START}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.vms_compat "${LATEST_VMS_SUBSYS_COMPAT}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
@@ -6174,7 +6247,8 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "list" ]
 		then
 
-			# Retrieve existing image types (assume 'null' is empty slot).
+			# Retrieve existing image types.
+			# ASSUME: 'null' is empty slot.
 			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
 			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
 			IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize`
@@ -6792,22 +6866,6 @@ create_vm_template ()
 		return 1
 	fi
 
-	# Check that the template name is not already used.
-	VM_INDEX=0
-	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}` != "null" ]
-	do
-		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}.name`
-		if [ "${VM_NAME}" = "${TEST_TEMPLATE_NAME}" ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} The template '${ORNG}${VM_NAME}${NRML}' already exists.\n"
-			echo -e "       To delete it, use the command:"
-			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-template ${VM_NAME}${NRML}\n"
-			echo -e "       Aborting.\n"
-			return 1
-		fi
-		VM_INDEX=$(( ${VM_INDEX} + 1 ))
-	done
-
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
 	then
@@ -6830,19 +6888,71 @@ create_vm_template ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
-	# Check that the VM subsystem has been initialised on this host.
-	VMS_POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
-	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ]
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the vms.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the VMs subsystem is initialised.
+	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
+	if [ ${?} -ne 0 ] || [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is not initialised."
 		echo -e "       Consider using the command:"
 		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
 		return 1
 	fi
 
-	# Get the bridge id and it's net interface name set in init-vms.
-	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
-	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
+	# Get the VMs pool name from the host config file.
+	VMS_POOL_NAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .storage.vms_pool`
+	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ] || [ "${VMS_POOL_NAME}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs pool name from the host config file!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the template name is not already used.
+	VM_INDEX=0
+	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}` != "null" ]
+	do
+		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}.name`
+		if [ "${VM_NAME}" = "${TEST_TEMPLATE_NAME}" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The template '${ORNG}${VM_NAME}${NRML}' already exists.\n"
+			echo -e "       To delete it, use the command:"
+			echo -e "       ${LBLU}${SCRIPT_NAME} destroy-vm-template ${VM_NAME}${NRML}\n"
+			echo -e "       Aborting.\n"
+			return 1
+		fi
+		VM_INDEX=$(( ${VM_INDEX} + 1 ))
+	done
+
+	# Get the bridge id from the VMs config file.
+	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .network.bridge_id_num`
+	if [ ${?} -ne 0 ] || [ "${VM_BRIDGE_ID}" = "null" ] || [ "${VM_BRIDGE_ID}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs bridge id number from the VMs config file!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Get the bridge net interface (NIC) name from the VMs config file.
+	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .network.bridge_nic_id`
+	if [ ${?} -ne 0 ] || [ "${VM_BRIDGE_NET_IFACE}" = "null" ] || [ "${VM_BRIDGE_NET_IFACE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs bridge NIC id from the VMs config file!\n       Aborting.\n"
+		return 2
+	fi
 
 	# Get the network interface used for the bridge interface.
 	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
@@ -7085,6 +7195,11 @@ create_vm_template ()
 
 	# Get next available VNC port.
 	get_next_vnc_port_num
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
+		return 2
+	fi
 	VM_VNC_PORT=${VNC_PORT_NUM}
 
 	# Get next available tap interface id.
@@ -7168,8 +7283,9 @@ create_vm_template ()
 		echo -e "VM_VNC_PASSWORD=${VM_VNC_PASSWORD}"
 	fi
 
-	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
 	CREATE_VM_TEMPLATE_MODIFIED=true
+
+	echo -e "\n${YELL}Creating new template VM...${NRML}\n"
 
 	# Create new tap interface and add it to the VM bridge.
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
@@ -7383,6 +7499,74 @@ create_vm_instance ()
 
 	ERROR_COUNT=0
 
+	# Check that the instance name is valid.
+	test_valid_vm_name "${VM_NAME}"
+	if [ "${VALID_VM_NAME}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The instance name can not be '${ORNG}${VM_NAME}${NRML}'."
+		echo -e "       It must only contain letters, numbers and underscores."
+		echo -e "       It must not begin or end with an underscore."
+		echo -e "       It must be between 3 and 30 characters in length."
+		echo -e "       Aborting.\n"
+		return 1
+	fi
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check for unsaved registered host config files.
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		return 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the vms.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the VMs subsystem is initialised.
+	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
+	if [ ${?} -ne 0 ] || [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is not initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
+	# Get the VMs pool name from the host config file.
+	VMS_POOL_NAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .storage.vms_pool`
+	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ] || [ "${VMS_POOL_NAME}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs pool name from the host config file!\n       Aborting.\n"
+		return 2
+	fi
+
 	# Check that the template exists.
 	VM_TEMPLATE_EXISTS=false
 	VM_TEMPLATE_INDEX=0
@@ -7400,18 +7584,6 @@ create_vm_instance ()
 	if [ ${VM_TEMPLATE_EXISTS} = false ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The template VM '${ORNG}${VM_TEMPLATE_NAME}${NRML}' does not exist on this host.\n"
-		echo -e "       Aborting.\n"
-		return 1
-	fi
-
-	# Check that the instance name is valid.
-	test_valid_vm_name "${VM_NAME}"
-	if [ "${VALID_VM_NAME}" = "no" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The instance name can not be '${ORNG}${VM_NAME}${NRML}'."
-		echo -e "       It must only contain letters, numbers and underscores."
-		echo -e "       It must not begin or end with an underscore."
-		echo -e "       It must be between 3 and 30 characters in length."
 		echo -e "       Aborting.\n"
 		return 1
 	fi
@@ -7455,41 +7627,21 @@ create_vm_instance ()
 		return 1
 	fi
 
-	# Check that the host is already registered.
-	if [ ! -d "configs/${HOST_NAME}" ]
+	# Get the bridge id from the VMs config file.
+	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .network.bridge_id_num`
+	if [ ${?} -ne 0 ] || [ "${VM_BRIDGE_ID}" = "null" ] || [ "${VM_BRIDGE_ID}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
-		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
-		return 1
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs bridge id number from the VMs config file!\n       Aborting.\n"
+		return 2
 	fi
 
-	# Check for unsaved registered host config files.
-	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
-	echo -e "${YELL}config files...${NRML}\n"
-	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
-	if [ ${?} -gt 0 ]
+	# Get the bridge net interface (NIC) name from the VMs config file.
+	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .network.bridge_nic_id`
+	if [ ${?} -ne 0 ] || [ "${VM_BRIDGE_NET_IFACE}" = "null" ] || [ "${VM_BRIDGE_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
-		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
-		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
-		return 1
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs bridge NIC id from the VMs config file!\n       Aborting.\n"
+		return 2
 	fi
-
-	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
-
-	# Check that the VM subsystem has been initialised on this host.
-	VMS_POOL_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.pool_name`
-	if [ ${?} -ne 0 ] || [ "${VMS_POOL_NAME}" = "null" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} It appears that the VM subsystem is not initialised."
-		echo -e "       Consider using the command:"
-		echo -e "       ${LBLU}${SCRIPT_NAME} init-vms${NRML}\n       Aborting.\n"
-		return 1
-	fi
-
-	# Get the bridge id and it's net interface name set in init-vms.
-	VM_BRIDGE_ID=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_id`
-	VM_BRIDGE_NET_IFACE=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .general.bridge_net_iface`
 
 	# Get the network interface used for the bridge interface.
 	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
@@ -7603,6 +7755,11 @@ create_vm_instance ()
 
 	# Get next available VNC port.
 	get_next_vnc_port_num
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
+		return 2
+	fi
 	VM_VNC_PORT=${VNC_PORT_NUM}
 
 	# Get next available tap interface id.
@@ -7698,8 +7855,9 @@ create_vm_instance ()
 		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_TEMPLATE_NAME}" --force
 	fi
 
-	echo -e "\n${YELL}Creating new instance VM...${NRML}\n"
 	CREATE_VM_INSTANCE_MODIFIED=true
+
+	echo -e "\n${YELL}Creating new instance VM...${NRML}\n"
 
 	# Create new tap interface and add it to the VM bridge.
 	ifconfig ${VM_TAP_IFACE} create > /dev/null 2>&1
