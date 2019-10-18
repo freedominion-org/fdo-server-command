@@ -59,8 +59,15 @@ PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
 
+LATEST_HOTDESK_SUBSYS_COMPAT=1
+LATEST_SSHFSD_SUBSYS_COMPAT=1
 LATEST_JAILS_SUBSYS_COMPAT=1
 LATEST_VMS_SUBSYS_COMPAT=1
+LATEST_PARTIMAG_SUBSYS_COMPAT=1
+
+
+HOTDESK_ROOT_FS="fdo-hotdesk-home"
+PARTIMAG_ROOT_FS="partimag"
 
 
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
@@ -3928,8 +3935,56 @@ setup_vnc_desktop()
 	return 0
 }
 
+undo_init_hotdesking ()
+{
+
+	ERROR_COUNT=0
+
+	# Destroy any created filesystems.
+	if [ ${INIT_HOTDESK_FILESYSTEMS_CREATED} = true ]
+	then
+		# Destroy the hotdesking base filesystem and any children.
+		zfs destroy -rf ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo host system modifications.
+	if [ ${INIT_HOTDESK_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_HOTDESKING}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_HOTDESKING}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing init-hotdesking!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+}
+
 init_hotdesking ()
 {
+
+	INIT_HOTDESK_MODIFIED=false
+	INIT_HOTDESK_FILESYSTEMS_CREATED=false
+
+	trap 'undo_init_hotdesking exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_HOTDESKING=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
 
 	# Check that the host is already registered.
 	if [ ! -d "configs/${HOST_NAME}" ]
@@ -3952,6 +4007,24 @@ init_hotdesking ()
 	fi
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the hotdesking subsystem is not already initialised.
+	HOTDESK_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.hotdesking_compat`
+	if [ ${?} -eq 0 ] && [ "${HOTDESK_SUBSYS_COMPAT}" != "null" ] && [ "${HOTDESK_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the hotdesking subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-hotdesking${NRML}\n       Aborting.\n"
+		return 1
+	fi
 
 	# Get pool name to use for hotdesk users' home folders.
 	HOTDESK_POOL_NAME=""
@@ -3979,6 +4052,36 @@ init_hotdesking ()
 			fi
 			sleep 4
 		done
+	fi
+
+	# Test for existing hotdesking filesystems and prompt how to proceed.
+	HOTDESK_FILESYSTEM_EXISTS="no"
+	zfs list -H ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS} > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS}${NRML}' already exists!\n"
+		question_yes_no "\nIt seems as though '${NRML}init-hotdesking${LCYN}' has already been applied to this host.\nWould you like to proceed?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			# Ask whether to purge, archive or reuse existing hotdesking base filesystems.
+			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing hotdesk base filesystem\nand all it's children filesystems? [CAUTION]"
+			if [ "${ANSWER}" = "purge" ]
+			then
+				zfs destroy -Rf ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "archive" ]
+			then
+				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
+				zfs rename -f ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS} ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS}_renamed-by-init-hotdesking-${NOW}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			elif [ "${ANSWER}" = "reuse" ]
+			then
+				HOTDESK_FILESYSTEM_EXISTS="yes"
+			fi
+		else
+			echo -e "\n${LRED}ERROR:${NRML} Unable to proceed.\n       Aborting.\n"
+			return 1
+		fi
 	fi
 
 	# Get the LAN interface of this host.
@@ -4032,13 +4135,6 @@ init_hotdesking ()
 		done
 	fi
 
-	# Warn if hotdesk user home directory base filesystem already exists.
-	zfs list ${HOTDESK_POOL_NAME}/fdo-hotdesk-home 2> /dev/null
-	if [ ${?} -eq 0 ]
-	then
-		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${HOTDESK_POOL_NAME}/fdo-hotdesk-home${NRML}' already exists!\n"
-	fi
-
 	# Get the NIS domainname.
 	NIS_DOMAIN_NAME=""
 	while [ "${NIS_DOMAIN_NAME}" = "" ]
@@ -4072,6 +4168,10 @@ init_hotdesking ()
 	sed -i "" "s/HOTDESK_POOL_NAME/${HOTDESK_POOL_NAME}/" configs/${HOST_NAME}${FDO_CONFIG_ROOT}/hotdesk-home-zfs-name.conf
 	sed -i "" "s/NIS_DOMAIN_NAME/${NIS_DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
 	sed -i "" "s/NIS_HOST_IP/${NIS_HOST_IP}/" configs/${HOST_NAME}/etc/rc.conf
+
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.hotdesking_compat "${LATEST_HOTDESK_SUBSYS_COMPAT}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
@@ -4119,7 +4219,20 @@ init_hotdesking ()
 	pw group add users -g 100 > /dev/null 2>&1
 
 	# Create the ZFS filesystem for the root of hotdesk users home folders.
-	zfs create -o mountpoint=/fdo-hotdesk-home ${HOTDESK_POOL_NAME}/fdo-hotdesk-home
+	if [ "${HOTDESK_FILESYSTEM_EXISTS}" = "no" ]
+	then
+		echo -e "\n${YELL}Creating ZFS filesystems for hotdesking home directories...${NRML}\n"
+		INIT_HOTDESK_FILESYSTEMS_CREATED=true
+		zfs create -o mountpoint=/${HOTDESK_ROOT_FS} ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred whilst creating hotdesking filesystems!\n"
+		undo_init_hotdesking
+		return 2
+	fi
 
 	echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
 	git add configs/${HOST_NAME}
@@ -4227,6 +4340,25 @@ init_sshfs_daemon ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the sshfs-daemon subsystem is not already initialised.
+	SSHFSD_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.sshfs-daemon_compat`
+	if [ ${?} -eq 0 ] && [ "${SSHFSD_SUBSYS_COMPAT}" != "null" ] && [ "${SSHFSD_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the SSHFS-daemon subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-sshfs-daemon${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
+	# Install required packages.
 	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
 	pause_prompt 8
 	pkg update -f
@@ -4241,6 +4373,7 @@ init_sshfs_daemon ()
 		return 2
 	fi
 
+	# Load required kernel modules.
 	kldstat | grep fuse.ko > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -4268,6 +4401,10 @@ init_sshfs_daemon ()
 
 	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
 	install_file_tree config-templates/init-sshfs-daemon configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat "${LATEST_SSHFSD_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -6058,7 +6195,6 @@ init_vms ()
 	# Add subsystems compat level and init marker to host config file.
 	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.vms_compat "${LATEST_VMS_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
@@ -8135,6 +8271,24 @@ init_partimag ()
 
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
+	# Check that the host.conf file is accessible.
+	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the partimag subsystem is not already initialised.
+	PARTIMAG_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.partimag_compat`
+	if [ ${?} -eq 0 ] && [ "${PARTIMAG_SUBSYS_COMPAT}" != "null" ] && [ "${PARTIMAG_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the partimag subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-partimag${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
 	# Get pool name to use for partimag filesystem.
 	PARTIMAG_POOL_NAME=""
 	POOLS_AVAILABLE=zpool list -H -o name``
@@ -8202,7 +8356,7 @@ init_partimag ()
 
 	# Test for existing partimag filesystem and prompt how to proceed.
 	PARTIMAG_FILESYSTEM_EXISTS="no"
-	zfs list -H ${PARTIMAG_POOL_NAME}/partimag > /dev/null 2>&1
+	zfs list -H ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS} > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The ZFS filesystem '${ORNG}${PARTIMAG_POOL_NAME}/partimag${NRML}' already exists!\n"
@@ -8213,12 +8367,12 @@ init_partimag ()
 			question_purge_archive_reuse "\nWould you like to purge, archive or reuse the existing partimag filesystem\nand all it's children filesystems? [CAUTION]"
 			if [ "${ANSWER}" = "purge" ]
 			then
-				zfs destroy -Rf ${PARTIMAG_POOL_NAME}/partimag
+				zfs destroy -Rf ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			elif [ "${ANSWER}" = "archive" ]
 			then
 				NOW=`date "+%Y-%m-%d_%H-%M-%S"`
-				zfs rename -f ${PARTIMAG_POOL_NAME}/partimag ${PARTIMAG_POOL_NAME}/partimag_renamed-by-init-partimag-${NOW}
+				zfs rename -f ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS} ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS}_renamed-by-init-partimag-${NOW}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			elif [ "${ANSWER}" = "reuse" ]
 			then
@@ -8268,6 +8422,10 @@ init_partimag ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.partimag_compat "${LATEST_PARTIMAG_SUBSYS_COMPAT}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -8284,7 +8442,7 @@ init_partimag ()
 	then
 		INIT_PARTIMAG_FILESYSTEMS_CREATED=true
 		echo -e "\n${YELL}Creating ZFS filesystems for partimag NFS share...${NRML}\n"
-		zfs create -o mountpoint=/usr/home/partimag ${PARTIMAG_POOL_NAME}/partimag
+		zfs create -o mountpoint=/usr/home/${PARTIMAG_ROOT_FS} ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
