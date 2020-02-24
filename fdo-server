@@ -53,7 +53,6 @@ REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py27-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
-ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
@@ -65,8 +64,17 @@ LATEST_VMS_SUBSYS_COMPAT=1
 LATEST_PARTIMAG_SUBSYS_COMPAT=1
 
 
+ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
+
+
 HOTDESK_ROOT_FS="fdo-hotdesk-home"
+HOTDESK_CONF_PATH=${HOTDESK_CONF_PATH:-"/usr/local/etc/fdo/hotdesk.conf"}
+
+
 PARTIMAG_ROOT_FS="partimag"
+
+
+SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
 
 
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
@@ -94,9 +102,8 @@ FDO_VMS_START_PATH="/usr/local/sbin/fdo-vms-start"
 FDO_VMS_STOP_PATH="/usr/local/sbin/fdo-vms-stop"
 
 
-VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tightvnc firefox"
-SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
+VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 
 
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
