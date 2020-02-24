@@ -8,6 +8,7 @@ TODO
 - Replace tightvnc with tigervnc and ask for VNC screen size and password (see create_vm_template).
 - Convert all config files to UCL.
 - Make all sub-commands fully idempotent by adding more check and balances and cleanup function with trap interupt.
+- ``fdo-pf|ppp-add|remove-port-forward-rule``: add checks for failure by using diff, before trying to commit. Ask to reload service.
 
 
 DONE

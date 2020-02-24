@@ -23,7 +23,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
 ##### GLOBAL STATIC VARIABLE DECLARATIONS ##########
 
 TERM="xterm"
@@ -4009,7 +4008,7 @@ init_hotdesking ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -4341,7 +4340,7 @@ init_sshfs_daemon ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -4404,7 +4403,7 @@ init_sshfs_daemon ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat "${LATEST_SSHFSD_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat "${LATEST_SSHFSD_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -4564,7 +4563,7 @@ init_jails ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -4952,10 +4951,10 @@ start_jail_service ()
 
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORGN}${1}${NRML}'!\n"
+		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
 		return 2
 	else
-		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORGN}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
 		return 0
 	fi
 
@@ -5149,7 +5148,7 @@ create_jail ()
 	fi
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -5157,7 +5156,7 @@ create_jail ()
 	fi
 
 	# Check that the jails.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${JAILS_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${JAILS_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${JAILS_CONF_PATH}'!\n       Aborting.\n"
@@ -5876,7 +5875,7 @@ init_vms ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -6266,7 +6265,7 @@ undo_create_vm_template ()
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			echo -e "\n${ORGN}WARNING:${NRML} There was an error during the undo of create-vm-template!\n"
+			echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-template!\n"
 		fi
 	fi
 
@@ -6302,7 +6301,7 @@ undo_create_vm_instance ()
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			echo -e "\n${ORGN}WARNING:${NRML} There was an error during the undo of create-vm-instance!\n"
+			echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-instance!\n"
 		fi
 	fi
 
@@ -7025,7 +7024,7 @@ create_vm_template ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -7033,7 +7032,7 @@ create_vm_template ()
 	fi
 
 	# Check that the vms.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
@@ -7670,7 +7669,7 @@ create_vm_instance ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
@@ -7678,7 +7677,7 @@ create_vm_instance ()
 	fi
 
 	# Check that the vms.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
@@ -8272,7 +8271,7 @@ init_partimag ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`uclcmd get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
 	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
