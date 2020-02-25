@@ -71,7 +71,9 @@ HOTDESK_ROOT_FS="fdo-hotdesk-home"
 HOTDESK_CONF_PATH=${HOTDESK_CONF_PATH:-"/usr/local/etc/fdo/hotdesk.conf"}
 
 
-PARTIMAG_ROOT_FS="partimag"
+PARTIMAG_ROOT_FS="${PARTIMAG_ROOT_FS:-"partimag"}
+PARTIMAG_ROOT_MP="${PARTIMAG_ROOT_MP:-"/usr/home/partimag"}
+PRATIMAG_CONF_PATH=${PARTIMAG_CONF_PATH:-"/usr/local/etc/fdo/partimag.conf"}
 
 
 SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
@@ -8241,7 +8243,7 @@ undo_init_partimag ()
 init_partimag ()
 {
 
-	INIT_PARIMAG_MODIFIED=false
+	INIT_PARTIMAG_MODIFIED=false
 	INIT_PARTIMAG_RPCBIND_START=false
 	INIT_PARTIMAG_LOCKD_START=false
 	INIT_PARTIMAG_MOUNTD_START=false
@@ -8448,13 +8450,33 @@ init_partimag ()
 	then
 		INIT_PARTIMAG_FILESYSTEMS_CREATED=true
 		echo -e "\n${YELL}Creating ZFS filesystems for partimag NFS share...${NRML}\n"
-		zfs create -o mountpoint=/usr/home/${PARTIMAG_ROOT_FS} ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS}
+		zfs create -o mountpoint=${PARTIMAG_ROOT_MP} ${PARTIMAG_POOL_NAME}/${PARTIMAG_ROOT_FS}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst creating the filesystem for the partimag NFS share!\n"
+		undo_init_partimag
+		return 2
+	fi
+
+	# Copy init-partimag template configs to this hosts' repo profile.
+	install_file_tree config-templates/init-partimag configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo -e ""
+
+	# Store subsystem configuration details.
+	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.partimag_pool "${PARTIMAG_POOL_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${PARTIMAG_CONF_PATH} .general.root_filesystem "${PARTIMAG_ROOT_FS}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}/${PARTIMAG_CONF_PATH} .general.root_mountpoint "${PARTIMAG_ROOT_MP}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst storing the partimag configuration!\n"
 		undo_init_partimag
 		return 2
 	fi
