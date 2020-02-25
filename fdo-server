@@ -71,8 +71,8 @@ HOTDESK_ROOT_FS="fdo-hotdesk-home"
 HOTDESK_CONF_PATH=${HOTDESK_CONF_PATH:-"/usr/local/etc/fdo/hotdesk.conf"}
 
 
-PARTIMAG_ROOT_FS="${PARTIMAG_ROOT_FS:-"partimag"}
-PARTIMAG_ROOT_MP="${PARTIMAG_ROOT_MP:-"/usr/home/partimag"}
+PARTIMAG_ROOT_FS=${PARTIMAG_ROOT_FS:-"partimag"}
+PARTIMAG_ROOT_MP=${PARTIMAG_ROOT_MP:-"/usr/home/partimag"}
 PRATIMAG_CONF_PATH=${PARTIMAG_CONF_PATH:-"/usr/local/etc/fdo/partimag.conf"}
 
 
