@@ -45,7 +45,7 @@ DEBUG=${DEBUG:-false}
 DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 REPO_NAME=${REPO_NAME:-"fdo-server"}
 FDO_CONFIG_ROOT=${FDO_CONFIG_ROOT:-"/usr/local/etc/fdo"}
-HOST_CONF_PATH=${HOST_CONF_PATH:-"/usr/local/etc/fdo/host.conf"}
+HOST_CONF_PATH=${HOST_CONF_PATH:-"${FDO_CONFIG_ROOT}/host.conf"}
 UCL_CMD="/usr/local/bin/uclcmd"
 LOGIN_SHELL=${LOGIN_SHELL:-"/usr/local/bin/bash"}
 FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
@@ -69,19 +69,19 @@ ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl p
 
 HOTDESK_ROOT_FS=${HOTDESK_ROOT_FS:-"fdo-hotdesk-home"}
 HOTDESK_ROOT_MP=${HOTDESK_ROOT_MP:-"/fdo-hotdesk-home"}
-HOTDESK_CONF_PATH=${HOTDESK_CONF_PATH:-"/usr/local/etc/fdo/hotdesk.conf"}
+HOTDESK_CONF_PATH=${HOTDESK_CONF_PATH:-"${FDO_CONFIG_ROOT}/hotdesk.conf"}
 
 
 PARTIMAG_ROOT_FS=${PARTIMAG_ROOT_FS:-"partimag"}
 PARTIMAG_ROOT_MP=${PARTIMAG_ROOT_MP:-"/usr/home/partimag"}
-PARTIMAG_CONF_PATH=${PARTIMAG_CONF_PATH:-"/usr/local/etc/fdo/partimag.conf"}
+PARTIMAG_CONF_PATH=${PARTIMAG_CONF_PATH:-"${FDO_CONFIG_ROOT}/partimag.conf"}
 
 
 SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
 
 
 VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
-VMS_CONF_PATH=${VMS_CONF_PATH:-"/usr/local/etc/fdo/vms.conf"}
+VMS_CONF_PATH=${VMS_CONF_PATH:-"${FDO_CONFIG_ROOT}/vms.conf"}
 VMS_ROOT_FS="fdo-vms"
 VMS_ROOT_PATH="/${VMS_ROOT_FS}"
 VM_RESOURCES_DIRNAME="resources"
@@ -4395,8 +4395,7 @@ init_hotdesk ()
 
 	echo -e "\n${YELL}Now we will initialise the NIS maps. Follow the steps below:${NRML}\n"
 	echo -e "${YELL}1.) Enter '${NRML}y${YELL}' when prompted to '${NRML}... quit on non fatal errors${YELL}'.${NRML}"
-	echo -e "${YELL}2.) Enter '${NRML}y${YELL}' if prompted to '${NRML}... destroy the existing"
-	echo -e "    /var/yp/${NIS_DOMAIN_NAME}${YELL}'.${NRML}"
+	echo -e "${YELL}2.) Enter '${NRML}y${YELL}' if prompted to '${NRML}... destroy the existing\n    /var/yp/${NIS_DOMAIN_NAME}${YELL}'.${NRML}"
 	echo -e "${YELL}3.) Press '${NRML}Ctrl${YELL}' and '${NRML}D${YELL}' keys together when prompted for '${NRML}next host to add${YELL}'.${NRML}"
 	echo -e "${YELL}4.) Enter '${NRML}y${YELL}' when prompted to confirm NIS server list is correct.${NRML}\n"
 
