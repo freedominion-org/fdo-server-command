@@ -44,9 +44,10 @@ SCRIPT_NAME=`basename $0`
 DEBUG=${DEBUG:-false}
 DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 REPO_NAME=${REPO_NAME:-"fdo-server"}
+UCL_CMD="/usr/local/bin/uclcmd"
 FDO_CONFIG_ROOT=${FDO_CONFIG_ROOT:-"/usr/local/etc/fdo"}
 HOST_CONF_PATH=${HOST_CONF_PATH:-"${FDO_CONFIG_ROOT}/host.conf"}
-UCL_CMD="/usr/local/bin/uclcmd"
+RECIPE_CONF_PATH=${RECIPE_CONF_PATH:-"${FDO_CONFIG_ROOT}/recipe.conf"}
 LOGIN_SHELL=${LOGIN_SHELL:-"/usr/local/bin/bash"}
 FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
@@ -3008,7 +3009,7 @@ init_host ()
 
 		sed -i "" "s/WAN_NET_IFACE/${WAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.nic_id "${WAN_NET_IFACE}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.nic_id "${WAN_NET_IFACE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		if [ ${ERROR_COUNT} -ne 0 ]
@@ -3053,7 +3054,7 @@ init_host ()
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}_${VLAN_ID}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.vlan_id "${VLAN_ID}"
+				${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.vlan_id "${VLAN_ID}"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
 				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"up\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -3112,20 +3113,20 @@ init_host ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			sysrc -f configs/${HOST_NAME}/etc/rc.conf "ppp_nat=YES" > /dev/null 2>&1
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.id "tun${WAN_PPP_TUN_ID}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.id "tun${WAN_PPP_TUN_ID}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "pppoe"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "pppoe"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_authname "${PPP_AUTHNAME}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ppp_authname "${PPP_AUTHNAME}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_authkey "${PPP_AUTHKEY}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ppp_authkey "${PPP_AUTHKEY}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ppp_nat_enabled true
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ppp_nat_enabled true
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.id "${WAN_NET_IFACE}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.id "${WAN_NET_IFACE}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: configure PPP.
@@ -3221,16 +3222,16 @@ init_host ()
 				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_GATEWAY_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_assignment "static"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_assignment "static"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_address "${WAN_IFACE_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_address "${WAN_IFACE_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_netmask "${WAN_IFACE_NETMASK}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_netmask "${WAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_gateway "${WAN_GATEWAY_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_gateway "${WAN_GATEWAY_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.ip_assignment "dhcp"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			if [ "${USES_PPP}" = "no" ]
 			then
@@ -3243,7 +3244,7 @@ init_host ()
 
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf "gateway_enable=YES" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.is_gateway_router true
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.is_gateway_router true
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		if [ ${ERROR_COUNT} -ne 0 ]
@@ -3289,17 +3290,17 @@ init_host ()
 	then
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${LAN_NET_IFACE}" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "loopback"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "loopback"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.nic_id "${LAN_NET_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.nic_id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.id "${LAN_NET_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	LAN_SUBNET_C="${SERVERS_LAN_SUBNET_C}"
@@ -3311,11 +3312,11 @@ init_host ()
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
 		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${USES_PPP}" = "yes" ]
 		then
@@ -3361,21 +3362,21 @@ init_host ()
 			done
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.lan.ip_assignment "dhcp"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: if IS_LAN_IFACE_DHCP = no.
 
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.is_gateway_router false
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.is_gateway_router false
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	# END: if WAN_NET_IFACE != NULL.
@@ -3419,7 +3420,7 @@ init_host ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pflog_enable=YES" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .network.interface.wan.pf_nat_enabled true
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.pf_nat_enabled true
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -3428,7 +3429,7 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Save server type to host config.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .general.server_type "${SERVER_TYPE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.server_type "${SERVER_TYPE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -3570,7 +3571,7 @@ init_host ()
 	echo -e "${LBLU}root${NRML}\n"
 
 	# Store ARBITRARY_USERNAME in the host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .general.arbitrary_username "${ARBITRARY_USERNAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.arbitrary_username "${ARBITRARY_USERNAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Timezone setup.
@@ -4299,7 +4300,7 @@ init_hotdesk ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.hotdesk_compat "${LATEST_HOTDESK_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.hotdesk_compat "${LATEST_HOTDESK_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create or update the exports file in the local repo.
@@ -4479,11 +4480,11 @@ init_hotdesk ()
 	echo -e ""
 
 	# Store subsystem configuration details.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.hotdesk_pool "${HOTDESK_POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.hotdesk_pool "${HOTDESK_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOTDESK_CONF_PATH} .general.root_filesystem "${HOTDESK_ROOT_FS}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOTDESK_CONF_PATH} .general.root_filesystem "${HOTDESK_ROOT_FS}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOTDESK_CONF_PATH} .general.root_mountpoint "${HOTDESK_ROOT_MP}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOTDESK_CONF_PATH} .general.root_mountpoint "${HOTDESK_ROOT_MP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5035,7 +5036,7 @@ init_jails ()
 	INIT_JAILS_HOST_MODIFIED=true
 
 	# Set some basic configuration for the jail subsystem.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5118,10 +5119,11 @@ init_jails ()
 		return 2
 	fi
 
+	NOW=`date "+%Y-%m-%d_%H-%M-%S"`
 	echo -e "\n${YELL}Updating template jail to latest patch release...${NRML}\n"
-	PAGER=cat freebsd-update -b /jls/template fetch > /tmp/fdo-freebsd-update.output
+	PAGER=cat freebsd-update -b /jls/template fetch > /tmp/fdo-freebsd-update.output.template-jail.fetch.${NOW}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	PAGER=cat freebsd-update -b /jls/template install > /tmp/fdo-freebsd-update.output
+	PAGER=cat freebsd-update -b /jls/template install > /tmp/fdo-freebsd-update.output.template-jail.install.${NOW}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	service jail restart template
@@ -5158,7 +5160,7 @@ init_jails ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.jails_compat "${LATEST_JAILS_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.jails_compat "${LATEST_JAILS_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install updated host configs to the system (after disabling template jail).
@@ -5241,9 +5243,9 @@ find_jails_from_recipe_name ()
 	FOUND_RECIPE_JAILS=""
 	for TEST_JAIL_NAME in `ls -1 /jls | cut -d/ -f1`
 	do
-		if [ -f "/jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf" ]
+		if [ -f "/jls/${TEST_JAIL_NAME}${RECIPE_CONF_PATH}" ]
 		then
-			TEST_RECIPE_NAME=`cat /jls/${TEST_JAIL_NAME}/.fdo-jail-recipe.inf`
+			TEST_RECIPE_NAME=`${UCL_CMD} get -f /jls/${TEST_JAIL_NAME}${RECIPE_CONF_PATH} -q .general.jail_recipe`
 			if [ "${TEST_RECIPE_NAME}" = "${FIND_RECIPE_NAME}" ]
 			then
 				if [ "${FOUND_RECIPE_JAILS}" = "" ]
@@ -5282,14 +5284,18 @@ revert_create_jail ()
 		return 1
 	fi
 
-	# ASSUME: commit after create jail is not much use, since we can't remove a previous range.
+	# ASSUME: commit after create jail is not much use, since we can't remove a previous range
 	# of commits using 'git revert' without creating conflicts that need manual intervention.
-	COMMIT_BEFORE_CREATE_JAIL=`cat /jls/${JAIL_TO_REVERT}/.fdo-pre-create-jail.commit.inf`
-
-	if [ -f /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf ]
+	COMMIT_BEFORE_CREATE_JAIL=`${UCL_CMD} get -f configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.git_commit_before_create_jail`
+	if [ ${?} -ne 0 ] || [ "${COMMIT_BEFORE_CREATE_JAIL}" = "null" ]
 	then
-		AFFECTED_JAIL_RECIPES=`cat /jls/${JAIL_TO_REVERT}/.fdo-affected-recipe-jails.inf`
-	else
+		COMMIT_BEFORE_CREATE_JAIL=""
+	fi
+
+	# Get list of affected jails (by recipe name).
+	AFFECTED_JAIL_RECIPES=`${UCL_CMD} get -f configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.affected_recipe_jails`
+	if [ ${?} -ne 0 ] || [ "${AFFECTED_JAIL_RECIPES}" = "null" ]
+	then
 		AFFECTED_JAIL_RECIPES=""
 	fi
 
@@ -5556,7 +5562,9 @@ create_jail ()
 	fi
 
 	# Save the previous git commit reference to file, for later use in reverting operations.
-	git log --format=format:%H -1 > /jls/${JAIL_NAME}/.fdo-pre-create-jail.commit.inf
+	COMMIT_BEFORE_CREATE_JAIL=`git log --format=format:%H -1`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.git_commit_before_create_jail "${COMMIT_BEFORE_CREATE_JAIL}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create entry in /etc/jail.conf.
@@ -5883,9 +5891,7 @@ create_jail_from_recipe ()
 		edit_recipe_configs
 
 		# Save recipe name to information file.
-		echo "${JAIL_RECIPE_NAME}" > configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		chmod a-w configs/${JAIL_NAME}@${HOST_NAME}/.fdo-jail-recipe.inf
+		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.jail_recipe "${JAIL_RECIPE_NAME}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Install any new or modfied configs.
@@ -6457,17 +6463,17 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Store subsystem configuration details.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.vms_pool "${VMS_POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.vms_pool "${VMS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.bridge_id_num "${VM_BRIDGE_ID}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.bridge_id_num "${VM_BRIDGE_ID}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.bridge_nic_id "${LAN_NET_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.bridge_nic_id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .network.vnc_port_offset "${DEFAULT_VM_VNC_PORT_NUM_START}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.vnc_port_offset "${DEFAULT_VM_VNC_PORT_NUM_START}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.vms_compat "${LATEST_VMS_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.vms_compat "${LATEST_VMS_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -6659,12 +6665,12 @@ create_vm_image_handler ()
 
 			# Retrieve existing image types.
 			# ASSUME: 'null' is empty slot.
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
-			IMAGE_2_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize`
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			IMAGE_2_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize`
 
 			echo -e ""
 			echo -e "${LGRN}Images:${NRML}"
@@ -6709,8 +6715,8 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "attach" ]
 		then
 			# Retrieve existing image types (assume 'null' is empty slot).
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
 
 			# Check that we have an available slot.
 			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
@@ -6861,19 +6867,19 @@ create_vm_image_handler ()
 				# Prefer to use first empty slot.
 				if [ "${IMAGE_1_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-hd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-hd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize  "${IMAGE_SECTOR_SIZE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-hd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-hd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize  "${IMAGE_SECTOR_SIZE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
@@ -6906,10 +6912,10 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "detach" ]
 		then
 			IMAGE_ITEMS=""
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
 
 			CURRENT_IFS="${IFS}"
 			IFS="	"
@@ -7048,8 +7054,8 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "insert" ]
 		then
 			# Retrieve existing image types (assume 'null' is empty slot).
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
 
 			# Check that we have an available slot.
 			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
@@ -7113,23 +7119,23 @@ create_vm_image_handler ()
 				# Prefer to use first empty slot, otherwise last ahci-cd slot.
 				if [ "${IMAGE_1_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-cd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-cd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
@@ -7162,10 +7168,10 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "eject" ]
 		then
 			IMAGE_ITEMS=""
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
 
 			CURRENT_IFS="${IFS}"
 			IFS="	"
@@ -7739,39 +7745,39 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .templates.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.cores "${VM_NUM_CORES}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.cores "${VM_NUM_CORES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.description "${VM_DESCRIPTION}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.description "${VM_DESCRIPTION}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_enabled "enabled"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_enabled "enabled"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"ahci-hd\"; } ]"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"ahci-hd\"; } ]"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.sectorsize  "${OS_DISK_SECTOR_SIZE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.sectorsize  "${OS_DISK_SECTOR_SIZE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Prepare OS disk images.
@@ -7791,9 +7797,9 @@ create_vm_template ()
 		fi
 
 		# Add the installer ISO image as an ahci-cd device in the vms.conf file.
-		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .templates.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
+		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .templates.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.1.filename  "${VM_OS_INSTALL_ISO_FILE}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.images.1.filename  "${VM_OS_INSTALL_ISO_FILE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8304,45 +8310,45 @@ create_vm_instance ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.cores "${VM_NUM_CORES}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.cores "${VM_NUM_CORES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.description "${VM_DESCRIPTION}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.description "${VM_DESCRIPTION}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.tap_interface "${VM_TAP_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.nic_driver "${VM_NIC_DRIVER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "enabled"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "enabled"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_port "${VM_VNC_PORT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_width "${VM_VNC_SCREEN_WIDTH}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_height "${VM_VNC_SCREEN_HEIGHT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${EXISTING_IMAGES_UCL}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${EXISTING_IMAGES_UCL}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-	IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-	IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-	IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}/${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+
+	IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+	IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+	IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+	IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
 
 	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
 	then
@@ -8402,7 +8408,7 @@ create_vm_instance ()
 	question_yes_no "Would you like to disable VNC on this VM for production use?"
 	if [ "${ANSWER}" = "yes" ]
 	then
-		${UCL_CMD} set -f configs/${HOST_NAME}/${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "disabled"
+		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .instances.${VM_INDEX}.vnc_enabled "disabled"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8710,7 +8716,7 @@ init_partimag ()
 	fi
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .subsystems.partimag_compat "${LATEST_PARTIMAG_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.partimag_compat "${LATEST_PARTIMAG_SUBSYS_COMPAT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -8746,11 +8752,11 @@ init_partimag ()
 	echo -e ""
 
 	# Store subsystem configuration details.
-	${UCL_CMD} set -f configs/${HOST_NAME}/${HOST_CONF_PATH} .storage.partimag_pool "${PARTIMAG_POOL_NAME}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.partimag_pool "${PARTIMAG_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${PARTIMAG_CONF_PATH} .general.root_filesystem "${PARTIMAG_ROOT_FS}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${PARTIMAG_CONF_PATH} .general.root_filesystem "${PARTIMAG_ROOT_FS}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}/${PARTIMAG_CONF_PATH} .general.root_mountpoint "${PARTIMAG_ROOT_MP}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${PARTIMAG_CONF_PATH} .general.root_mountpoint "${PARTIMAG_ROOT_MP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
