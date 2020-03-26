@@ -2761,7 +2761,7 @@ undo_init_host ()
 
 	if [ ${INIT_HOST_SYSTEM_MODIFIED} = true ]
 	then
-		# Restore pre-existing core system conf files.
+		# Restore pre-existing core system config files.
 		for CONFIG_FILE in `find config-templates/init-host/ -type f -print | sed "s|^config-templates/init-host||"`
 		do
 			# Try to find the most  up-to--date backup file for current CONFIG_FILE.
@@ -3449,7 +3449,7 @@ init_host ()
 
 	#### POINT OF NO RETURN ####
 
-	# Backup existing core system conf files.
+	# Backup existing core system config files.
 	for CONFIG_FILE in `find config-templates/init-host/ -type f -print | sed "s|^config-templates/init-host||"`
 	do
 		if [ -e "${CONFIG_FILE}" ]
@@ -5844,7 +5844,7 @@ create_jail_from_recipe ()
 	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Set the correct jail ABI in the jails' pkg repo conf file.
+	# Set the correct jail ABI in the jails' pkg repo config file.
 	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
