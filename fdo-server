@@ -5917,8 +5917,12 @@ create_jail_from_recipe ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		edit_recipe_configs
 
-		# Save recipe name to information file.
+		# Save recipe name to recipe.conf.
 		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.jail_recipe "${JAIL_RECIPE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		# Add recipe compat level to recipe.conf.
+		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.recipe_compat "${RECIPE_COMPAT}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Install any new or modfied configs.
