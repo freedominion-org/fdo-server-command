@@ -5683,7 +5683,8 @@ edit_recipe_configs ()
 		FILE_PATH=`echo ${CONFIG_FILE} | sed "s|[^/]*\/[^/]*\/||"`
 		FILE_NAME=`basename ${CONFIG_FILE}`
 		if [ -d ${CONFIG_FILE} ] || [ "${FILE_NAME}" = "${PKG_REPO_CONF_FILE}" ] || [ "${FILE_NAME}" = "${PKG_REPO_CERT_FILE}" ] \
-			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ] || [ "${FILE_NAME}" = ".empty" ]
+			|| [ "${FILE_PATH}" = "usr/local/etc/pkg/repos/freebsd.conf" ] || [ "${FILE_NAME}" = ".empty" ] \
+			|| [ "${FILE_PATH}" = "${RECIPE_CONF_PATH}" ]
 		then
 			continue
 		fi
@@ -5885,6 +5886,32 @@ create_jail_from_recipe ()
 
 	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
+		# Get seasoning suggestion message from recipe.conf.
+		SEASONING_SUGGESTION_MSG=`${UCL_CMD} get -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .seasoning_suggestion.message`
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ "${SEASONING_SUGGESTION_MSG}" != "" ] && [ "${SEASONING_SUGGESTION_MSG}" != "null" ]
+		then
+			# Echo the seasoning suggestion message to the terminal, expanding any variables.
+			eval echo -e "\"\n${YELL}Seasoning suggestion:${NRML}\n${SEASONING_SUGGESTION}\n\""
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			# Set the seasoning suggestion message in recipe.conf after expanding any variables.
+			EXPANDED_SEASONING_SUGGESTION_MSG=`eval echo -e "\"${SEASONING_SUGGESTION}\""`
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .seasoning_suggestion.message "${EXPANDED_SEASONING_SUGGESTION_MSG}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst compiling or showing seasonal suggestions!\n"
+			revert_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		pause_prompt 18
+
 		# Interactively edit the configs touched by the recipe.
 		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5980,6 +6007,7 @@ create_jail_from_recipe ()
 
 	if [ "${RECIPE_SUCCESS}" = "yes" ]
 	then
+		# Commit changes to the configs repo.
 		git add configs/${HOST_NAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git add configs/${JAIL_NAME}@${HOST_NAME}
