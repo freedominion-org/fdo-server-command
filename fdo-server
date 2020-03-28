@@ -57,7 +57,7 @@ ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py27-speedtest-cli rsync stress tmux t
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
-
+LATEST_HOST_SYS_COMPAT=1
 LATEST_HOTDESK_SUBSYS_COMPAT=1
 LATEST_SSHFSD_SUBSYS_COMPAT=1
 LATEST_JAILS_SUBSYS_COMPAT=1
@@ -3660,6 +3660,10 @@ init_host ()
 		return 2
 	fi
 
+	# Add host system compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.host_system_compat ${LATEST_HOST_SYS_COMPAT}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	#### CONFIG PROFILE FINISHED ####
 
 	# Install scripts to the system.
@@ -4300,7 +4304,7 @@ init_hotdesk ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.hotdesk_compat "${LATEST_HOTDESK_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.hotdesk_compat ${LATEST_HOTDESK_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create or update the exports file in the local repo.
@@ -4679,7 +4683,7 @@ init_sshfs_daemon ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat "${LATEST_SSHFSD_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat ${LATEST_SSHFSD_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -5160,7 +5164,7 @@ init_jails ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.jails_compat "${LATEST_JAILS_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.jails_compat ${LATEST_JAILS_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install updated host configs to the system (after disabling template jail).
@@ -5922,7 +5926,7 @@ create_jail_from_recipe ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Add recipe compat level to recipe.conf.
-		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.recipe_compat "${RECIPE_COMPAT}"
+		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.recipe_compat ${RECIPE_COMPAT}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Install any new or modfied configs.
@@ -6505,7 +6509,7 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.vms_compat "${LATEST_VMS_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.vms_compat ${LATEST_VMS_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
@@ -8748,7 +8752,7 @@ init_partimag ()
 	fi
 
 	# Add subsystems compat level and init marker to host config file.
-	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.partimag_compat "${LATEST_PARTIMAG_SUBSYS_COMPAT}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.partimag_compat ${LATEST_PARTIMAG_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
