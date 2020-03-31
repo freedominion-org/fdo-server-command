@@ -5039,6 +5039,11 @@ init_jails ()
 
 	INIT_JAILS_HOST_MODIFIED=true
 
+	# Copy init-jails template configs to this hosts' repo profile.
+	install_file_tree config-templates/init-jails configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo -e ""
+
 	# Set some basic configuration for the jail subsystem.
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5068,8 +5073,8 @@ init_jails ()
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install init-jails configs to the template jail.
-	install_file_tree config-templates/init-jails /jls/template/
+	# Install jail_template configs to the template jail.
+	install_file_tree config-templates/jail_template /jls/template/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create nullfs mountpoint for hosts ssl certs.
@@ -5077,10 +5082,10 @@ init_jails ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Copy certain host specific config files to the template jail.
-	HOST_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
+	HOST_CONFIG_FILES=`find config-templates/jail_template -type f | sed "s|^config-templates/jail_template/||"`
 	for CONFIG_FILE in ${HOST_CONFIG_FILES}
 	do
-		FILE_CONTENTS=`cat config-templates/init-jails/${CONFIG_FILE}`
+		FILE_CONTENTS=`cat config-templates/jail_template/${CONFIG_FILE}`
 		if [ "${FILE_CONTENTS}" = "COPY_FROM_HOST" ]
 		then
 			cp /${CONFIG_FILE} /jls/template/${CONFIG_FILE}
@@ -5533,7 +5538,7 @@ create_jail ()
 	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state.
 	mkdir configs/${JAIL_NAME}@${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	JAIL_CONFIG_FILES=`find config-templates/init-jails -type f | sed "s|^config-templates/init-jails/||"`
+	JAIL_CONFIG_FILES=`find config-templates/jail_template -type f | sed "s|^config-templates/jail_template/||"`
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	for CONFIG_FILE in ${JAIL_CONFIG_FILES}
 	do
