@@ -3712,7 +3712,7 @@ init_host ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-		undo_init_jails
+		undo_init_host
 		return 2
 	fi
 
