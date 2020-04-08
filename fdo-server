@@ -2870,6 +2870,15 @@ init_host ()
 		return 1
 	fi
 
+	# Get FreeBSD version strings.
+	FREEBSD_VERSION_STRING=`freebsd-version`
+	FREEBSD_VERSION=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f1`
+	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
+	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
+	FREEBSD_CADENCE=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f2`
+	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
+	FREEBSD_ARCH=`uname -m`
+
 	# Update pkgng repositories.
 	echo -e "\n${YELL}First we need to update pkg (pkgng) repositories...${NRML}\n"
 	pkg update
@@ -3469,6 +3478,30 @@ init_host ()
 		undo_init_host
 		return 2
 	fi
+
+	# Save OS name and version details to the host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.name "FreeBSD"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.major_version "${FREEBSD_MAJOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.minor_version "${FREEBSD_MINOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.release_cadence "${FREEBSD_CADENCE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.patch_level "${FREEBSD_PATCH_LEVEL}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.architecture "${FREEBSD_ARCH}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Save the list of essential packages installed to the host config file.
+	RETURN_CODE=`ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH}`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${RETURN_CODE} ))
+	for PACKAGE_NAME in ${ESSENTIAL_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
 
 	# Ask if we want to continue past point of no return.
 	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
@@ -4993,20 +5026,22 @@ init_jails ()
 		return 2
 	fi
 
-	# Get version strings.
+	# Get FreeBSD version strings.
 	FREEBSD_VERSION_STRING=`freebsd-version`
-	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
+	FREEBSD_VERSION=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
-	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
-	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
+	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
+	FREEBSD_CADENCE=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f2`
+	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
+	FREEBSD_ARCH=`uname -m`
 
 	# Download relevant base system tarballs.
 	echo -e "\n${YELL}Downloading FreeBSD base system tarballs...${NRML}\n"
-	fetch -o /tmp/jail-base.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
+	fetch -o /tmp/jail-base.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-lib32.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
+	fetch -o /tmp/jail-lib32.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-src.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/amd64/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
+	fetch -o /tmp/jail-src.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5521,13 +5556,13 @@ create_jail ()
 		fi
 	fi
 
-	# Get version strings.
+	# Get FreeBSD version strings.
 	FREEBSD_VERSION_STRING=`freebsd-version`
-	FREEBSD_VERSION=`freebsd-version | cut -d- -f1`
+	FREEBSD_VERSION=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f1`
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
 	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
-	FREEBSD_CADENCE=`freebsd-version | cut -d- -f2`
-	FREEBSD_PATCH_LEVEL=`freebsd-version | cut -d- -f3`
+	FREEBSD_CADENCE=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f2`
+	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
 	FREEBSD_ARCH=`uname -m`
 
 	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAILS_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
