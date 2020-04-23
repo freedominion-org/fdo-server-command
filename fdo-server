@@ -66,6 +66,7 @@ LATEST_PARTIMAG_SUBSYS_COMPAT=1
 
 
 ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
+JAILS_CONF_PATH=${JAILS_CONF_PATH:-"${FDO_CONFIG_ROOT}/jails.conf"}
 
 
 HOTDESK_ROOT_FS=${HOTDESK_ROOT_FS:-"fdo-hotdesk-home"}
@@ -1117,13 +1118,35 @@ fetch_latest_self ()
 	return 0
 }
 
+git_fetch ()
+{
+	REPOSITORY="${1}"
+	BRANCH="${2}"
+	while true
+	do
+		git fetch "${REPOSITORY}" "${BRANCH}"
+		if [ ${?} -ne 0 ]
+		then
+			question_yes_no "\nThe git fetch operation failed! Would you like to try again?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				echo -e ""
+			else
+				return 1
+			fi
+		else
+			return 0
+		fi
+	done
+}
+
 git_pull ()
 {
 	REPOSITORY="${1}"
 	BRANCH="${2}"
 	while true
 	do
-		git pull ${REPOSITORY} ${BRANCH}
+		git pull "${REPOSITORY}" "${BRANCH}"
 		if [ ${?} -ne 0 ]
 		then
 			question_yes_no "\nThe git pull operation failed! Would you like to try again?"
@@ -1145,7 +1168,7 @@ git_push ()
 	BRANCH="${2}"
 	while true
 	do
-		git push ${REPOSITORY} ${BRANCH}
+		git push "${REPOSITORY}" "${BRANCH}"
 		if [ ${?} -ne 0 ]
 		then
 			question_yes_no "\nThe git push operation failed! Would you like to try again?"
@@ -1215,7 +1238,7 @@ check_repo_config ()
 		REPO_TYPE=""
 		while [ "${REPO_TYPE}" = "" ]
 		do
-			echo -e "\n${LCYN}Would you like to use an existing remote git repo (recommended, if available),${NRML}"
+			echo -e "\n${LCYN}Would you like to use an existing private remote repo (recommended, if available),${NRML}"
 			echo -e "${LCYN}or start with a local repo (not backed up remotely, no central management)?${NRML}"
 			readee -p "${LCYN}(remote|local): ${NRML}" REPO_TYPE_TEMP
 			# Check input validation.
@@ -1226,8 +1249,14 @@ check_repo_config ()
 		done
 
 		# If it does not exist, create the root path for FDo config files.
-		if [ ! -f ${FDO_CONFIG_ROOT} ]
+		if [ -e ${FDO_CONFIG_ROOT} ]
 		then
+			if [ ! -d ${FDO_CONFIG_ROOT} ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The FDo configs path '${ORNG}${FDO_CONFIG_ROOT}${NRML}' exists, but is not a directory!\n"
+				return 1
+			fi
+		else
 			mkdir -p ${FDO_CONFIG_ROOT}
 		fi
 
@@ -1235,29 +1264,27 @@ check_repo_config ()
 		then
 			REPO_URI="local"
 		else
-			# Get the URI of the remote git repo.
+			# Ask for the URI of the remote repo.
 			REMOTE_REPO_URI=""
 			while [ "${REMOTE_REPO_URI}" = "" ]
 			do
 				echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
 				readee REMOTE_REPO_URI_TEMP
-				# Allow user to change their mind about type of repo.
-				if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
-				then
-					break
-				fi
 				# Test the input to see if it is a valid URI (URL).
 				test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
-				if [ "${VALID_URL}" = "yes" ]
+				if [ "${VALID_URL}" = "no" ]
 				then
+					echo -e "\n${LRED}ERROR:${NRML} the remote git repo URI entered is invalid!\n"
+					return 1
+				else
 					question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}
+						REMOTE_REPO_URI="${REMOTE_REPO_URI_TEMP}"
+						break
 					fi
-				else
-					echo -e "\n${LRED}ERROR:${NRML} remote git repo URI is invalid!\n"
 				fi
+				sleep 4
 			done
 			REPO_URI="${REMOTE_REPO_URI}"
 		fi
@@ -1265,7 +1292,12 @@ check_repo_config ()
 	done
 
 	# Store the repo URI in it's FDo config file.
-	echo "${REPO_URI}" > ${FDO_CONFIG_ROOT}/fdo-server-repo.conf
+	echo "${REPO_URI}" > "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unexpected error storing the repo URI in '${ORNG}${FDO_CONFIG_ROOT}/fdo-server-repo.conf${NRML}'!\n"
+		return 2
+	fi
 
 	echo -e "\n${YELL}The local repo will be stored in the path '${NRML}/${REPO_NAME}${YELL}'.${NRML}\n"
 	NO_DISPLAY_USAGE="yes"
@@ -1455,6 +1487,7 @@ init_git_config ()
 		return 2
 	fi
 
+	# If the git config user's name is not set, set it.
 	git config user.name > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -1462,6 +1495,7 @@ init_git_config ()
 		do
 			echo -e ""
 			readee -p "${LCYN}Enter the git user name (e.g. John Doe): ${NRML}" GIT_USER_NAME_TEMP
+
 			# Check that the git user name only contains letters numbers and spaces.
 			test_valid_person_name "${GIT_USER_NAME_TEMP}"
 			if [ "${VALID_PERSON_NAME}" = "yes" ]
@@ -1476,9 +1510,17 @@ init_git_config ()
 				echo -e "       It must contain only letters, numbers and spaces.\n"
 			fi
 		done
+
+		# Set the git users' name (user.name)
 		git config user.name "${GIT_USER_NAME}"
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Unable to set the git users' name!"
+			return 2
+		fi
 	fi
 
+	# If the git config user's email address is not set, set it.
 	git config user.email > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -1486,6 +1528,7 @@ init_git_config ()
 		do
 			echo -e ""
 			readee -p "${LCYN}Enter the git user email address: ${NRML}" GIT_USER_EMAIL_TEMP
+
 			# Check that the git user email only contains letters, numbers, periods, pluses, hyphens, underscores and one @.
 			test_valid_email_address "${GIT_USER_EMAIL_TEMP}"
 			if [ "${VALID_EMAIL_ADDRESS}" = "yes" ]
@@ -1500,13 +1543,27 @@ init_git_config ()
 				echo -e "       It must be a valid email address.\n"
 			fi
 		done
+
+		# Set the git users' email address (user.email).
 		git config user.email "${GIT_USER_EMAIL}"
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Unable to set the git users' email!"
+			return 2
+		fi
 	fi
 
+	# If the git push default method is not set, set it.
 	git config push.default > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
+		# Set the git push default method to 'simple'.
 		git config push.default "simple"
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Unable to set the git push default method!"
+			return 2
+		fi
 	fi
 
 	return 0
@@ -1515,6 +1572,7 @@ init_git_config ()
 upgrade_repo_from_upstream ()
 {
 
+	# Get whether to try to push local git repo to the remote repo.
 	if [ "${1}" = "--push" ] || [ "${2}" = "--push" ]
 	then
 		DO_GIT_PUSH="yes"
@@ -1522,6 +1580,7 @@ upgrade_repo_from_upstream ()
 		DO_GIT_PUSH="no"
 	fi
 
+	# Get whether to ask user to install any new or updated scripts.
 	if [ "${1}" = "--no-install-scripts" ] || [ "${2}" = "--no-install-scripts" ]
 	then
 		ASK_INSTALL_SCRIPTS="no"
@@ -1542,6 +1601,19 @@ upgrade_repo_from_upstream ()
 	# Get the pre-upgrade git commit reference.
 	PRE_UPGRADE_COMMIT_REF=`git log --format=format:%H -1`
 
+	# Check if remote named 'upstream' already exists.
+	git remote show upstream > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		# Detach the upstream remote from the local repo.
+		git remote remove upstream
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo! [1]\n"
+			return 2
+		fi
+	fi
+
 	# Add the public upstream skeleton repo as a remote called 'upstream'.
 	git remote add upstream "${FDO_SERVER_SKELETON_REPO}"
 	if [ ${?} -ne 0 ]
@@ -1554,7 +1626,7 @@ upgrade_repo_from_upstream ()
 	git fetch upstream
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to fetch upstream remote git repo!\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to fetch upstream remote git repo changes!\n"
 		return 2
 	fi
 
@@ -1570,10 +1642,11 @@ upgrade_repo_from_upstream ()
 	git remote remove upstream
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo!\n"
+		echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo! [2]\n"
 		return 2
 	fi
 
+	# If a remote repo is in use and we are requested to, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ] && [ "${DO_GIT_PUSH}" = "yes" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -1604,6 +1677,7 @@ upgrade_repo_from_upstream ()
 	echo -e "\n${YELL}Checking if any scripts have been updated in this upgrade...${NRML}\n"
 	git diff-tree --no-commit-id --name-only -r ${PRE_UPGRADE_COMMIT_REF} ${POST_UPGRADE_COMMIT_REF} | grep "^scripts/"
 
+	# If there are new or updated scripts, and if we are requested to, ask the user if they want to install them.
 	if [ ${?} -eq 0 ] && [ "${ASK_INSTALL_SCRIPTS}" = "yes" ]
 	then
 		# Ask whether to perform an 'install-scripts'.
@@ -1642,23 +1716,101 @@ init_local_repo ()
 		if [ "${REPO_URI}" = "local" ]
 		then
 			# Re-initialise a local only repo.
+
 			echo -e "${YELL}The local git repo already exists.${NRML}"
 			echo -e "${YELL}Updating from the upstream skeleton repo...${NRML}\n"
+
 			# Temporarily reattach to public upstream skeleton repo, to pull latest changes.
-			git remote add origin "${FDO_SERVER_SKELETON_REPO}"
-			git fetch
-			git branch --set-upstream-to=origin/master master
+
+			# Check if remote named 'upstream' already exists.
+			git remote show upstream > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				# Detach the upstream remote from the local repo.
+				git remote remove upstream
+				if [ ${?} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo! [1]\n"
+					return 2
+				fi
+			fi
+
+			# Add the public upstream skeleton repo as a remote called 'upstream'.
+			git remote add upstream "${FDO_SERVER_SKELETON_REPO}"
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to add upstream remote git repo to local git repo!\n"
+				return 2
+			fi
+
+			# Fetch the upstream repo.
+			git fetch upstream
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to fetch upstream remote git repo!\n"
+				return 2
+			fi
+
+			# Set upstream remote to master branch.
+			git branch --set-upstream-to=upstream/master master
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to set upstream remote repo to master branch!\n"
+				return 2
+			fi
+
 			git_pull
-			# Detach from the remote repo.
-			git remote remove origin
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to pull down upstream remote repo into local repo!\n       Aborting.\n"
+				return 2
+			fi
+
+			# Detach the upstream remote from the local repo.
+			git remote remove upstream
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo! [2]\n"
+				return 2
+			fi
 		else
 			# Re-initialise a local repo and attach it to its remote repo.
+
 			echo -e "${YELL}The local git repo already exists.${NRML}"
 			echo -e "${YELL}Updating from the private remote repo...${NRML}\n"
+
 			# Attach the local repo to the private remote repo.
-			git remote remove origin
+
+			# Check if remote named 'origin' already exists.
+			git remote show origin > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				# Detach the private remote from the local repo.
+				git remote remove origin
+				if [ ${?} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Failed to remove private remote git repo from local git repo! [1]\n"
+					return 2
+				fi
+			fi
+
+			# Add the private remote repo as a remote called 'upstream'.
 			git remote add origin "${REPO_URI}"
-			git fetch
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to add private remote git repo to local git repo!\n"
+				return 2
+			fi
+
+			# Fetch the private repo.
+			git fetch origin
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to fetch the private remote git repo!\n"
+				return 2
+			fi
+
+			# Set upstream remote to master branch.
 			git branch --set-upstream-to=origin/master master
 			if [ ${?} -ne 0 ]
 			then
@@ -1668,11 +1820,12 @@ init_local_repo ()
 				echo -e "       Aborting.\n"
 				return 2
 			fi
+
 			# Update (pull) the latest changes from the private remote repo.
 			git_pull
 			if [ ${?} -ne 0 ]
 			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to update git repo.\n       Aborting.\n"
+				echo -e "\n${LRED}ERROR:${NRML} Failed to pull down private repo into local repo!\n       Aborting.\n"
 				return 2
 			fi
 		fi
@@ -1687,29 +1840,37 @@ init_local_repo ()
 		if [ "${REPO_URI}" = "local" ]
 		then
 			# Initialise a new local only repo.
+
 			# Clone the upstream skeleton repo from github.
 			echo -e "${YELL}Cloning the upstream skeleton git repo...${NRML}\n"
-			git clone "${FDO_SERVER_SKELETON_REPO}" ${REPO_NAME}
+			git clone -o upstream "${FDO_SERVER_SKELETON_REPO}" ${REPO_NAME}
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone upstream skeleton git repo.\n       Aborting.\n"
 				return 2
 			fi
+
 			# Move into local repo directory.
-			cd "/${REPO_NAME}"
+			cd "/${REPO_NAME}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!"
-				# TODO: run undo function
 				return 2
 			fi
+
 			# After we get the skeleton, detach from the upstream skeleton repo.
-			git remote remove origin
+			git remote remove upstream
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to remove upstream remote git repo from local git repo! [3]\n"
+				return 2
+			fi
 		else
 			# Initialise a new local repo and attach to its remote repo.
+
 			# Clone our private remote git repo.
 			echo -e "${YELL}Cloning our private remote git repo...${NRML}\n"
-			git clone ${REPO_URI} ${REPO_NAME}
+			git clone -o origin "${REPO_URI}" ${REPO_NAME}
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Failed to clone private remote git repo.\n       Aborting.\n"
@@ -1744,30 +1905,29 @@ install_scripts ()
 
 install_scripts_everywhere ()
 {
-	EXIT_CODE=0
+	# NOTE: return code is 0 for no errors, +1 for host install error  +2n for n jails install errors.
+	RETURN_CODE=0
 
 	# Install scripts to the host.
 	install_scripts /
-	RETURN_CODE=${?}
-	if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing scripts to the this host!\n"
-		EXIT_CODE=${RETURN_CODE}
+		RETURN_CODE=$(( ${RETURN_CODE} + 1 ))
 	fi
 
 	# Install scripts to the jails.
 	for JAIL_DIR in `ls -1 /jls 2> /dev/null`
 	do
 		install_scripts /jls/${JAIL_DIR}/
-		RETURN_CODE=${?}
-		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing scripts to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
-			EXIT_CODE=${RETURN_CODE}
+			RETURN_CODE=$(( ${RETURN_CODE} + 2 ))
 		fi
 	done
 
-	return ${EXIT_CODE}
+	return ${RETURN_CODE}
 }
 
 add_script ()
@@ -1806,6 +1966,8 @@ add_script ()
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
 			return 2
 		fi
+
+		# If a remote repo is in use, push changes to the remote.
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -1863,6 +2025,8 @@ update_script ()
 			echo -e "       to revert to the previous commit.\n       Aborting.\n"
 			return 2
 		fi
+
+		# If a remote repo is in use, push changes to the remote.
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to '${NRML}${REPO_NAME}${YELL}' remote repo...\n"
@@ -1913,18 +2077,18 @@ install_configs ()
 install_configs_everywhere ()
 {
 
-	EXIT_CODE=0
+	# NOTE: return code is 0 for no errors, +1 for host install error  +2n for n jails install errors.
+	RETURN_CODE=0
 
 	# Install configs to the host.
 	question_yes_no "Are you sure you want to install all host configs from the repo to this host?"
 	if [ "${ANSWER}" = "yes" ]
 	then
 		install_configs configs/${HOST_NAME} /
-		RETURN_CODE=${?}
-		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the this host!\n"
-			EXIT_CODE=${RETURN_CODE}
+			RETURN_CODE=$(( ${RETURN_CODE} + 1 ))
 		fi
 	fi
 
@@ -1935,15 +2099,14 @@ install_configs_everywhere ()
 		if [ "${ANSWER}" = "yes" ]
 		then
 			install_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
-			RETURN_CODE=${?}
-			if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
-				EXIT_CODE=${RETURN_CODE}
+				RETURN_CODE=$(( ${RETURN_CODE} + 2 ))
 			fi
 		fi
 	done
-	return ${EXIT_CODE}
+	return ${RETURN_CODE}
 }
 
 check_configs ()
@@ -1972,16 +2135,16 @@ check_configs ()
 check_all_configs ()
 {
 
-	EXIT_CODE=0
+	# NOTE: return code is 0 for no errors, +1 for host install error  +2n for n jails install errors.
+	RETURN_CODE=0
 	CHECK_ALL_CONFIGS_ERROR_COUNT=0
 
 	# Check configs for the host.
 	echo -e "\n${YELL}Checking configs for the host...${NRML}\n"
 	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
-	RETURN_CODE=${?}
-	if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+	if [ ${?} -ne 0 ]
 	then
-		EXIT_CODE=${RETURN_CODE}
+		RETURN_CODE=$(( ${RETURN_CODE} + 1 ))
 	fi
 	CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 
@@ -1990,10 +2153,9 @@ check_all_configs ()
 	do
 		echo -e "\n${YELL}Checking configs for the '${NRML}${JAIL_NAME}${YELL}' jail...${NRML}\n"
 		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
-		RETURN_CODE=${?}
-		if [ ${RETURN_CODE} -gt ${EXIT_CODE} ]
+		if [ ${?} -ne 0 ]
 		then
-			EXIT_CODE=${RETURN_CODE}
+			RETURN_CODE=$(( ${RETURN_CODE} + 2 ))
 		fi
 		CHECK_ALL_CONFIGS_ERROR_COUNT=$(( ${CHECK_ALL_CONFIGS_ERROR_COUNT} + ${COMPARE_FILE_ERROR_COUNT} ))
 	done
@@ -2010,7 +2172,7 @@ check_all_configs ()
 		echo -e "\n${ORNG}It seems that '${NRML}${CHECK_ALL_CONFIGS_ERROR_COUNT}${ORNG}' files tracked by the repo are MISSING or OUT OF CHECK!${NRML}\n"
 	fi
 
-	return ${EXIT_CODE}
+	return ${RETURN_CODE}
 }
 
 add_config ()
@@ -2018,68 +2180,75 @@ add_config ()
 
 	CONFIG_FULL_PATH="${1}"
 
+	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f "${CONFIG_FULL_PATH}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
+		return 1
+	fi
+
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		# config file belongs to a jail.
 		JAIL_NAME=`echo ${CONFIG_FULL_PATH}  | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
-		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
+		CONFIG_RELATIVE_PATH=`echo "${CONFIG_FULL_PATH}" | sed "s|/jls/${JAIL_NAME}||"`
 	else
 		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
-		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
+		CONFIG_RELATIVE_PATH="${CONFIG_FULL_PATH}"
 	fi
 
-	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
-	if [ ! -d ${CONFIG_REPO_DIR} ]
-	then
-		mkdir -p ${CONFIG_REPO_DIR}
-	fi
-
-	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		return 1
-	elif [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
+	if [ -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}' already exists."
 		echo -e "       Please consider using '${LBLU}${SCRIPT_NAME} update-config${NRML}' instead.\n       Aborting.\n"
 		return 1
-	else
-		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			return 2
-		fi
-		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to add '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			rm ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-			return 2
-		fi
-		git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
-			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
-			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			return 2
-		fi
-		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-			fi
-		fi
-		echo -e "\n${LGRN}OK, it seems we've successfully added the new config file!${NRML}\n"
 	fi
+
+	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
+	if [ ! -d "${CONFIG_REPO_DIR}" ]
+	then
+		mkdir -p "${CONFIG_REPO_DIR}"
+	fi
+
+	cp "${CONFIG_FULL_PATH}" "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
+		return 2
+	fi
+
+	git add "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to add '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
+		rm "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" > /dev/null 2>&1
+		return 2
+	fi
+
+	git commit -m "Added new config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
+		echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
+		echo -e "       to revert to the previous commit.\n       Aborting.\n"
+		return 2
+	fi
+
+	# If a remote repo is in use and we are requested to, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+		fi
+	fi
+
+	echo -e "\n${LGRN}OK, it seems we've successfully added the new config file!${NRML}\n"
 
 	return 0
 }
@@ -2093,53 +2262,56 @@ remove_config ()
 	if [ ${?} -eq 0 ]
 	then
 		# config file belongs to a jail.
-		JAIL_NAME=`echo ${CONFIG_FULL_PATH}  | cut -d/ -f3`
+		JAIL_NAME=`echo "${CONFIG_FULL_PATH}"  | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
-		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
+		CONFIG_RELATIVE_PATH=`echo "${CONFIG_FULL_PATH}" | sed "s|/jls/${JAIL_NAME}||"`
 	else
 		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
-		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
+		CONFIG_RELATIVE_PATH="${CONFIG_FULL_PATH}"
 	fi
 
 	if [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The local repo file '${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}' does not exist.\n       Aborting.\n"
 		return 1
-	else
-		git rm "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to remove '${ORNG}${CONFIG_FULL_PATH}${NRML}' from local git repo.\n       Aborting.\n"
-			return 2
-		fi
-		git commit -m "Remove config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to commit removal of '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
-			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
-			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			return 2
-		fi
-		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-				return 2
-			fi
-		fi
-		echo -e "\n${LGRN}OK, it seems we've successfully removed the config file!${NRML}\n"
 	fi
 
-	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
-	TEST=`ls -A1 "${CONFIG_REPO_DIR}" | wc -l`
-	if [ ${TEST} -eq 0 ]
+	git rm "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
+	if [ ${?} -ne 0 ]
 	then
-		rmdir ${CONFIG_REPO_DIR}
+		echo -e "\n${LRED}ERROR:${NRML} Failed to remove '${ORNG}${CONFIG_FULL_PATH}${NRML}' from local git repo.\n       Aborting.\n"
+		return 2
+	fi
+
+	git commit -m "Remove config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}."
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to commit removal of '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
+		echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}'"
+		echo -e "       to revert to the previous commit.\n       Aborting.\n"
+		return 2
+	fi
+
+	# If a remote repo is in use and we are requested to, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			return 2
+		fi
+	fi
+
+	echo -e "\n${LGRN}OK, it seems we've successfully removed the config file!${NRML}\n"
+
+	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
+	if [ -d "${CONFIG_REPO_DIR}" ]
+	then
+		rmdir "${CONFIG_REPO_DIR}"
 	fi
 
 	return 0
@@ -2150,76 +2322,88 @@ update_config ()
 
 	CONFIG_FULL_PATH="${1}"
 
+	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f "${CONFIG_FULL_PATH}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
+		return 1
+	fi
+
 	echo "${CONFIG_FULL_PATH}" | grep -e "/jls/" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		# config file belongs to a jail.
-		JAIL_NAME=`echo ${CONFIG_FULL_PATH} | cut -d/ -f3`
+		JAIL_NAME=`echo "${CONFIG_FULL_PATH}" | cut -d/ -f3`
 		CONFIG_REPO_ROOT=configs/${JAIL_NAME}@${HOST_NAME}
-		CONFIG_RELATIVE_PATH=`echo ${CONFIG_FULL_PATH} | sed "s|/jls/${JAIL_NAME}||"`
+		CONFIG_RELATIVE_PATH=`echo "${CONFIG_FULL_PATH}" | sed "s|/jls/${JAIL_NAME}||"`
 	else
 		# config file belongs to the host.
 		CONFIG_REPO_ROOT=configs/${HOST_NAME}
-		CONFIG_RELATIVE_PATH=${CONFIG_FULL_PATH}
+		CONFIG_RELATIVE_PATH="${CONFIG_FULL_PATH}"
 	fi
 
-	CONFIG_REPO_DIR=`dirname "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"`
-	if [ ! -d ${CONFIG_REPO_DIR} ]
+	if [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
 	then
-		mkdir -p ${CONFIG_REPO_DIR}
+		echo -e "\n${LRED}ERROR:${NRML} The local repo file:\n       ${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}"
+		echo -e	"       does not exist.\n       Aborting.\n"
+		return 1
 	fi
 
-	if [ "${CONFIG_FULL_PATH}" = "" ] || [ ! -f ${CONFIG_FULL_PATH} ]
+	diff "${CONFIG_FULL_PATH}" "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" > /dev/null
+	if [ ${?} -eq 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The file '${ORNG}${CONFIG_FULL_PATH}${NRML}' does not exist.\n       Aborting.\n"
-		return 1
-	elif [ ! -f "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" ]
+		echo -e "\n${LRED}ERROR:${NRML} The config file:\n       ${ORNG}${CONFIG_FULL_PATH}${NRML}"
+		echo -e "       does not appear to have any changes from the local repo copy.\n       Aborting.\n"
+		return 2
+	fi
+
+	if [ ! -n "${CHANGE_MESSAGE}" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The local repo file:\n       ${ORNG}${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}${NRML}\n       does not exist.\n       Aborting.\n"
-		return 1
+		echo -e ""
+		readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
+	fi
+
+	cp "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" "/tmp/${SCRIPT_NAME}_update-config.tmp" > /dev/null 2>&1
+	cp "${CONFIG_FULL_PATH}" "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
+		rm "/tmp/${SCRIPT_NAME}_update-config.tmp" > /dev/null 2>&1
+		return 2
+	fi
+
+	git add "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to update '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
+		mv "/tmp/${SCRIPT_NAME}_update-config.tmp" "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" > /dev/null 2>&1
+		return 2
 	else
-		if [ ! -n "${CHANGE_MESSAGE}" ]
-		then
-			echo -e ""
-			readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
-		fi
-		cp ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} /tmp/${SCRIPT_NAME}_update-config.tmp > /dev/null 2>&1
-		cp ${CONFIG_FULL_PATH} ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to copy '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			return 2
-		fi
-		git add ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to update '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo.\n       Aborting.\n"
-			mv /tmp/${SCRIPT_NAME}_update-config.tmp ${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH} > /dev/null 2>&1
-			return 2
-		else
-			rm /tmp/${SCRIPT_NAME}_update-config.tmp > /dev/null 2>&1
-		fi
-		git commit -m "Updated config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}: ${CHANGE_MESSAGE}."
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
-			echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}' "
-			echo -e "       to revert to the previous commit.\n       Aborting.\n"
-			return 2
-		fi
-		if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-				return 2
-			fi
-		fi
-		echo -e "\n${LGRN}OK, it seems we've successfully updated the config file!${NRML}\n"
+		rm "/tmp/${SCRIPT_NAME}_update-config.tmp" > /dev/null 2>&1
 	fi
+
+	git commit -m "Updated config; '${CONFIG_FULL_PATH}' for ${HOST_NAME}: ${CHANGE_MESSAGE}."
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to commit '${ORNG}${CONFIG_FULL_PATH}${NRML}'\n       to the local git repo."
+		echo -e "       Please consider manually running '${LBLU}git reset --hard${NRML}' "
+		echo -e "       to revert to the previous commit.\n       Aborting.\n"
+		return 2
+	fi
+
+	# If a remote repo is in use and we are requested to, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ] && [ "${GIT_NO_PUSH}" != "yes" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			return 2
+		fi
+	fi
+
+	echo -e "\n${LGRN}OK, it seems we've successfully updated the config file!${NRML}\n"
 
 	return 0
 }
@@ -2263,6 +2447,7 @@ update_local_repo ()
 			echo -e "       Please use '${LBLU}git status${NRML}' to find the cause.\n       Aborting.\n"
 			exit 2
 		fi
+
 		# Get the post-update git commit reference.
 		POST_UPDATE_COMMIT_REF=`git log --format=format:%H -1`
 
@@ -2272,6 +2457,7 @@ update_local_repo ()
 			echo -e "\n${YELL}Checking if any scripts have been updated in this update...${NRML}\n"
 			git diff-tree --no-commit-id --name-only -r ${PRE_UPDATE_COMMIT_REF} ${POST_UPDATE_COMMIT_REF} | grep "^scripts/"
 
+			# If there are new or updated scripts, ask the user if they want to install them.
 			if [ ${?} -eq 0 ]
 			then
 				# Ask whether to perform an 'install-scripts'.
@@ -2310,23 +2496,21 @@ merge_local_repo_to_remote ()
 	do
 		echo -e "\n${LCYN}Enter the remote git repo URI:${NRML}"
 		readee REMOTE_REPO_URI_TEMP
-		# Allow use to change their mind about type of repo.
-		if [ "${REMOTE_REPO_URI_TEMP}" = "" ]
-		then
-			break
-		fi
 		# Test the input to see if it is a valid URI (URL).
 		test_valid_simple_url "${REMOTE_REPO_URI_TEMP}"
-		if [ "${VALID_URL}" = "yes" ]
+		if [ "${VALID_URL}" = "no" ]
 		then
+			echo -e "\n${LRED}ERROR:${NRML} the remote git repo URI entered is invalid!\n       Aborting.\n"
+			return 1
+		else
 			question_yes_no "\nYou have entered '${NRML}${REMOTE_REPO_URI_TEMP}${LCYN}'\nas the remote git repo URI.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				REMOTE_REPO_URI=${REMOTE_REPO_URI_TEMP}
+				REMOTE_REPO_URI="${REMOTE_REPO_URI_TEMP}"
+				break
 			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} remote git repo URI is invalid!\n"
 		fi
+		sleep 4
 	done
 
 	# Check that the remote repo is valid and that this hostname does not already exist.
@@ -2364,16 +2548,22 @@ merge_local_repo_to_remote ()
 	LAST_LOCAL_COMMIT=`git log -1 | head -1 | awk '{print $2}'`
 
 	# Check for an existing (stale) remote repo, and if user agrees, proceed and delete it.
-	EXISTING_REMOTE=`git remote -v | egrep "^origin" | grep '(push)$' | awk '{print $2}'`
+	EXISTING_REMOTE=`git remote -v 2> /dev/null | egrep "^origin" | grep '(push)$' | awk '{print $2}'`
 	if [ "${EXISTING_REMOTE}" != "" ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote origin in the local repo!"
-		echo -e "         Git URI of origin:\n         '${ORNG}${EXISTING_REMOTE}${NRML}'\n"
+		echo -e "\n${ORNG}WARNING:${NRML} There appears to be an existing remote named 'origin' in the local repo!"
+		echo -e "         Git URI of 'origin':\n         '${ORNG}${EXISTING_REMOTE}${NRML}'\n"
 		question_yes_no "Would you like to proceed?"
 		if [ "${ANSWER}" = "yes" ]
 		then
 			git remote remove origin
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} An unexpected error occured whilst removing the remote 'origin'!\n       Aborting.\n"
+				return 2
+			fi
 		else
+			echo -e "\nAborting.\n"
 			return 1
 		fi
 	fi
@@ -2390,12 +2580,12 @@ merge_local_repo_to_remote ()
 	echo -e "\n${YELL}Next we need to fetch the remote repo into our local repo.${NRML}"
 	echo -e "${YELL}Please enter the remote repo credentials when prompted...${NRML}\n"
 	pause_prompt 8
-	git fetch
+	git_fetch
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to fetch the remote repo (origin/master)!\n       Aborting.\n"
 		git remote remove origin
-		return 1
+		return 2
 	fi
 
 	# Align the master branch on both local and remote repo.
@@ -2410,6 +2600,7 @@ merge_local_repo_to_remote ()
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The merge operation seems to have failed!\n       Aborting.\n"
 			git remote remove origin
+			git reset --soft "${LAST_LOCAL_COMMIT}"
 			return 2
 		fi
 	else
@@ -2426,17 +2617,31 @@ merge_local_repo_to_remote ()
 		echo -e "\n${LRED}ERROR:${NRML} The push operation seems to have failed!\n       Aborting.\n"
 		git remote remove origin
 		git reset --soft "${LAST_LOCAL_COMMIT}"
-		return 1
+		return 2
 	fi
 
 	if [ "${NEEDS_UPSTREAM_BRANCH_SET}" = "yes" ]
 	then
 		# Align the master branch on both local and remote repo.
 		git branch --set-upstream-to=origin/master master > /dev/null 2>&1
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The branch operation seems to have failed!\n       Aborting.\n"
+			git remote remove origin
+			git reset --soft "${LAST_LOCAL_COMMIT}"
+			return 2
+		fi
 	fi
 
 	REPO_URI="${REMOTE_REPO_URI}"
 	echo "${REPO_URI}" >  "${FDO_CONFIG_ROOT}/fdo-server-repo.conf"
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unexpected error storing the repo URI in '${ORNG}${FDO_CONFIG_ROOT}/fdo-server-repo.conf${NRML}'!\n"
+		git remote remove origin
+		git reset --soft "${LAST_LOCAL_COMMIT}"
+		return 2
+	fi
 	
 	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
 
@@ -2948,6 +3153,9 @@ init_host ()
 
 	INIT_HOST_REPO_MODIFIED=true
 
+	# Fix file permissions in config-templates that were lost in a git sync.
+	chmod -R go-rwx config-templates/init-host/var/cron/tabs
+
 	# Copy init-host template configs to the repo.
 	mkdir configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -3262,16 +3470,16 @@ init_host ()
 				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_GATEWAY_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_assignment "static"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ipv4_assignment "static"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_address "${WAN_IFACE_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ipv4_address "${WAN_IFACE_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_netmask "${WAN_IFACE_NETMASK}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ipv4_netmask "${WAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_gateway "${WAN_GATEWAY_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ipv4_gateway "${WAN_GATEWAY_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ip_assignment "dhcp"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.ipv4_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			if [ "${USES_PPP}" = "no" ]
 			then
@@ -3330,10 +3538,10 @@ init_host ()
 	then
 		sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${LAN_NET_IFACE}" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "loopback"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.type "loopback"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
-		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.wan.type "ethernet"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.type "ethernet"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
@@ -3352,11 +3560,11 @@ init_host ()
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
 		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_assignment "static"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_address "${LAN_IFACE_IP}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_netmask "${LAN_IFACE_NETMASK}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${USES_PPP}" = "yes" ]
 		then
@@ -3402,16 +3610,16 @@ init_host ()
 			done
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "static"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_assignment "static"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_address "${LAN_IFACE_IP}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_address "${LAN_IFACE_IP}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_netmask "${LAN_IFACE_NETMASK}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_netmask "${LAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ip_assignment "dhcp"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: if IS_LAN_IFACE_DHCP = no.
@@ -3420,12 +3628,6 @@ init_host ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	# END: if WAN_NET_IFACE != NULL.
-
-	# Pre-configure jail.conf with network configuration.
-	sed -i "" "s|JAILS_LAN_SUBNET_C|${JAILS_LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Update hostname.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostname=${HOST_NAME}.${DOMAIN_NAME}" > /dev/null 2>&1
@@ -3494,8 +3696,8 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Save the list of essential packages installed to the host config file.
-	RETURN_CODE=`ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH}`
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${RETURN_CODE} ))
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	for PACKAGE_NAME in ${ESSENTIAL_PACKAGES}
 	do
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
@@ -3525,7 +3727,7 @@ init_host ()
 
 	# Turn on compression on root pool if it's off.
 	ROOT_POOL=`df -l / 2> /dev/null | tail -1 | cut -d/ -f1`
-	if [ "${}" != "" ]
+	if [ "${ROOT_POOL}" != "" ] && [ `zpool list ${ROOT_POOL} 2> /dev/null` != "" ]
 	then
 		if [ `zfs get -H -o value compression ${ROOT_POOL}` = "off" ]
 		then
@@ -3533,6 +3735,8 @@ init_host ()
 			zfs set compression=on ${ROOT_POOL}
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
+	else
+		echo -e "\n${ORNG}WARNING:${NRML} This host does not appear use a ZFS root pool.\n"
 	fi
 
 	INIT_HOST_SYSTEM_MODIFIED=true
@@ -3593,13 +3797,13 @@ init_host ()
 		readee -p "${LCYN}Enter login account username: ${NRML}" ARBITRARY_USERNAME_TEMP
 
 		# Check that the username only contains letters, numbers, periods, underscores and hyphens with a minimum of 3 characters.
-		TEST=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-		if [ ${TEST} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
+		IS_SYNTAX_OK=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}'."
 			echo -e "       It must be at least three characters and only contain lower case"
 			echo -e "       letters, numbers, periods, underscores and hyphens.\n"
-		elif [ `cat /etc/passwd | cut -d: -f1 | egrep "^${ARBITRARY_USERNAME_TEMP}$" | wc -l` -lt 1 ]
+		elif [ `cat /etc/passwd | cut -d: -f1 | egrep "^${ARBITRARY_USERNAME_TEMP}$" | wc -l` -gt 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The username '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}' already exists on this host.\n"
 		else
@@ -3780,6 +3984,7 @@ init_host ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the private remote repo...${NRML}\n"
@@ -3803,12 +4008,77 @@ init_host ()
 	return 0
 }
 
-patch_host()
+undo_patch_host ()
 {
+
+	ERROR_COUNT=0
+
+	# Undo host system modifications.
+	if [ ${PATCH_HOST_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_SSHFS_DAEMON}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_SSHFS_DAEMON}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the patch-host process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+
+}
+
+patch_host ()
+{
+	if [ "${1}" = "--non-interactive" ]
+	then
+		IS_INTERACTIVE="no"
+	else
+		IS_INTERACTIVE="yes"
+	fi
+
+	PATCH_HOST_MODIFIED=false
+
+	trap 'undo_patch_host ; exit 3' HUP INT QUIT KILL TERM
+
+	ERROR_COUNT=0
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo."
+		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check for unsaved registered host config files.
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		return 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	PATCH_HOST_NEEDS_REBOOT="no"
 
-	echo -e "\n${YELL}We are now going to perform a '${LBLU}freebsd-update fetch${NRML}' operation.${NRML}"
+	echo -e "\n${YELL}We are now going to perform a '${NRML}freebsd-update fetch${YELL}' operation.${NRML}"
 	echo -e "${YELL}It may take a while...${NRML}\n"
 
 	NOW=`date "+%Y-%m-%d_%H-%M-%S"`
@@ -3847,6 +4117,67 @@ patch_host()
 		return 2
 	fi
 
+	# Get new FreeBSD version strings.
+	FREEBSD_VERSION_STRING=`freebsd-version`
+	FREEBSD_VERSION=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f1`
+	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
+	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
+	FREEBSD_CADENCE=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f2`
+	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
+
+	PATCH_HOST_MODIFIED=true
+
+	# Save new OS name and version details to the host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.name "FreeBSD"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.major_version "${FREEBSD_MAJOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.minor_version "${FREEBSD_MINOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.release_cadence "${FREEBSD_CADENCE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .general.os.patch_level "${FREEBSD_PATCH_LEVEL}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install host configs to the system.
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst updating the host configuration!\n"
+		undo_patch_host
+		return 2
+	fi
+
+	if [ "${IS_INTERACTIVE}" = "yes" ]
+	then
+		echo -e "\n\n${YELL}We are now ready to push the updated host configs up to the remote repo.${NRML}\n"
+		git add configs/${HOST_NAME}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		git commit -m "Updating host after 'patch-host'; ${HOST_NAME}."
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+			undo_patch_host
+			return 2
+		fi
+
+		# If a remote repo is in use, push changes to the remote.
+		if [ "${REPO_URI}" != "local" ]
+		then
+			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+			git_push origin master
+			if [ ${?} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+			fi
+		fi
+	fi
+
 	echo -e "\n${LGRN}This host has been successfully patched!${NRML}\n"
 
 	FREEBSD_INSTALLED_KERNEL_VERSION=`freebsd-version -k`
@@ -3860,7 +4191,7 @@ patch_host()
 	return 0
 }
 
-setup_vnc_desktop()
+setup_vnc_desktop ()
 {
 
 	# Check that the host is already registered.
@@ -3934,6 +4265,16 @@ setup_vnc_desktop()
 	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.local
 	sed -i "" "s/^#FDO_VNC_DESKTOP#//" configs/${HOST_NAME}/etc/rc.shutdown.local
 
+	# Save the list of packages installed to the host config file.
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${VNC_DESKTOP_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 
@@ -3956,6 +4297,7 @@ setup_vnc_desktop()
 
 	pause_prompt 8
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -4177,8 +4519,8 @@ init_hotdesk ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -4558,7 +4900,7 @@ init_hotdesk ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst storing the hotdesk configuration!\n"
-		undo_hotdesk
+		undo_init_hotdesk
 		return 2
 	fi
 
@@ -4575,6 +4917,7 @@ init_hotdesk ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -4612,7 +4955,7 @@ undo_init_sshfs_daemon ()
 	# Undo host system modifications.
 	if [ ${INIT_SSHFS_DAEMON_MODIFIED} = true ]
 	then
-		service sshfsd onestatus  > /dev/null 2>&1
+		service sshfsd onestatus > /dev/null 2>&1
 		if [ ${?} -eq 0 ]
 		then
 			service sshfsd onestop
@@ -4684,8 +5027,8 @@ init_sshfs_daemon ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -4750,6 +5093,16 @@ init_sshfs_daemon ()
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.sshfs-daemon_compat ${LATEST_SSHFSD_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Save the list of packages installed to the host config file.
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${SSHFS_DAEMON_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4783,6 +5136,7 @@ init_sshfs_daemon ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -4907,8 +5261,8 @@ init_jails ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -5018,7 +5372,7 @@ init_jails ()
 		return 2
 	fi
 
-	patch_host
+	patch_host --non-interactive
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
@@ -5109,6 +5463,12 @@ init_jails ()
 	install_file_tree config-templates/init-jails configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
+
+	# Pre-configure jail.conf with network configuration.
+	sed -i "" "s|JAILS_LAN_SUBNET_C|${JAILS_LAN_SUBNET_C}|g" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/jail.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set some basic configuration for the jail subsystem.
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .storage.jails_pool "${JAILS_POOL_NAME}"
@@ -5238,6 +5598,34 @@ init_jails ()
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.jails_compat ${LATEST_JAILS_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Set the template jails' IPv4 address in the jails config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} -t object .jails.0.ip4 "{ addr = ${JAILS_LAN_SUBNET_C}.1 }"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Save template jail OS name and version details to the jails config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.name "FreeBSD"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.major_version "${FREEBSD_MAJOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.minor_version "${FREEBSD_MINOR_VERSION}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.release_cadence "${FREEBSD_CADENCE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.patch_level "${FREEBSD_PATCH_LEVEL}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.os.architecture "${FREEBSD_ARCH}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Save the list of packages installed to the jails config file.
+	ucl_array_length configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${ESSENTIAL_JAIL_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.0.packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
 	# Install updated host configs to the system (after disabling template jail).
 	install_file_tree configs/${HOST_NAME} /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5266,6 +5654,7 @@ init_jails ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -5504,16 +5893,16 @@ create_jail ()
 	fi
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
 	fi
 
 	# Check that the jails.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${JAILS_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${JAILS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${JAILS_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -5565,7 +5954,9 @@ create_jail ()
 	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
 	FREEBSD_ARCH=`uname -m`
 
-	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAILS_POOL_NAME}/jails/template | cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-RELEASE" | tail -1`
+	# Get name of the most recent jail template snapshot that matches the host version.
+	TEMPLATE_SNAPSHOT=`zfs list -H -o name -s creation -t snapshot -r ${JAILS_POOL_NAME}/jails/template | \
+		cut -d@ -f2 | egrep "^${FREEBSD_VERSION}-${FREEBSD_CADENCE}" | tail -1`
 
 	LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
 	if [ ${?} -ne 0 ] || [ "${LAN_NET_IFACE}" = "null" ] || [ "${LAN_NET_IFACE}" = "" ]
@@ -5681,6 +6072,27 @@ create_jail ()
 		return 2
 	fi
 
+	# Get the jails array index from the jails config file.
+	ucl_array_length configs/${HOST_NAME}${JAILS_CONF_PATH} .jails
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	JAILS_ARRAY_INDEX=${UCL_ARRAY_LENGTH}
+
+	# Copy UCL jail config from template jail to newly created jail.
+	TEMPLATE_JAIL_UCL=`${UCL_CMD} get -f configs/${HOST_NAME}${JAILS_CONF_PATH} -u .jails.0`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} -t object .jails.${JAILS_ARRAY_INDEX} ${TEMPLATE_JAIL_UCL}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set newly created jails' name and hostname in the jails config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_INDEX}.name "${JAIL_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_INDEX}.hostname "${JAIL_HOSTNAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set newly created jails' IPv4 address in the jails config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_INDEX}.ip4.addr "${JAIL_IP}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	# Install latest scripts to the jail.
 	install_scripts /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5719,6 +6131,7 @@ create_jail ()
 			return 2
 		fi
 
+		# If a remote repo is in use, push changes to the remote.
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -5873,12 +6286,12 @@ create_jail_from_recipe ()
 
 	# Create a blank jail (non-interactively).
 	create_jail ${JAIL_NAME} ${JAIL_HOST_NAME} --non-interactive
-	if [ ${?} -ne 0 ]
+	RETURN_CODE=${?}
+	if [ ${RETURN_CODE} -ne 0 ]
 	then
-		EXIT_CODE=${?}
 		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
 		revert_create_jail ${JAIL_NAME}
-		return ${EXIT_CODE}
+		return ${RETURN_CODE}
 	fi
 
 	# Source the recipe again to pick up any updated variables.
@@ -6000,6 +6413,16 @@ create_jail_from_recipe ()
 		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .general.recipe_compat ${RECIPE_COMPAT}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+		# Save the list of packages installed to the jails config file.
+		ucl_array_length configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_INDEX}.packages
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		for PACKAGE_NAME in ${ESSENTIAL_JAIL_PACKAGES}
+		do
+			${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_LENGTH}.packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+		done
+
 		# Install any new or modfied configs.
 		install_file_tree configs/${HOST_NAME} /
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -6101,6 +6524,7 @@ create_jail_from_recipe ()
 			return 2
 		fi
 
+		# If a remote repo is in use, push changes to the remote.
 		if [ "${REPO_URI}" != "local" ]
 		then
 			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -6263,8 +6687,8 @@ init_vms ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -6579,6 +7003,16 @@ init_vms ()
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.vnc_port_offset "${DEFAULT_VM_VNC_PORT_NUM_START}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Save the list of packages installed to the host config file.
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${VM_SUBSYSTEM_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
 	# Add subsystems compat level and init marker to host config file.
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .subsystems.vms_compat ${LATEST_VMS_SUBSYS_COMPAT}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -6607,6 +7041,7 @@ init_vms ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -6627,10 +7062,10 @@ init_vms ()
 
 undo_create_vm_template ()
 {
+	ERROR_COUNT=0
+
 	if [ ${CREATE_VM_TEMPLATE_MODIFIED} = true ]
 	then
-		ERROR_COUNT=0
-
 		# Stop the template VM.
 		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
 
@@ -6639,22 +7074,32 @@ undo_create_vm_template ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
+	if [ ${CREATE_VM_TEMPLATE_FILESYSTEMS_CREATED} = true ]
+	then
 		# Destroy any ZFS filesystems that were created.
 		zfs destroy -rf ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
+	if [ ${CREATE_VM_TEMPLATE_HOST_MODIFIED} = true ]
+	then
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
-		if [ "`git status -s`" != "" ]
+		if [ "${COMMIT_BEFORE_CREATE_VM_TEMPLATE}" != "" ]
 		then
 			git reset --hard ${COMMIT_BEFORE_CREATE_VM_TEMPLATE}
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-template!\n"
-		fi
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-template!\n"
 	fi
 
 	echo -e "\nAborting.\n"
@@ -6663,10 +7108,10 @@ undo_create_vm_template ()
 
 undo_create_vm_instance ()
 {
+	ERROR_COUNT=0
+
 	if [ ${CREATE_VM_INSTANCE_MODIFIED} = true ]
 	then
-		ERROR_COUNT=0
-
 		# Stop the instance VM.
 		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
 
@@ -6675,22 +7120,32 @@ undo_create_vm_instance ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		ifconfig ${VM_TAP_IFACE} destroy > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
+	if [ ${CREATE_VM_INSTANCE_FILESYSTEMS_CREATED} = true ]
+	then
 		# Destroy any ZFS filesystems that were created.
 		zfs destroy -rf ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
+	if [ ${CREATE_VM_INSTANCE_HOST_MODIFIED} = true ]
+	then
 		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
-		if [ "`git status -s`" != "" ]
+		if [ "${COMMIT_BEFORE_CREATE_VM_INSTANCE}" != "" ]
 		then
 			git reset --hard ${COMMIT_BEFORE_CREATE_VM_INSTANCE}
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-instance!\n"
-		fi
+		# Install back old host configs.
+		install_file_tree configs/${HOST_NAME} /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} There was an error during the undo of create-vm-instance!\n"
 	fi
 
 	echo -e "\nAborting.\n"
@@ -7369,6 +7824,8 @@ create_vm_template ()
 	VM_TYPE="template"
 	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
 	CREATE_VM_TEMPLATE_MODIFIED=false
+	CREATE_VM_TEMPLATE_FILESYSTEMS_CREATED=false
+	CREATE_VM_TEMPLATE_HOST_MODIFIED=false
 
 	trap 'undo_create_vm_template ; exit 3' HUP INT QUIT KILL TERM
 
@@ -7412,16 +7869,16 @@ create_vm_template ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
 	fi
 
 	# Check that the vms.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -7827,6 +8284,8 @@ create_vm_template ()
 	VM_FS_MOUNTPOINT_STRING=`zfs get -H mountpoint ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null`
 	if [ ${?} -ne 0 ]
 	then
+		CREATE_VM_TEMPLATE_FILESYSTEMS_CREATED=true
+
 		# ZFS filesystem doesn't yet exist, so let's create it.
 		echo -e "\n${YELL}Creating ZFS filesystem for the template VM OS image...${NRML}\n"
 		zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
@@ -7837,6 +8296,13 @@ create_vm_template ()
 		echo -e "\n${YELL}ZFS filesystem for the template VM image already exists...${NRML}\n"
 	fi
 
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong creating the template VM filesystem!\n"
+		undo_create_vm_template
+		return 2
+	fi
+
 	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint.
 	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
 	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
@@ -7844,6 +8310,8 @@ create_vm_template ()
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
 	fi
+
+	CREATE_VM_TEMPLATE_HOST_MODIFIED=true
 
 	# Add VM network configuration to '/etc/rc.conf'.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
@@ -7957,11 +8425,11 @@ create_vm_template ()
 
 	# Recursive ISO and disk image handler, for use in preparing the VM.
 	create_vm_image_handler
-	EXIT_CODE=${?}
-	if [ ${EXIT_CODE} -ne 0 ]
+	RETURN_CODE=${?}
+	if [ ${RETURN_CODE} -ne 0 ]
 	then
 		undo_create_vm_template
-		return ${EXIT_CODE}
+		return ${RETURN_CODE}
 	fi
 
 	# The template VM preparation is finished, let's shutdown and save the template for use.
@@ -7987,6 +8455,7 @@ create_vm_template ()
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'create-vm-template ${VM_NAME}'; ${HOST_NAME}."
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -8014,6 +8483,8 @@ create_vm_instance ()
 	VM_TYPE="instance"
 	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
 	CREATE_VM_INSTANCE_MODIFIED=false
+	CREATE_VM_INSTANCE_FILESYSTEMS_CREATED=false
+	CREATE_VM_INSTANCE_HOST_MODIFIED=false
 
 	trap 'undo_create_vm_instance ; exit 3' HUP INT QUIT KILL TERM
 
@@ -8057,16 +8528,16 @@ create_vm_instance ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
 	fi
 
 	# Check that the vms.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${VMS_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${VMS_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -8395,6 +8866,8 @@ create_vm_instance ()
 		return 2
 	fi
 
+	CREATE_VM_INSTANCE_FILESYSTEMS_CREATED=true
+
 	# Create instance VM filesystem by cloning from it's template VM.
 	echo -e "\n${YELL}Creating ZFS filesystem for the instance VM OS image...${NRML}\n"
 	zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}@latest ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME} 2> /dev/null
@@ -8409,6 +8882,15 @@ create_vm_instance ()
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
 	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong creating the instance VM filesystem!\n"
+		undo_create_vm_instance
+		return 2
+	fi
+
+	CREATE_VM_INSTANCE_HOST_MODIFIED=true
 
 	# Add VM network configuration to '/etc/rc.conf'.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
@@ -8497,11 +8979,11 @@ create_vm_instance ()
 
 	# Recursive ISO and disk image handler, for use in preparing the VM.
 	create_vm_image_handler
-	EXIT_CODE=${?}
-	if [ ${EXIT_CODE} -ne 0 ]
+	RETURN_CODE=${?}
+	if [ ${RETURN_CODE} -ne 0 ]
 	then
 		undo_create_vm_instance
-		return ${EXIT_CODE}
+		return ${RETURN_CODE}
 	fi
 
 	# The instance VM preparation is finished, let's shutdown and save the instance for use.
@@ -8535,6 +9017,7 @@ create_vm_instance ()
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'create-vm-instance ${VM_NAME}'; ${HOST_NAME}."
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -8669,8 +9152,8 @@ init_partimag ()
 	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
 
 	# Check that the host.conf file is accessible.
-	TEST_CONTENTS=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
-	if [ ${?} -ne 0 ] || [ "${TEST_CONTENTS}" = "null" ] || [ "${TEST_CONTENTS}" = "" ]
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
 		return 2
@@ -8928,6 +9411,7 @@ init_partimag ()
 		return 2
 	fi
 
+	# If a remote repo is in use, push changes to the remote.
 	if [ "${REPO_URI}" != "local" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
@@ -8980,6 +9464,11 @@ fi
 if [ "${CHECK_REPO_CONFIG}" = "yes" ]
 then
 	check_repo_config
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Not able to verify or initialise a valid local repo!\n       Aborting."
+		exit 1
+	fi
 fi
 
 if [ ${#} -lt 1 ]
@@ -9064,6 +9553,7 @@ case "${SUB_CMD}" in
 
 	patch-host)
 		# Use freebsd-update to update to latest patch level.
+		update_local_repo
 		patch_host
 		exit ${?}
 		;;
@@ -9100,7 +9590,7 @@ case "${SUB_CMD}" in
 		update_local_repo
 		upgrade_repo_from_upstream --push
 		EXIT_CODE=${?}
-		if [ ${?} -ne 0 ]
+		if [ ${EXIT_CODE} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to upgrade from the public upstream skeleton git repo.\n"
 			exit ${EXIT_CODE}
