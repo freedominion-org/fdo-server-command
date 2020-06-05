@@ -5,10 +5,9 @@ fdo-server TODO list:
 TODO
 ----
 
-- Replace tightvnc with tigervnc and ask for VNC screen size and password (see create_vm_template).
-- Convert all config files to UCL.
-- Make all sub-commands fully idempotent by adding more check and balances and cleanup function with trap interupt.
-- ``fdo-pf|ppp-add|remove-port-forward-rule``: add checks for failure by using diff, before trying to commit. Ask to reload service.
+- consider convert sshfs-daemon connections config file to UCL ().
+- ``fdo-hotdesk-remove-user``: load backup pool from UCL host.conf file.
+- hotdesk subsystem needs a list command/script ``fdo-hotdesk-list-users``.
 
 
 DONE
@@ -53,3 +52,26 @@ DONE
 - ``fdo-backupz-thin-snapshots`` must ALWAYS keep the lastest TWO snapshots.
 - ``fdo-backupz-thin-snapshots``, ``fdo-backupz-repair-state`` and ``fdo-backupz`` should both block one another.
 - Jail recipes with additional filesystems should ask for pool to use (e.g. pxe recipe).
+- ``fdo-pf|ppp-add|remove-port-forward-rule``: ask to reload service.
+- ``update-config``: add checks for changes by using diff, before trying to commit.
+- Replace tightvnc with tigervnc and ask for VNC screen size and password (see create_vm_template).
+- ``init-vnc-desktop``: ask user for screen size from list of available.
+- ``undo_*``: after install back previous repo configs, remove all config-templates files that did not exist before.
+- ``init-host`` & ``init-vnc-desktop```: remove rc.local and rc.shutdown.local from config-templates, add to fdo-server.  
+- ``init-host`` & ``init_jails``: remove /etc/syslogd.conf from config-templates, since it's no longer customised.
+- ``init-host`` update newsyslog configs to FreeBSD 12.x layout.
+- ``init-jails``: convert existing config-templates/init-jails folder to 'jail_template' and make init-jails for host configs.
+- ``sshfsd`` rc script; change 'REQUIRE:' to "DAEMON FILESYSTEMS NETWORK netif" and add robustness to allow for slow network establishment.
+- add template for ``/var/cron/tabs/root`` to ``init-host``.
+- ``fdo-ppp-list-port-forward-rules`` ; add support for upper case (A-Z).
+- script ``fdo-hotdesk-add-user``: use home folder ZFS quota variable from ``/usr/local/etc/fdo/hotdesk.conf``.
+- ``init_local_repo``: better failure detection and handling.
+- ``update_local_repo``: better failure detection and handling.
+- ``init_git_config``: better failure detection and handling.
+- ``upgrade_repo_from_upstream``: better failure detection and handling.
+- ``check_repo_config``: better failure detection and handling.
+- ``merge_local_repo_to_remote``: better failure detection and handling.
+- Convert all config files to UCL.
+- Make all sub-commands fully idempotent by adding more check and balances and cleanup function with trap interupt.
+- `` config-templates``: split into per RELEASE directories.
+- ``install_scripts_everywhere``: detect jails to install scripts to by checking for rc.conf.

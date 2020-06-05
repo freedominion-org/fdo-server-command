@@ -22,3 +22,5 @@ FIXED
 - Check why /usr/local/share/pixmaps/FreeBSD-beastie(1440x900).xpm and /usr/home/ are owned by the arbitrary login user.
 - fdo-hotdesk-remove-user: terminal output formatting is broken (escape characters).
 - setup-vnc-desktop: home folder permissions of arbitrary login user gets clobbered to ownership of root:wheel during create-jail-from-recipe.
+- ``update-script``: add sanity test to determine if system script differs from repo script.
+- ``add|update-script|config``: use 'cp -p' instead of just 'cp' so that permissions and ownership are carried over.
