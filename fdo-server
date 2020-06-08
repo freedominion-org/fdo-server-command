@@ -1392,7 +1392,7 @@ backup_file_tree ()
 
 undo_backup_file_tree ()
 {
-	# ASSUME that a backup_file_tree have recently been run on the same tree.
+	# ASSUME that a backup_file_tree has recently been run on the same tree.
 
 	ERROR_COUNT=0
 
@@ -1424,9 +1424,9 @@ install_file_tree ()
 
 		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT}/||"`
 		DEST_FILE_PATH="${DEST_FILES_ROOT}${RELATIVE_DEST_FILE_PATH}"
-		FILE_UID=`stat -f "%u" "${SOURCE_FILE_PATH}"`
-		FILE_GID=`stat -f "%g" "${SOURCE_FILE_PATH}"`
-		FILE_PERMS=`stat -f "%OLp" "${SOURCE_FILE_PATH}"`
+		SOURCE_FILE_UID=`stat -f "%u" "${SOURCE_FILE_PATH}"`
+		SOURCE_FILE_GID=`stat -f "%g" "${SOURCE_FILE_PATH}"`
+		SOURCE_FILE_PERMS=`stat -f "%OLp" "${SOURCE_FILE_PATH}"`
 
 		if [ -d "${SOURCE_FILE_PATH}" ]
 		then
@@ -1450,19 +1450,20 @@ install_file_tree ()
 			fi
 		fi
 
-		chown ${FILE_UID}:${FILE_GID} "${DEST_FILE_PATH}"
-		if [ ${?} -ne 0 ]
-		then
-			ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
-		fi
-		chmod ${FILE_PERMS} "${DEST_FILE_PATH}"
+		chmod ${SOURCE_FILE_PERMS} "${DEST_FILE_PATH}"
 		if [ ${?} -ne 0 ]
 		then
 			ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
 		fi
 
-		if [ "${CHOWN_USER}" != "" ]
+		if [ "${CHOWN_USER}" = "" ]
 		then
+			chown ${SOURCE_FILE_UID} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		else
 			chown ${CHOWN_USER} "${DEST_FILE_PATH}"
 			if [ ${?} -ne 0 ]
 			then
@@ -1470,8 +1471,14 @@ install_file_tree ()
 			fi
 		fi
 
-		if [ "${CHOWN_GROUP}" != "" ]
+		if [ "${CHOWN_GROUP}" = "" ]
 		then
+			chown ${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		else
 			chown :${CHOWN_GROUP} "${DEST_FILE_PATH}"
 			if [ ${?} -ne 0 ]
 			then
@@ -4492,6 +4499,13 @@ patch_host ()
 		fi
 	fi
 
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
 	echo -e "\n${LGRN}This host has been successfully patched!${NRML}\n"
 
 	FREEBSD_INSTALLED_KERNEL_VERSION=`freebsd-version -k`
@@ -4656,7 +4670,7 @@ init_vnc_desktop ()
 	INIT_VNC_DESKTOP_REPO_MODIFIED=true
 
 	# Copy init-vnc-desktop template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-vnc-desktop/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-vnc-desktop/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/ ${ARBITRARY_USERNAME} ${ARBITRARY_USERNAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -4796,7 +4810,7 @@ init_vnc_desktop ()
 		fi
 	fi
 
-	# Undo backup (clean-up) of host system configs.
+	# Undo (clean-up) of backup host system configs.
 	undo_backup_file_tree
 	if [ ${?} -ne 0 ]
 	then
@@ -5443,10 +5457,17 @@ init_hotdesk ()
 		fi
 	fi
 
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
 	# Cleanup backup files.
-	rm "${ETC_EXPORTS_BACKUP_FILE}" > /dev/null 2>&1
-	rm "${VAR_YP_MAKEFILE_BACKUP_FILE}" > /dev/null 2>&1
-	rm "${VAR_YP_MASTER_PASSWD_BACKUP_FILE}" > /dev/null 2>&1
+	rm /etc/exports.backup.init-hotdesk > /dev/null 2>&1
+	rm /var/yp/Makefile.backup.init-hotdesk /dev/null 2>&1
+	rm /var/yp/master.passwd.backup.init-hotdesk > /dev/null 2>&1
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up NIS/NFS hotdesking.${NRML}\n"
 	echo -e "\n${YELL}To register hotdesk users on this server; use the command:${NRML}"
@@ -5687,7 +5708,7 @@ init_sshfs_daemon ()
 		fi
 	fi
 
-	# Undo backup (clean-up) of host system configs.
+	# Undo (clean-up) of backup host system configs.
 	undo_backup_file_tree
 	if [ ${?} -ne 0 ]
 	then
@@ -6249,6 +6270,13 @@ init_jails ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
 		fi
+	fi
+
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
 	fi
 
 	echo -e "\n${LGRN}Congratulations! We have now finished initialising the jails subsystem.${NRML}\n"
@@ -7680,6 +7708,13 @@ init_vms ()
 			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
 			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
 		fi
+	fi
+
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
 	fi
 
 	echo -e "\n${LGRN}Congratulations! We have now finished initialising the VM subsystem.${NRML}\n"
@@ -9132,6 +9167,13 @@ create_vm_template ()
 		fi
 	fi
 
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
 	echo -e "\n${LGRN}Congratulations! The template VM '${NRML}${VM_NAME}${LGRN}'${NRML}"
 	echo -e "${LGRN}is ready to use.${NRML}\n"
 	echo -e "${YELL}To create a new VM, use the command:${NRML}"
@@ -9716,6 +9758,13 @@ create_vm_instance ()
 		fi
 	fi
 
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
 	echo -e "\n${LGRN}Congratulations! The instance VM '${NRML}${VM_NAME}${LGRN}'${NRML}"
 	echo -e "${LGRN}is ready to use.${NRML}\n"
 	echo -e "${YELL}To start the new VM, use the command:${NRML}"
@@ -10128,8 +10177,15 @@ init_partimag ()
 		fi
 	fi
 
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
 	# Cleanup backup files.
-	rm "${ETC_EXPORTS_BACKUP_FILE}" > /dev/null 2>&1
+	rm /etc/exports.backup.init-partimag > /dev/null 2>&1
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up an NFS share for partimag.\n${NRML}"
 	echo -e "${YELL}partimag NFS version:      3${NRML}"
