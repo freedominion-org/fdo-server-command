@@ -5,7 +5,8 @@ fdo-server BUGS list:
 BUGS
 ----
 
-*Currently there are no known bugs*
+- Permissions on install_file_tree for init-vnc-desktop sets arbitrary users home folder to root:wheel.
+- /etc/hosts missing IP address in front of host name
 
 
 FIXED

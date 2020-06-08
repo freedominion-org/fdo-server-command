@@ -2309,7 +2309,7 @@ check_all_configs ()
 
 	# Check configs for the host.
 	echo -e "\n${YELL}Checking configs for the host...${NRML}\n"
-	check_configs configs/${HOST_NAME} / "${SUB_ARG1}"
+	check_configs configs/${HOST_NAME} / "${1}"
 	if [ ${?} -ne 0 ]
 	then
 		RETURN_CODE=$(( ${RETURN_CODE} + 1 ))
@@ -2319,8 +2319,9 @@ check_all_configs ()
 	# Check configs for the jails.
 	for JAIL_NAME in `ls -1 configs | grep -e "@${HOST_NAME}" | cut -d@ -f1`
 	do
+		echo "JAIL_NAME=${JAIL_NAME}"
 		echo -e "\n${YELL}Checking configs for the '${NRML}${JAIL_NAME}${YELL}' jail...${NRML}\n"
-		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${SUB_ARG1}"
+		check_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/ "${1}"
 		if [ ${?} -ne 0 ]
 		then
 			RETURN_CODE=$(( ${RETURN_CODE} + 2 ))
@@ -2598,6 +2599,13 @@ update_local_repo ()
 		CHECK_SCRIPTS="yes"
 	fi
 
+	if [ "${1}" = "--no-update" ]
+	then
+		DO_UPDATE_REPO="no"
+	else
+		DO_UPDATE_REPO="yes"
+	fi
+
 	if [ ! -d "/${REPO_NAME}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears the local git repo '${ORNG}/${REPO_NAME}${NRML}' does not exist!\n       Aborting.\n"
@@ -2609,6 +2617,11 @@ update_local_repo ()
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Unable to enter the repo directory; '${ORNG}/${REPO_NAME}${NRML}'!\n       Aborting.\n"
 		exit 1
+	fi
+
+	if [ "${DO_UPDATE_REPO}" = no ]
+	then
+		return 0
 	fi
 
 	if [ "${REPO_URI}" = "local" ]
@@ -2645,6 +2658,10 @@ update_local_repo ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					install_scripts_everywhere
+					if [ ${?} -ne 0 ]
+					then
+						return 2
+					fi
 				else
 					echo -e "${YELL}You may perform an '${NRML}install-scripts${YELL}' later by running the command:\n${LBLU}${SCRIPT_NAME} install-scripts${NRML}"
 				fi
@@ -4585,7 +4602,7 @@ init_vnc_desktop ()
 
 	# Check that the vnc-desktop subsystem is not already initialised.
 	VNC_DESKTOP_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vnc-desktop_compat`
-	if [ ${?} -eq 0 ] && [ "${VNC_DESKTOP_SUBSYS_COMPAT}" != "null" ] && [ "${VNC_DESKTOP_SUBSYS_COMPAT}" != "" ]
+	if [ "${VNC_DESKTOP_SUBSYS_COMPAT}" != "null" ] && [ "${VNC_DESKTOP_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VNC desktop subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -4598,7 +4615,7 @@ init_vnc_desktop ()
 	if [ ${?} -ne 0 ] || [ "${ARBITRARY_USERNAME}" = "null" ] || [ "${ARBITRARY_USERNAME}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} There was a problem retrieving the arbitrary username for this host!\n"
-		undo_init_sshfs_daemon
+		undo_init_vnc_desktop
 		return 2
 	fi
 
@@ -4613,7 +4630,7 @@ init_vnc_desktop ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
-		undo_init_sshfs_daemon
+		undo_init_vnc_desktop
 		return 2
 	fi
 
@@ -5011,7 +5028,7 @@ init_hotdesk ()
 
 	# Check that the hotdesk subsystem is not already initialised.
 	HOTDESK_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.hotdesk_compat`
-	if [ ${?} -eq 0 ] && [ "${HOTDESK_SUBSYS_COMPAT}" != "null" ] && [ "${HOTDESK_SUBSYS_COMPAT}" != "" ]
+	if [ "${HOTDESK_SUBSYS_COMPAT}" != "null" ] && [ "${HOTDESK_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the hotdesk subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -5449,10 +5466,10 @@ undo_init_sshfs_daemon ()
 
 	ERROR_COUNT=0
 
-	# Stop sshfsd service, if it was started.
+	# Stop fdo_sshfsd service, if it was started.
 	if [ ${INIT_SSHFS_DAEMON_SERVICE_STARTED} = true ]
 	then
-		service sshfsd stop
+		service fdo_sshfsd stop
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -5540,8 +5557,8 @@ init_sshfs_daemon ()
 	fi
 
 	# Check that the sshfs-daemon subsystem is not already initialised.
-	SSHFSD_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.sshfs-daemon_compat`
-	if [ ${?} -eq 0 ] && [ "${SSHFSD_SUBSYS_COMPAT}" != "null" ] && [ "${SSHFSD_SUBSYS_COMPAT}" != "" ]
+	SSHFS_DAEMON_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.sshfs-daemon_compat`
+	if [ "${SSHFS_DAEMON_SUBSYS_COMPAT}" != "null" ] && [ "${SSHFS_DAEMON_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the SSHFS-daemon subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -5592,8 +5609,8 @@ init_sshfs_daemon ()
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf "fuse_load=YES" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Set sshfsd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "sshfsd_enable=YES" > /dev/null 2>&1
+	# Set fdo_sshfsd service to start on boot.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "fdo_sshfsd_enable=YES" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
@@ -5636,11 +5653,11 @@ init_sshfs_daemon ()
 
 	echo -e "\n"
 
-	# Start sshfsd service for the first time.
-	service sshfsd onestart
+	# Start fdo_sshfsd service for the first time.
+	service fdo_sshfsd onestart
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${ORNG}WARNING:${NRML} Something went wrong starting the 'sshfsd' service!"
+		echo -e "\n${ORNG}WARNING:${NRML} Something went wrong starting the 'fdo_sshfsd' service!"
 	else
 		INIT_SSHFS_DAEMON_SERVICE_START=true
 	fi
@@ -5808,7 +5825,7 @@ init_jails ()
 
 	# Check that the jails subsystem is not already initialised.
 	JAILS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.jails_compat`
-	if [ ${?} -eq 0 ] && [ "${JAILS_SUBSYS_COMPAT}" != "null" ] && [ "${JAILS_SUBSYS_COMPAT}" != "" ]
+	if [ "${JAILS_SUBSYS_COMPAT}" != "null" ] && [ "${JAILS_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -6384,8 +6401,6 @@ revert_create_jail ()
 	zfs destroy -rf ${JAILS_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	cd "/${REPO_NAME}"
-
 	# Delete jail config directory from local repo.
 	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
 
@@ -6489,7 +6504,7 @@ create_jail ()
 
 	# Check that the jails subsystem is initialised.
 	JAILS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.jails_compat`
-	if [ ${?} -ne 0 ] || [ "${JAILS_SUBSYS_COMPAT}" = "null" ] || [ "${JAILS_SUBSYS_COMPAT}" = "" ]
+	if [ "${JAILS_SUBSYS_COMPAT}" = "null" ] || [ "${JAILS_SUBSYS_COMPAT}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the jails subsystem is not initialised."
 		echo -e "       Consider using the command:"
@@ -6512,6 +6527,21 @@ create_jail ()
 		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${ORNG}${JAIL_NAME}${NRML}' is already in use.\n       Aborting.\n"
 		return 1
 	fi
+
+	# Check if the jail_name already exists in jails.conf.
+	JAIL_INDEX=0
+	while [ `${UCL_CMD} get -f ${JAILS_CONF_PATH} -q .jails.${JAIL_INDEX}` != "null" ]
+	do
+		TEST_JAIL_NAME=`${UCL_CMD} get -f ${JAILS_CONF_PATH} -q .jails.${JAIL_INDEX}.name`
+		if [ "${JAIL_NAME}" = "${TEST_JAIL_NAME}" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} A jail already exists in the FDo jails config with the name;"
+			echo -e "       '${JAIL_NAME}'"
+			echo -e "       Aborting.\n"
+			exit 1
+		fi
+		JAIL_INDEX=$(( ${JAIL_INDEX} + 1 ))
+	done
 
 	# Check that, if specified, the jail IP address is not already in use.
 	if [ "${JAIL_IP}" != "" ]
@@ -7278,7 +7308,7 @@ init_vms ()
 
 	# Check that the VMs subsystem is not already initialised.
 	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
-	if [ ${?} -eq 0 ] && [ "${VMS_SUBSYS_COMPAT}" != "null" ] && [ "${VMS_SUBSYS_COMPAT}" != "" ]
+	if [ "${VMS_SUBSYS_COMPAT}" != "null" ] && [ "${VMS_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -8500,7 +8530,7 @@ create_vm_template ()
 
 	# Check that the VMs subsystem is initialised.
 	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
-	if [ ${?} -ne 0 ] || [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
+	if [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is not initialised."
 		echo -e "       Consider using the command:"
@@ -9181,7 +9211,7 @@ create_vm_instance ()
 
 	# Check that the VMs subsystem is initialised.
 	VMS_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.vms_compat`
-	if [ ${?} -ne 0 ] || [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
+	if [ "${VMS_SUBSYS_COMPAT}" = "null" ] || [ "${VMS_SUBSYS_COMPAT}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the VMs subsystem is not initialised."
 		echo -e "       Consider using the command:"
@@ -9825,7 +9855,7 @@ init_partimag ()
 
 	# Check that the partimag subsystem is not already initialised.
 	PARTIMAG_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.partimag_compat`
-	if [ ${?} -eq 0 ] && [ "${PARTIMAG_SUBSYS_COMPAT}" != "null" ] && [ "${PARTIMAG_SUBSYS_COMPAT}" != "" ]
+	if [ "${PARTIMAG_SUBSYS_COMPAT}" != "null" ] && [ "${PARTIMAG_SUBSYS_COMPAT}" != "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} It appears that the partimag subsystem is already initialised."
 		echo -e "       Consider using the command:"
@@ -10131,6 +10161,11 @@ then
 	CHECK_REPO_CONFIG="no"
 fi
 
+if [ "${SUB_CMD}" = "check-configs" ] && [ "${SUB_ARG1}" = "--script" ]
+then
+	FETCH_LATEST_SELF="no"
+fi
+
 if [ "${FETCH_LATEST_SELF}" = "yes" ]
 then
 	fetch_latest_self
@@ -10184,8 +10219,14 @@ case "${SUB_CMD}" in
 		;;
 
 	check-configs)
-		update_local_repo
-		check_all_configs
+		if [ "${SUB_ARG1}" = "--script" ]
+		then
+			update_local_repo --no-update
+			check_all_configs --silent
+		else
+			update_local_repo
+			check_all_configs "${SUB_ARG1}"
+		fi
 		exit ${?}
 		;;
 
@@ -10298,6 +10339,7 @@ case "${SUB_CMD}" in
 	revert-create-jail)
 		# Revert back to before last jail creation (developers).
 		test_num_mandatory_sub_args 1
+		update_local_repo --no-update
 		revert_create_jail "${SUB_ARG1}"
 		exit ${?}
 		;;

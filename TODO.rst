@@ -5,9 +5,9 @@ fdo-server TODO list:
 TODO
 ----
 
-- consider convert sshfs-daemon connections config file to UCL ().
 - ``fdo-hotdesk-remove-user``: load backup pool from UCL host.conf file.
 - hotdesk subsystem needs a list command/script ``fdo-hotdesk-list-users``.
+- hotdesk subsystem should store users in UCL config file, possibly along with their hashed passwords.
 
 
 DONE
@@ -75,3 +75,6 @@ DONE
 - Make all sub-commands fully idempotent by adding more check and balances and cleanup function with trap interupt.
 - `` config-templates``: split into per RELEASE directories.
 - ``install_scripts_everywhere``: detect jails to install scripts to by checking for rc.conf.
+- Convert sshfs-daemon connections config file to UCL ().
+- Move rc.d scripts back to scripts instead of in config-templates.
+- Archive old/unsupported ``remote-desktops`` subsystem configs/scripts.
