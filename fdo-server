@@ -3914,6 +3914,8 @@ init_host ()
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_netmask "${LAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		else
+			## TODO: how to handle LAN_IFACE_IP when we're using DHCP?
+			LAN_IFACE_IP="127.0.0.1"
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} .network.interface.lan.ipv4_assignment "dhcp"
