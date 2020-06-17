@@ -1360,6 +1360,55 @@ backup_file_yet ()
 	fi
 }
 
+restore_file ()
+{
+	FILE_PATH=${1}
+	CHANGE_AGENT="${2}"
+
+	if [ -f "${FILE_PATH}" ] && [ -f "${FILE_PATH}.backup.${CHANGE_AGENT}" ]
+	then
+		diff -q "${FILE_PATH}" "${FILE_PATH}.backup.${CHANGE_AGENT}" > /dev/null 2>&1
+		if [ ${?} -ne 0 ]
+		then
+			# File and backup differ, replace the file with it's backup copy.
+			mv "${FILE_PATH}.backup.${CHANGE_AGENT}" "${FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				return 2
+			fi
+		else
+			# File is same as backup, remove the backup.
+			rm "${FILE_PATH}.backup.${CHANGE_AGENT}"
+			if [ ${?} -ne 0 ]
+			then
+				return 2
+			fi
+		fi
+	fi
+
+	return 0
+
+}
+
+undo_backup_file ()
+{
+	FILE_PATH=${1}
+	CHANGE_AGENT="${2}"
+
+	if [ -f "${FILE_PATH}.backup.${CHANGE_AGENT}" ]
+	then
+		# Remove the backup.
+		rm "${FILE_PATH}.backup.${CHANGE_AGENT}"
+		if [ ${?} -ne 0 ]
+		then
+			return 2
+		fi
+	fi
+
+	return 0
+
+}
+
 backup_file_tree ()
 {
 
@@ -2860,21 +2909,12 @@ undo_connect_internet ()
 	if [ ${CONNECT_INTERNET_SYSTEM_MODIFIED} = true ]
 	then
 		# Restore any unregistered backed up system files.
-		if [ -f "/etc/rc.conf.backup.connect-internet" ]
-		then
-			mv "/etc/rc.conf.backup.connect-internet" "/etc/rc.conf"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-		if [ -f "/etc/resolv.conf.backup.connect-internet" ]
-		then
-			mv "/etc/resolv.conf.backup.connect-internet" "/etc/resolv.conf"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-		if [ -f "/etc/ppp/ppp.conf.backup.connect-internet" ]
-		then
-			mv "/etc/ppp/ppp.conf.backup.connect-internet" "/etc/ppp/ppp.conf"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
+		restore_file "/etc/rc.conf" connect-internet
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		restore_file "/etc/resolv.conf" connect-internet
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		restore_file "/etc/ppp/ppp.conf" connect-internet
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Destroy all existing interfaces.
 		echo -e "\n${YELL}Destroying existing interfaces...${NRML}\n"
@@ -4091,12 +4131,13 @@ init_host ()
 		echo -e ""
 		readee -p "${LCYN}Enter login account username: ${NRML}" ARBITRARY_USERNAME_TEMP
 
-		# Check that the username only contains letters, numbers, periods, underscores and hyphens with a minimum of 3 characters.
+		# Check that the username only contains letters, numbers, periods, underscores and hyphens between 3 and 30 characters.
 		IS_SYNTAX_OK=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
+		IS_LENGTH_OK=`echo "${USERNAME}" | sed -r "s/^(.{3,30})//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}'."
-			echo -e "       It must be at least three characters and only contain lower case"
+			echo -e "       It must be between 3 and 30 characters and only contain lower case"
 			echo -e "       letters, numbers, periods, underscores and hyphens.\n"
 		elif [ `cat /etc/passwd | cut -d: -f1 | egrep "^${ARBITRARY_USERNAME_TEMP}$" | wc -l` -gt 0 ]
 		then
@@ -4695,7 +4736,7 @@ init_vnc_desktop ()
 	then
 		backup_file /etc/rc.local init-vnc-desktop
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		cp /etc/rc.conf configs/${HOST_NAME}/etc/rc.local
+		cp /etc/rc.local configs/${HOST_NAME}/etc/rc.local
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		touch configs/${HOST_NAME}/etc/rc.local
@@ -4916,21 +4957,12 @@ undo_init_hotdesk ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Restore any unregistered backed up system files.
-		if [ -f "/etc/exports.backup.init-hotdesk" ]
-		then
-			mv "/etc/exports.backup.init-hotdesk" "/etc/exports"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-		if [ -f "/var/yp/Makefile.backup.init-hotdesk" ]
-		then
-			mv "/var/yp/Makefile.backup.init-hotdesk" "/var/yp/Makefile"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-		if [ -f "/var/yp/master.passwd.backup.init-hotdesk" ]
-		then
-			mv "/var/yp/master.passwd.backup.init-hotdesk" "/var/yp/master.passwd"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
+		restore_file "/etc/exports" init-hotdesk
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		restore_file "/var/yp/Makefile" init-hotdesk
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		restore_file "/var/yp/master.passwd" init-hotdesk
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Undo repo modifications.
@@ -5140,21 +5172,21 @@ init_hotdesk ()
 	fi
 
 	# Get IP to use for NIS service.
-	NIS_HOST_IP=""
+	NIS_SERVER_IP=""
 	NUM_HOST_LAN_IP=`echo ${HOST_LAN_IP_ADDRESSES} | wc -w`
 	if [ ${NUM_HOST_LAN_IP} -lt 2 ]
 	then
-		NIS_HOST_IP=${HOST_LAN_IP_ADDRESSES}
+		NIS_SERVER_IP=${HOST_LAN_IP_ADDRESSES}
 	else
-		while [ "${NIS_HOST_IP}" = "" ]
+		while [ "${NIS_SERVER_IP}" = "" ]
 		do
 			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
-			NIS_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+			NIS_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${NIS_HOST_IP_TEMP}${LCYN}' to use for the NIS server.\nIs this correct?"
+			question_yes_no "\nYou have selected '${NRML}${NIS_SERVER_IP_TEMP}${LCYN}' to use for the NIS server.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				NIS_HOST_IP="${NIS_HOST_IP_TEMP}"
+				NIS_SERVER_IP="${NIS_SERVER_IP_TEMP}"
 				break
 			fi
 			sleep 4
@@ -5238,7 +5270,7 @@ init_hotdesk ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set NIS host IP address in rc.conf.
-	sed -i "" "s/NIS_HOST_IP/${NIS_HOST_IP}/" configs/${HOST_NAME}/etc/rc.conf
+	sed -i "" "s/NIS_SERVER_IP/${NIS_SERVER_IP}/" configs/${HOST_NAME}/etc/rc.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
@@ -5466,10 +5498,10 @@ init_hotdesk ()
 		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
 	fi
 
-	# Cleanup backup files.
-	rm /etc/exports.backup.init-hotdesk > /dev/null 2>&1
-	rm /var/yp/Makefile.backup.init-hotdesk /dev/null 2>&1
-	rm /var/yp/master.passwd.backup.init-hotdesk > /dev/null 2>&1
+	# Cleanup unregistered backup files.
+	undo_backup_file "/etc/exports" init-hotdesk
+	undo_backup_file "/var/yp/Makefile" init-hotdesk
+	undo_backup_file "/var/yp/master.passwd" init-hotdesk
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up NIS/NFS hotdesking.${NRML}\n"
 	echo -e "\n${YELL}To register hotdesk users on this server; use the command:${NRML}"
@@ -5479,7 +5511,7 @@ init_hotdesk ()
 	echo -e "${YELL}Hotdesk home directory filesystem:${NRML}  ${HOTDESK_POOL_NAME}/${HOTDESK_ROOT_FS}"
 	echo -e "${YELL}Hotdesk home directory path:${NRML}        ${HOTDESK_ROOT_MP}"
 	echo -e "${YELL}NIS domain name:${NRML}                    ${NIS_DOMAIN_NAME}"
-	echo -e "${YELL}NIS server IP address:${NRML}              ${NIS_HOST_IP}\n"
+	echo -e "${YELL}NIS server IP address:${NRML}              ${NIS_SERVER_IP}\n"
 
 	return 0
 }
@@ -9810,11 +9842,8 @@ undo_init_partimag ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Restore any unregistered backed up system files.
-		if [ -f "/etc/exports.backup.init-partimag" ]
-		then
-			mv "/etc/exports.backup.init-partimag" "/etc/exports"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
+		restore_file "/etc/exports" init-partimag
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	# Undo repo modifications.
@@ -10186,8 +10215,8 @@ init_partimag ()
 		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
 	fi
 
-	# Cleanup backup files.
-	rm /etc/exports.backup.init-partimag > /dev/null 2>&1
+	# Cleanup unregistered backup files.
+	undo_backup_file "/etc/exports" init-partimag
 
 	echo -e "\n${LGRN}Congratulations! We have now finished setting up an NFS share for partimag.\n${NRML}"
 	echo -e "${YELL}partimag NFS version:      3${NRML}"
