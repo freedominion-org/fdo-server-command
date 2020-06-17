@@ -5,8 +5,7 @@ fdo-server BUGS list:
 BUGS
 ----
 
-- Permissions on install_file_tree for init-vnc-desktop sets arbitrary users home folder to root:wheel.
-- /etc/hosts missing IP address in front of host name
+*Currently there are no known bugs.*
 
 
 FIXED
@@ -25,3 +24,5 @@ FIXED
 - setup-vnc-desktop: home folder permissions of arbitrary login user gets clobbered to ownership of root:wheel during create-jail-from-recipe.
 - ``update-script``: add sanity test to determine if system script differs from repo script.
 - ``add|update-script|config``: use 'cp -p' instead of just 'cp' so that permissions and ownership are carried over.
+- Permissions on install_file_tree for init-vnc-desktop sets arbitrary users home folder to root:wheel.
+- ``/etc/hosts`` missing IP address in front of host name.

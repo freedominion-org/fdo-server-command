@@ -5,9 +5,7 @@ fdo-server TODO list:
 TODO
 ----
 
-- ``fdo-hotdesk-remove-user``: load backup pool from UCL host.conf file.
-- hotdesk subsystem needs a list command/script ``fdo-hotdesk-list-users``.
-- hotdesk subsystem should store users in UCL config file, possibly along with their hashed passwords.
+- consider hotdesk subsystem storing users in UCL config file, possibly along with their hashed passwords.
 
 
 DONE
@@ -78,3 +76,5 @@ DONE
 - Convert sshfs-daemon connections config file to UCL ().
 - Move rc.d scripts back to scripts instead of in config-templates.
 - Archive old/unsupported ``remote-desktops`` subsystem configs/scripts.
+- ``fdo-hotdesk-remove-user``: load backup pool from UCL host.conf file.
+- hotdesk subsystem needs a list command/script ``fdo-hotdesk-list-users``.
