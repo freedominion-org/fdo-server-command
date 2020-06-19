@@ -5761,7 +5761,7 @@ undo_init_jails ()
 
 	ERROR_COUNT=0
 
-	service jail status | egrep "^ template " > /dev/null 2>&1
+	service jail onestatus | egrep "^ template " > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		# Stop the template jail.
@@ -5982,12 +5982,6 @@ init_jails ()
 		return 2
 	fi
 
-	INIT_JAILS_SYSTEM_MODIFIED=true
-
-	# Backup host system configs.
-	backup_file_tree configs/${HOST_NAME} / init-jails
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 	patch_host --non-interactive
 	if [ ${?} -ne 0 ]
 	then
@@ -6113,6 +6107,12 @@ init_jails ()
 		undo_init_jails
 		return 2
 	fi
+
+	INIT_JAILS_SYSTEM_MODIFIED=true
+
+	# Backup host system configs.
+	backup_file_tree configs/${HOST_NAME} / init-jails
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
 	install_file_tree configs/${HOST_NAME} /
