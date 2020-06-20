@@ -53,7 +53,7 @@ FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedom
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py27-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
