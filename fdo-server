@@ -243,6 +243,13 @@ usage ()
 	echo -e ""
 }
 
+# Test if a function exists with specified name.
+# Returns 0 if function exists, 1 if it doesn't.
+is_function ()
+{
+	type ${1} 2>/dev/null | grep "^${1} is a shell function" > /dev/null
+}
+
 pause_prompt ()
 {
 	# $[1} is the pause duration in seconds (maximum is 25).
@@ -1232,6 +1239,43 @@ ucl_array_length ()
 	done
 
 	return 0
+}
+
+ucl_jail_index ()
+{
+	UCL_JAIL_INDEX_FILE_PATH="${1}"
+	UCL_JAIL_INDEX_FIND_NAME="${2}"
+	UCL_JAIL_INDEX=0
+
+	UCL_JAIL_INDEX_OBJECT=`${UCL_CMD} get -f "${UCL_JAIL_INDEX_FILE_PATH}" ".jails" 2> /dev/null`
+	if [ ${?} -ne 0 ]
+	then
+		# Unexpected error accessing the UCL file.
+		return 2
+	fi
+
+	if [ "${UCL_JAIL_INDEX_OBJECT}" != "[array]" ]
+	then
+		# The variable was not a valid array, return expected error.
+		return 1
+	fi
+
+	while [ "${UCL_JAIL_INDEX_OBJECT}" != "null" ]
+	do
+		UCL_JAIL_INDEX_OBJECT=`${UCL_CMD} get -f "${UCL_JAIL_INDEX_FILE_PATH}" ".jails.${UCL_JAIL_INDEX}"`
+		if [ "${UCL_JAIL_INDEX_OBJECT}" != "null" ]
+		then
+			UCL_JAIL_INDEX_TEST_NAME=`${UCL_CMD} get -f "${UCL_JAIL_INDEX_FILE_PATH}" -q ".jails.${UCL_JAIL_INDEX}.name" 2> /dev/null`
+			if [ "${UCL_JAIL_INDEX_TEST_NAME}" = "${UCL_JAIL_INDEX_FIND_NAME}" ]
+			then
+				return 0
+			else
+				UCL_JAIL_INDEX=$(( ${UCL_JAIL_INDEX} + 1 ))
+			fi
+		fi
+	done
+
+	return 1
 }
 
 check_repo_config ()
@@ -6395,12 +6439,39 @@ revert_create_jail ()
 		return 1
 	fi
 
+	# Get git commit id before create_jail was performed from UCL jail config file.
 	# ASSUME: commit after create jail is not much use, since we can't remove a previous range
 	# of commits using 'git revert' without creating conflicts that need manual intervention.
 	COMMIT_BEFORE_CREATE_JAIL=`${UCL_CMD} get -f configs/${HOST_NAME}${JAILS_CONF_PATH} -q .general.git_commit_before_create_jail`
 	if [ ${?} -ne 0 ] || [ "${COMMIT_BEFORE_CREATE_JAIL}" = "null" ]
 	then
 		COMMIT_BEFORE_CREATE_JAIL=""
+	fi
+
+	# Get jail IP address if not already known.
+	if [ "${JAIL_IP}" = "" ]
+	then
+		ucl_jail_index configs/${HOST_NAME}${JAILS_CONF_PATH} ${JAIL_TO_REVERT}
+		if [ ${?} -ne 0 ]
+		then
+			ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+		else
+			JAIL_IP=`${UCL_CMD} get -f configs/${HOST_NAME}${JAILS_CONF_PATH} -q .jails.${UCL_JAIL_INDEX}.ip4.addr`
+			if [ ${?} -ne 0 ] || [ "${JAIL_IP}" = "null" ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		fi
+	fi
+
+	# Get jail recipe name, if not already known.
+	if [ "${JAIL_RECIPE_NAME}" = "" ] && [ -f "configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH}" ]
+	then
+		JAIL_RECIPE_NAME=`${UCL_CMD} get -f configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.jail_recipe`
+		if [ ${?} -ne 0 ] || [ "${AFFECTED_JAIL_RECIPES}" = "null" ]
+		then
+			JAIL_RECIPE_NAME=""
+		fi
 	fi
 
 	# Get list of affected jails (by recipe name).
@@ -6413,6 +6484,18 @@ revert_create_jail ()
 		fi
 	else
 		AFFECTED_JAIL_RECIPES=""
+	fi
+
+	# Source jail recipe if it exists, and run 'revert_cook_recipe' function if it exists.
+	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
+	then
+		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+		is_function "revert_cook_recipe"
+		if [ ${?} -eq 0 ]
+		then
+			echo -e "\n${YELL}Reverting extraneous recipe steps for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
+			revert_cook_recipe
+		fi
 	fi
 
 	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
@@ -6508,7 +6591,7 @@ revert_create_jail ()
 		return 2
 	fi
 
-	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\nAborting.\n"
+	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\n"
 	return 0
 }
 
@@ -6523,7 +6606,6 @@ create_jail ()
 	else
 		IS_INTERACTIVE="yes"
 	fi
-	JAIL_IP=${SET_JAIL_IP:-"${JAIL_IP}"}
 
 	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
 
@@ -6858,9 +6940,9 @@ edit_recipe_configs ()
 			then
 				EDITOR=ee
 			fi
-			echo ""
+			echo -e ""
 			${EDITOR} ${CONFIG_FILE}
-			echo ""
+			echo -e ""
 		fi
 	done
 
@@ -6873,7 +6955,6 @@ create_jail_from_recipe ()
 	JAIL_NAME="${1}"
 	JAIL_HOST_NAME="${2}"
 	JAIL_RECIPE_NAME="${3}"
-	JAIL_IP=${SET_JAIL_IP:-"${JAIL_IP}"}
 	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
 
 	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
@@ -6892,6 +6973,9 @@ create_jail_from_recipe ()
 		echo -e "       Check that the recipe '${ORNG}${JAIL_RECIPE_NAME}${NRML}' exists.\n       Aborting.\n"
 		return 1
 	fi
+
+	# Allow user override of jail IP address via environment variable JAIL_IP.
+	JAIL_IP=${JAIL_IP:-"${RECIPE_JAIL_IP}"}
 
 	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
 	# This should not involve any persistent changes to the system or any other jails.
@@ -7042,17 +7126,17 @@ create_jail_from_recipe ()
 	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
 		# Get seasoning suggestion message from recipe.conf.
-		SEASONING_SUGGESTION_MSG=`${UCL_CMD} get -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .seasoning_suggestion.message`
+		SEASONING_SUGGESTION_MSG=`${UCL_CMD} get -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -q .seasoning_suggestion.message`
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		if [ "${SEASONING_SUGGESTION_MSG}" != "" ] && [ "${SEASONING_SUGGESTION_MSG}" != "null" ]
 		then
 			# Echo the seasoning suggestion message to the terminal, expanding any variables.
-			eval echo -e "\"\n${YELL}Seasoning suggestion:${NRML}\n${SEASONING_SUGGESTION}\n\""
+			eval echo -e "\"\n${YELL}Seasoning suggestion:${NRML}\n${SEASONING_SUGGESTION_MSG}\n\""
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 			# Set the seasoning suggestion message in recipe.conf after expanding any variables.
-			EXPANDED_SEASONING_SUGGESTION_MSG=`eval echo -e "\"${SEASONING_SUGGESTION}\""`
+			EXPANDED_SEASONING_SUGGESTION_MSG=`eval echo -e "\"${SEASONING_SUGGESTION_MSG}\""`
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} .seasoning_suggestion.message "${EXPANDED_SEASONING_SUGGESTION_MSG}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -7085,7 +7169,7 @@ create_jail_from_recipe ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		for PACKAGE_NAME in ${ESSENTIAL_JAIL_PACKAGES}
 		do
-			${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_LENGTH}.packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} .jails.${JAILS_ARRAY_INDEX}.packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
 		done
