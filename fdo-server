@@ -53,7 +53,7 @@ FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedom
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py37-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
@@ -107,6 +107,7 @@ VM_DEFAULT_BOOT_LOADER="UEFI"
 FDO_VMS_LIST_PATH="/usr/local/sbin/fdo-vms-list"
 FDO_VMS_START_PATH="/usr/local/sbin/fdo-vms-start"
 FDO_VMS_STOP_PATH="/usr/local/sbin/fdo-vms-stop"
+ISO_FILE_PATTERN="ISO 9660|DOS/MBR boot sector|UDF filesystem data"
 
 
 VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tigervnc-server firefox"
@@ -4484,7 +4485,7 @@ patch_host ()
 	PAGER=cat freebsd-update fetch > /tmp/fdo-freebsd-update-output.host.fetch.${NOW}
 	if [ ${?} -ne 0 ]
 	then
-		tail -4 /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | egrep "WARNING: FreeBSD .*-RELEASE-.* HAS PASSED ITS END-OF-LIFE" > /dev/null
+		tail -5 /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | egrep "WARNING: FreeBSD .* HAS PASSED ITS END-OF-LIFE" > /dev/null
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The '${LBLU}freebsd-update fetch${NRML}' operation failed!"
@@ -4557,32 +4558,28 @@ patch_host ()
 		return 2
 	fi
 
-	if [ "${IS_INTERACTIVE}" = "yes" ]
+	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
+	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	git commit -m "Updating host after 'patch-host'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
 	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_patch_host
+		return 2
+	fi
 
-		echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
-		git add configs/${HOST_NAME}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git commit -m "Updating host after 'patch-host'; ${HOST_NAME}."
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		if [ ${ERROR_COUNT} -ne 0 ]
+	# If a remote repo is in use, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-			undo_patch_host
-			return 2
-		fi
-
-		# If a remote repo is in use, push changes to the remote.
-		if [ "${REPO_URI}" != "local" ]
-		then
-			echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
-			git_push origin master
-			if [ ${?} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
-				echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
-			fi
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
 		fi
 	fi
 
@@ -6039,11 +6036,11 @@ init_jails ()
 
 	# Download relevant base system tarballs.
 	echo -e "\n${YELL}Downloading FreeBSD base system tarballs...${NRML}\n"
-	fetch -o /tmp/jail-base.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
+	fetch -o /tmp/jail-base.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-lib32.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
+	fetch -o /tmp/jail-lib32.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-src.txz ftp://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
+	fetch -o /tmp/jail-src.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -6238,7 +6235,7 @@ init_jails ()
 	if [ ${?} -ne 0 ]
 	then
 		# ASSUME that if this grep returns non-zero, the reason for the previous non-zero return code is a 'freebsd-update fetch' failure.
-		tail -4 /tmp/fdo-freebsd-update.output.template-jail.fetch.${NOW} | egrep "WARNING: FreeBSD .*-RELEASE-.* HAS PASSED ITS END-OF-LIFE" > /dev/null
+		tail -4 /tmp/fdo-freebsd-update.output.template-jail.fetch.${NOW} | egrep "WARNING: FreeBSD .* HAS PASSED ITS END-OF-LIFE" > /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8430,7 +8427,7 @@ create_vm_image_handler ()
 				INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				if [ -e "${INSERT_IMAGE_FILE_TEMP}" ]
 				then
-					file "${INSERT_IMAGE_FILE_TEMP}" | grep "ISO 9660" > /dev/null
+					file "${INSERT_IMAGE_FILE_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -eq 0 ]
 					then
 						echo -e "\n"
@@ -8557,7 +8554,7 @@ create_vm_image_handler ()
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
 				if [ -e "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" ]
 				then
-					file "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" | grep "ISO 9660" > /dev/null
+					file "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid ISO image!\n"
@@ -8873,7 +8870,7 @@ create_vm_template ()
 			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
 			if [ -e "${OS_INSTALLER_ISO_TEMP}" ]
 			then
-				file "${OS_INSTALLER_ISO_TEMP}" | grep "ISO 9660" > /dev/null
+				file "${OS_INSTALLER_ISO_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 				if [ ${?} -eq 0 ]
 				then
 					echo -e "\n"
