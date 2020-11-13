@@ -7999,6 +7999,23 @@ create_vm_image_handler ()
 		fi
 
 
+		if [ "${ANSWER}" = "start" ]
+		then
+			# Start the VM.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+		fi
+
+
+		if [ "${ANSWER}" = "stop" ]
+		then
+			echo -e "\n${YELL}Please try to shutdown the VM gracefully first, if possible.${NRML}\n"
+			question_yes "Proceed?"
+
+			# Stop the VM.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+		fi
+
+
 		if [ "${ANSWER}" = "restart" ]
 		then
 			echo -e "\n${YELL}Please try to shutdown the VM gracefully first, if possible.${NRML}\n"
@@ -8258,8 +8275,13 @@ create_vm_image_handler ()
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
 
-				# Start the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				# Ask whether to start the VM again.
+				question_yes_no "\nWould you like to start the VM again now?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					# Start the VM.
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				fi
 			fi
 		fi
 
@@ -8398,8 +8420,13 @@ create_vm_image_handler ()
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
 
-				# Start the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				# Ask whether to start the VM again.
+				question_yes_no "\nWould you like to start the VM again now?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					# Start the VM.
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				fi
 
 			fi
 
@@ -8514,8 +8541,13 @@ create_vm_image_handler ()
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
 
-				# Start the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				# Ask whether to start the VM again.
+				question_yes_no "\nWould you like to start the VM again now?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					# Start the VM.
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				fi
 			fi
 		fi
 
@@ -8598,8 +8630,13 @@ create_vm_image_handler ()
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
 
-				# Start the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				# Ask whether to start the VM again.
+				question_yes_no "\nWould you like to start the VM again now?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					# Start the VM.
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+				fi
 
 			fi
 
