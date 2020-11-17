@@ -100,8 +100,9 @@ VM_MIN_MEM_SIZE_MB=128
 VM_MAX_MEM_SIZE_MB=65536
 VM_MIN_IMAGE_SIZE_GB=1
 VM_MAX_IMAGE_SIZE_GB=16384
+VM_DEFAULT_DISK_DRIVER="virtio-blk"
 VM_DEFAULT_SECTOR_SIZE=4096
-DEFAULT_VM_VNC_PORT_NUM_START=6000
+VM_DEFAULT_VNC_PORT_NUM_START=6000
 VM_DEFAULT_NIC_DRIVER="e1000"
 VM_DEFAULT_BOOT_LOADER="UEFI"
 FDO_VMS_LIST_PATH="/usr/local/sbin/fdo-vms-list"
@@ -7759,7 +7760,7 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.bridge_nic_id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.vnc_port_offset "${DEFAULT_VM_VNC_PORT_NUM_START}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .network.vnc_port_offset "${VM_DEFAULT_VNC_PORT_NUM_START}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Save the list of packages installed to the host config file.
@@ -7955,6 +7956,8 @@ create_vm_image_handler ()
 		do
 			echo -e "\n${YELL}! You may now prepare the ${VM_TYPE} VM '${NRML}${VM_NAME}${YELL}'!${NRML}\n"
 			echo -e "${LCYN}Choose from the following options:${NRML}\n"
+			echo -e "${LCYN}  start   - Start (boot) the VM.${NRML}"
+			echo -e "${LCYN}  stop    - Stop (shutdown) the VM.${NRML}"
 			echo -e "${LCYN}  restart - Restart the VM (stop / start).${NRML}"
 			echo -e "${LCYN}  insert  - Attach an additional ISO image (CD/DVD/USB).${NRML}"
 			echo -e "${LCYN}  eject   - Eject an ISO image (CD/DVD/USB).${NRML}"
@@ -7964,7 +7967,9 @@ create_vm_image_handler ()
 			echo -e "${LCYN}  finish  - When ${VM_TYPE} configuration is finished.${NRML}"
 			echo -e "${LCYN}  abort   - Abort the create ${VM_TYPE} operation.${NRML}\n"
 			readee -p "${LCYN}Choose action (restart|insert|eject|attach|detach|list|finish|abort): ${NRML}" ANSWER
-			if [ "${ANSWER}" = "restart" ] \
+			if [ "${ANSWER}" = "start" ] \
+			|| [ "${ANSWER}" = "stop" ] \
+			|| [ "${ANSWER}" = "restart" ] \
 			|| [ "${ANSWER}" = "insert" ] \
 			|| [ "${ANSWER}" = "eject" ] \
 			|| [ "${ANSWER}" = "attach" ] \
@@ -8058,6 +8063,9 @@ create_vm_image_handler ()
 				ahci-hd)
 					printf "%-5s%-6s%-12s%-55s\n" "1" "Disk" "${IMAGE_1_SECTOR_SIZE}" "${IMAGE_1_FILENAME}"
 					;;
+				virtio-blk)
+					printf "%-5s%-6s%-12s%-55s\n" "1" "Disk" "${IMAGE_1_SECTOR_SIZE}" "${IMAGE_1_FILENAME}"
+					;;
 				null)
 					printf "%-5s%-6s%-12s%-55s\n" "1" "Empty" "" ""
 					;;
@@ -8070,6 +8078,9 @@ create_vm_image_handler ()
 					printf "%-5s%-6s%-12s%-55s\n" "2" "ISO" "N/A" "${IMAGE_2_FILENAME}"
 					;;
 				ahci-hd)
+					printf "%-5s%-6s%-12s%-55s\n" "2" "Disk" "${IMAGE_2_SECTOR_SIZE}" "${IMAGE_2_FILENAME}"
+					;;
+				virtio-blk)
 					printf "%-5s%-6s%-12s%-55s\n" "2" "Disk" "${IMAGE_2_SECTOR_SIZE}" "${IMAGE_2_FILENAME}"
 					;;
 				null)
@@ -8163,8 +8174,41 @@ create_vm_image_handler ()
 
 			if [ "${ATTACH_IMAGE_FILE}" != "" ] || [ ${ATTACH_EXISTING_IMAGE} = false ]
 			then
-				# TODO: ask or test for next disk sectorsize.
-				IMAGE_SECTOR_SIZE=${VM_DEFAULT_SECTOR_SIZE}
+				# Prompt for the virtual HDDs' sector size.
+				IMAGE_SECTOR_SIZE=""
+				while [ "${IMAGE_SECTOR_SIZE}" = "" ]
+				do
+					echo -e "\n${LCYN}What is the sector size (bytes) of this virtual disk image?${NRML}"
+					readee -p "${LCYN}(default|4096|512): ${NRML}" IMAGE_SECTOR_SIZE_TEMP
+					# Check input validation.
+					if [ "${IMAGE_SECTOR_SIZE_TEMP}" = "default" ] || [ "${IMAGE_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${IMAGE_SECTOR_SIZE_TEMP}" = "512" ]
+					then
+						if [ "${IMAGE_SECTOR_SIZE_TEMP}" = "default" ]
+						then
+							IMAGE_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
+						else
+							IMAGE_SECTOR_SIZE="${IMAGE_SECTOR_SIZE_TEMP}"
+						fi
+					fi
+				done
+
+				# Prompt for the virtual disk driver.
+				VM_DISK_DRIVER=""
+				while [ "${VM_DISK_DRIVER}" = "" ]
+				do
+					echo -e "\n${LCYN}Which driver should we use for the virtual disk image?${NRML}"
+					readee -p "${LCYN}(default|ahci-hd|virtio-blk): ${NRML}" VM_DISK_DRIVER_TEMP
+					# Check input validation.
+					if [ "${VM_DISK_DRIVER_TEMP}" = "default" ] || [ "${VM_DISK_DRIVER_TEMP}" = "ahci-hd" ] || [ "${VM_DISK_DRIVER_TEMP}" = "virtio-blk" ]
+					then
+						if [ "${VM_DISK_DRIVER_TEMP}" = "default" ]
+						then
+							VM_DISK_DRIVER="${VM_DEFAULT_DISK_DRIVER}"
+						else
+							VM_DISK_DRIVER="${VM_DISK_DRIVER_TEMP}"
+						fi
+					fi
+				done
 
 				# Ask for image filename.
 				IMAGE_NAME=""
@@ -8235,23 +8279,23 @@ create_vm_image_handler ()
 					fi
 				fi
 
-				# Add the disk image as an ahci-hd device in the vms.conf file.
+				# Add the disk image to the vms.conf file.
 				# Prefer to use first empty slot.
 				if [ "${IMAGE_1_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-hd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"${VM_DISK_DRIVER}\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.filename "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize "${IMAGE_SECTOR_SIZE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				elif [ "${IMAGE_2_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-hd\"; }"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"${VM_DISK_DRIVER}\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.filename "${IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize  "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize "${IMAGE_SECTOR_SIZE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
@@ -8297,11 +8341,11 @@ create_vm_image_handler ()
 			CURRENT_IFS="${IFS}"
 			IFS="	"
 
-			if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
+			if [ "${IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${IMAGE_1_TYPE}" = "virtio-blk" ]
 			then
 				IMAGE_ITEMS="${IMAGE_ITEMS}	1	${IMAGE_1_FILENAME}"
 			fi
-			if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
+			if [ "${IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${IMAGE_2_TYPE}" = "virtio-blk" ]
 			then
 				IMAGE_ITEMS="${IMAGE_ITEMS}	2	${IMAGE_2_FILENAME}"
 			fi
@@ -8847,20 +8891,73 @@ create_vm_template ()
 		fi
 	done
 
-	# TODO: get VM_NIC_DRIVER (e1000|virtio-net).
-	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
+	# Prompt for the VM_NIC_DRIVER (e1000|virtio-net).
+	VM_NIC_DRIVER=""
+	while [ "${VM_NIC_DRIVER}" = "" ]
+	do
+		echo -e "\n${LCYN}Which virtual NIC driver should we use?${NRML}"
+		readee -p "${LCYN}(e1000|virtio-net): ${NRML}" VM_NIC_DRIVER_TEMP
+		# Check input validation.
+		if [ "${VM_NIC_DRIVER_TEMP}" = "e1000" ] || [ "${VM_NIC_DRIVER_TEMP}" = "virtio-net" ]
+		then
+			VM_NIC_DRIVER="${VM_NIC_DRIVER_TEMP}"
+		fi
+	done
 
-	# TODO: get VM_BOOT_LOADER (UEFI|grub).
-	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
+	# Prompt for the VM_BOOT_LOADER (default|bhyveload|grub|UEFI|UEFI_CSM).
+	VM_BOOT_LOADER=""
+	while [ "${VM_BOOT_LOADER}" = "" ]
+	do
+		echo -e "\n${LCYN}Which bhyve boot loader would you like to use?${NRML}"
+		readee -p "${LCYN}(default|bhyveload|grub|UEFI|UEFI_CSM): ${NRML}" VM_BOOT_LOADER_TEMP
+		# Check input validation.
+		if [ "${VM_BOOT_LOADER_TEMP}" = "default" ] || [ "${VM_BOOT_LOADER_TEMP}" = "bhyveload" ] || [ "${VM_BOOT_LOADER_TEMP}" = "grub" ] ||
+		   [ "${VM_BOOT_LOADER_TEMP}" = "UEFI" ] || [ "${VM_BOOT_LOADER_TEMP}" = "UEFI_CSM" ]
+		then
+			if [ "${VM_BOOT_LOADER_TEMP}" = "default" ]
+			then
+				VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
+			else
+				VM_BOOT_LOADER="${VM_BOOT_LOADER_TEMP}"
+			fi
+		fi
+	done
 
-	# Ask if the older standard HDD sector size is required.
-	question_yes_no "\nDoes the OS disk require a 512 byte sector size? (e.g. Windows 7) [DEFAULT=no]"
-	if [ "${ANSWER}" = "yes" ]
-	then
-		OS_DISK_SECTOR_SIZE="512"
-	else
-		OS_DISK_SECTOR_SIZE=${VM_DEFAULT_SECTOR_SIZE}
-	fi
+	# Prompt for the virtual disk driver.
+	VM_DISK_DRIVER=""
+	while [ "${VM_DISK_DRIVER}" = "" ]
+	do
+		echo -e "\n${LCYN}Which driver should we use for the virtual OS disk image?${NRML}"
+		readee -p "${LCYN}(default|ahci-hd|virtio-blk): ${NRML}" VM_DISK_DRIVER_TEMP
+		# Check input validation.
+		if [ "${VM_DISK_DRIVER_TEMP}" = "default" ] || [ "${VM_DISK_DRIVER_TEMP}" = "ahci-hd" ] || [ "${VM_DISK_DRIVER_TEMP}" = "virtio-blk" ]
+		then
+			if [ "${VM_DISK_DRIVER_TEMP}" = "default" ]
+			then
+				VM_DISK_DRIVER="${VM_DEFAULT_DISK_DRIVER}"
+			else
+				VM_DISK_DRIVER="${VM_DISK_DRIVER_TEMP}"
+			fi
+		fi
+	done
+
+	# Prompt for the virtual OS disk sector size.
+	OS_DISK_SECTOR_SIZE=""
+	while [ "${OS_DISK_SECTOR_SIZE}" = "" ]
+	do
+		echo -e "\n${LCYN}What is the sector size (bytes) of the virtual OS disk image?${NRML}"
+		readee -p "${LCYN}(default|4096|512): ${NRML}" OS_DISK_SECTOR_SIZE_TEMP
+		# Check input validation.
+		if [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "default" ] || [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "512" ]
+		then
+			if [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "default" ]
+			then
+				OS_DISK_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
+			else
+				OS_DISK_SECTOR_SIZE="${OS_DISK_SECTOR_SIZE_TEMP}"
+			fi
+		fi
+	done
 
 	# Prompt for the method; install or copy from existing VM image.
 	INSTALL_OR_COPY_IMAGE=""
@@ -9179,7 +9276,7 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"ahci-hd\"; } ]"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"${VM_DISK_DRIVER}\"; } ]"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -9579,12 +9676,6 @@ create_vm_instance ()
 		fi
 	done
 
-	# TODO: get VM_NIC_DRIVER (e1000|virtio-net).
-	VM_NIC_DRIVER="${VM_DEFAULT_NIC_DRIVER}"
-
-	# TODO: get VM_BOOT_LOADER (UEFI|grub).
-	VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
-
 	# Get IP to use for VNC.
 	VM_VNC_HOST_IP=""
 	NUM_HOST_IP=`echo ${VM_BRIDGE_IFACE_IP_ADDRESSES} | wc -w`
@@ -9758,6 +9849,12 @@ create_vm_instance ()
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Get template VM configuration from 'vms.conf'.
+	VM_NIC_DRIVER=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.nic_driver`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	VM_BOOT_LOADER=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.boot_loader`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
 	# Add VM configuration to 'vms.conf'.
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -9806,7 +9903,7 @@ create_vm_instance ()
 		return 2
 	fi
 
-	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ]
+	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${IMAGE_1_TYPE}" = "virtio-blk" ]
 	then
 		IMAGE_NAME=`echo ${IMAGE_1_FILENAME} | cut -d/ -f1`
 		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
@@ -9814,7 +9911,7 @@ create_vm_instance ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ]
+	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${IMAGE_2_TYPE}" = "virtio-blk" ]
 	then
 		IMAGE_NAME=`echo ${IMAGE_2_FILENAME} | cut -d/ -f1`
 		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
