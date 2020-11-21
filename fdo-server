@@ -8637,7 +8637,7 @@ create_vm_image_handler ()
 						pause_prompt 8
 					fi
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the ISO image to detach.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the ISO image to eject.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
 						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
