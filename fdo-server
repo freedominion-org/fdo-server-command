@@ -8120,7 +8120,7 @@ create_vm_image_handler ()
 				do
 					dialog --title "Select disk image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 					ATTACH_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
-					if [ -e "${ATTACH_IMAGE_FILE_TEMP}" ]
+					if [ "${ATTACH_IMAGE_FILE_TEMP}" != "" ]
 					then
 						file "${ATTACH_IMAGE_FILE_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
 						if [ ${?} -ne 0 ]
@@ -8362,7 +8362,7 @@ create_vm_image_handler ()
 				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
 				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
-				if [ -e "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME_TEMP}" ]
+				if [ "${IMAGE_FILENAME_TEMP}" != "" ]
 				then
 					file "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
 					if [ ${?} -ne 0 ]
@@ -8496,7 +8496,7 @@ create_vm_image_handler ()
 			do
 				dialog --title "Select ISO image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 				INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
-				if [ -e "${INSERT_IMAGE_FILE_TEMP}" ]
+				if [ "${INSERT_IMAGE_FILE_TEMP}" != "" ]
 				then
 					file "${INSERT_IMAGE_FILE_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -eq 0 ]
@@ -8628,7 +8628,7 @@ create_vm_image_handler ()
 				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
 				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
-				if [ -e "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" ]
+				if [ "${IMAGE_FILENAME_TEMP}" != "" ]
 				then
 					file "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -ne 0 ]
