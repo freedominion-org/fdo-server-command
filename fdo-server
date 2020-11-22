@@ -8624,7 +8624,7 @@ create_vm_image_handler ()
 			IMAGE_INDEX=-1
 			while [ ${IMAGE_INDEX} -lt 0 ]
 			do
-				dialog --menu "Select the ISO image to detach:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				dialog --menu "Select the ISO image to eject:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
 				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
 				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
@@ -8649,7 +8649,7 @@ create_vm_image_handler ()
 					question_yes_no "\nWould you like to try again?"
 					if [ "${ANSWER}" = "no" ]
 					then
-						echo -e "\n${ORNG}Insert ISO image cancelled.${NRML}\n"
+						echo -e "\n${ORNG}Eject ISO image cancelled.${NRML}\n"
 						break
 					fi
 					echo -e ""
