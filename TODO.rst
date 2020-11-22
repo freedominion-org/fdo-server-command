@@ -7,6 +7,8 @@ TODO
 
 - consider hotdesk subsystem storing users in UCL config file, possibly along with their hashed passwords.
 
+- check diffs between FreeBSD-12.0-RELEASE and FreeBSD-12.1-RELEASE configs used in config-templates.
+- ``create-vm-template``: add support for bhyve-grub and bhyveload.
 
 DONE
 ----
@@ -78,3 +80,10 @@ DONE
 - Archive old/unsupported ``remote-desktops`` subsystem configs/scripts.
 - ``fdo-hotdesk-remove-user``: load backup pool from UCL host.conf file.
 - hotdesk subsystem needs a list command/script ``fdo-hotdesk-list-users``.
+- ``fdo-backupz-thin-snapshots``: change uclcmd to ${UCL_CMD}.
+- ``fdo-dns_cache-add|remove-hostname``: don't ask user whether to update the repo with changes, just do it.
+- ``patch_host``: always updare repo after successful patch.
+- ``fdo-vms-start``: make sure tap interface gets added to bridge.
+- ``fdo-vms-start``: add support for virtio-blk devices.
+- ``fdo-vms-create-template|instance``: after eject,insert,detach,attach; ask whether to start vm.
+- ``fdo-vms-create-template|instance``: add stop and start options in addition to restart.

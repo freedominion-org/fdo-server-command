@@ -26,3 +26,6 @@ FIXED
 - ``add|update-script|config``: use 'cp -p' instead of just 'cp' so that permissions and ownership are carried over.
 - Permissions on install_file_tree for init-vnc-desktop sets arbitrary users home folder to root:wheel.
 - ``/etc/hosts`` missing IP address in front of host name.
+- ``uclcmd`` can't set string that start with number, e.g: 100GB_Scratch/100GB_Scratch.
+- ``create-vm-template|instance`` during eject iso image, it should not say 'as the ISO image to detach' (eject).
+- ``create-vm-template|instance`` should be able to cancel and eject iso image. Same with insert, attach, detach.
