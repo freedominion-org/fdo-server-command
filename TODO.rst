@@ -5,8 +5,7 @@ fdo-server TODO list:
 TODO
 ----
 
-- consider hotdesk subsystem storing users in UCL config file, possibly along with their hashed passwords.
-- dialog while loops need consistency and no sleep when user answers no to confirmation.
+- Consider hotdesk subsystem storing users in UCL config file, possibly along with their hashed passwords.
 - ``create-vm-template``: add support for bhyve-grub and bhyveload.
 
 DONE
@@ -87,4 +86,5 @@ DONE
 - ``fdo-vms-create-template|instance``: after eject,insert,detach,attach; ask whether to start vm.
 - ``fdo-vms-create-template|instance``: add stop and start options in addition to restart.
 - check diffs between FreeBSD-12.0-RELEASE and FreeBSD-12.1-RELEASE configs used in ``config-templates``.
-- add FreeBSD-12.2-RELEASE configs to ``config-templates``.
+- Add FreeBSD-12.2-RELEASE configs to ``config-templates``.
+- Set all dialog menu loops to sleep for only 2 sec instead of 4.
