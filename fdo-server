@@ -3071,7 +3071,7 @@ connect_internet ()
 				WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -3589,7 +3589,7 @@ init_host ()
 			SERVER_TYPE="${SERVER_TYPE_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 
 	WAN_NET_IFACE=""
@@ -3645,8 +3645,8 @@ init_host ()
 					WAN_NET_IFACE="${WAN_NET_IFACE_TEMP}"
 					break
 				fi
+				sleep 2
 			done
-			sleep 4
 		fi
 
 		sed -i "" "s/WAN_NET_IFACE/${WAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
@@ -3923,7 +3923,7 @@ init_host ()
 					LAN_NET_IFACE="${LAN_NET_IFACE_TEMP}"
 					break
 				fi
-				sleep 4
+				sleep 2
 			done
 		fi
 	fi
@@ -4000,7 +4000,7 @@ init_host ()
 						break
 					fi
 				fi
-				sleep 4
+				sleep 2
 			done
 			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4261,7 +4261,7 @@ init_host ()
 			TZ="${TZ_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/profile
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4301,7 +4301,7 @@ init_host ()
 				LOCALE="${LOCALE_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 		LOCALE_CHARSET=$(echo ${LOCALE} | cut -d. -f2)
 		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/etc/profile
@@ -4757,7 +4757,7 @@ init_vnc_desktop ()
 			VNC_DESKTOP_SCREEN_SIZE="${VNC_DESKTOP_SCREEN_SIZE_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 
 	# Get FreeBSD version strings.
@@ -5162,7 +5162,7 @@ init_wifi_ap ()
 				WIFI_AP_NET_IFACE="${WIFI_AP_NET_IFACE_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -5331,7 +5331,7 @@ init_wifi_ap ()
 			WIFI_AP_COUNTRY_CODE="${WIFI_AP_COUNTRY_CODE_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 	IFS="${CURRENT_IFS}"
 
@@ -5370,7 +5370,7 @@ init_wifi_ap ()
 			WIFI_AP_MODE_CHANNEL="${WIFI_AP_MODE_CHANNEL_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 	IFS="${CURRENT_IFS}"
 
@@ -5874,7 +5874,7 @@ init_hotdesk ()
 				HOTDESK_POOL_NAME="${HOTDESK_POOL_NAME_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -5955,7 +5955,7 @@ init_hotdesk ()
 				NIS_SERVER_IP="${NIS_SERVER_IP_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -6707,7 +6707,7 @@ init_jails ()
 				JAILS_POOL_NAME="${JAILS_POOL_NAME_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -7743,7 +7743,7 @@ create_jail_from_recipe ()
 					SIDES_POOL_NAME="${SIDES_POOL_NAME_TEMP}"
 					break
 				fi
-				sleep 4
+				sleep 2
 			done
 		fi
 	fi
@@ -8237,7 +8237,7 @@ init_vms ()
 				VMS_POOL_NAME="${VMS_POOL_NAME_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -8869,7 +8869,7 @@ create_vm_image_handler ()
 						fi
 						echo -e ""
 					fi
-					sleep 4
+					sleep 2
 				done
 			else
 				ATTACH_EXISTING_IMAGE=false
@@ -9113,7 +9113,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
-				sleep 4
+				sleep 2
 			done
 
 			IFS="${CURRENT_IFS}"
@@ -9246,7 +9246,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
-				sleep 4
+				sleep 2
 			done
 
 			if [ "${INSERT_IMAGE_FILE}" != "" ]
@@ -9378,7 +9378,7 @@ create_vm_image_handler ()
 					fi
 					echo -e ""
 				fi
-				sleep 4
+				sleep 2
 			done
 
 			IFS="${CURRENT_IFS}"
@@ -9753,7 +9753,7 @@ create_vm_template ()
 				fi
 				echo -e ""
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -9799,7 +9799,7 @@ create_vm_template ()
 				fi
 				echo -e ""
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -9821,7 +9821,7 @@ create_vm_template ()
 				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -9864,7 +9864,7 @@ create_vm_template ()
 			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 
 	# Get the VMs' VNC password.
@@ -10418,7 +10418,7 @@ create_vm_instance ()
 				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
@@ -10461,7 +10461,7 @@ create_vm_instance ()
 			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
 			break
 		fi
-		sleep 4
+		sleep 2
 	done
 
 	# Get the VMs' VNC password.
@@ -10906,7 +10906,7 @@ init_partimag ()
 				PARTIMAG_POOL_NAME="${PARTIMAG_POOL_NAME_TEMP}"
 				break
 			fi
-			sleep 4
+			sleep 2
 		done
 	fi
 
