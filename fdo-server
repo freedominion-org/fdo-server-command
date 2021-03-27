@@ -61,6 +61,7 @@ LATEST_HOST_SYS_COMPAT=1
 LATEST_HOTDESK_SUBSYS_COMPAT=1
 LATEST_SSHFS_DAEMON_SUBSYS_COMPAT=1
 LATEST_VNC_DESKTOP_SUBSYS_COMPAT=1
+LATEST_WIFI_AP_SUBSYS_COMPAT=1
 LATEST_JAILS_SUBSYS_COMPAT=1
 LATEST_VMS_SUBSYS_COMPAT=1
 LATEST_PARTIMAG_SUBSYS_COMPAT=1
@@ -115,6 +116,8 @@ VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tigervnc-server f
 VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_CONF_PATH=${VNC_DESKTOP_CONF_PATH:-"${FDO_CONFIG_ROOT}/vnc-desktop.conf"}
 
+WIFI_AP_PACKAGES="hostapd"
+WIFI_AP_CONF_PATH=${WIFI_AP_CONF_PATH:-"${FDO_CONFIG_ROOT}/wifi-ap.conf"}
 
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
 AUX_LOCAL_SERVER_IP_MIN=2
@@ -220,6 +223,8 @@ usage ()
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-sshfs-daemon${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-vnc-desktop${NRML}"
+	echo -e ""
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-wifi-ap${NRML}"
 	echo -e ""
 	echo -e ""
 	echo -e "${LCYN}    ---- JAIL MANAGEMENT ----${NRML}"
@@ -3083,7 +3088,7 @@ connect_internet ()
 				test_valid_integer "${VLAN_ID_TEMP}" 1 4096
 				if [ "${VALID_INTEGER}" = "no" ]
 				then
-					echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${ORNG}${VLAN_ID}${NRML}'."
+					echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${ORNG}${VLAN_ID_TEMP}${NRML}'."
 					echo -e "       It must be a number between 1 and 4096.\n"
 				else
 					question_yes_no "\nYou have entered '${NRML}${VLAN_ID_TEMP}${LCYN}' as the VLAN ID.\nIs this correct?"
@@ -3667,7 +3672,7 @@ init_host ()
 					test_valid_integer "${VLAN_ID_TEMP}" 1 4096
 					if [ "${VALID_INTEGER}" = "no" ]
 					then
-						echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${ORNG}${VLAN_ID}${NRML}'."
+						echo -e "\n${LRED}ERROR:${NRML} The VLAN ID can not be '${ORNG}${VLAN_ID_TEMP}${NRML}'."
 						echo -e "       It must be a number between 1 and 4096.\n"
 					else
 						question_yes_no "\nYou have entered '${NRML}${VLAN_ID_TEMP}${LCYN}' as the VLAN ID.\nIs this correct?"
@@ -4179,7 +4184,7 @@ init_host ()
 
 		# Check that the username only contains letters, numbers, periods, underscores and hyphens between 3 and 30 characters.
 		IS_SYNTAX_OK=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^[a-z0-9][a-z0-9\.\_\-]+[a-z0-9]//" | wc -L`
-		IS_LENGTH_OK=`echo "${USERNAME}" | sed -r "s/^(.{3,30})//" | wc -L`
+		IS_LENGTH_OK=`echo "${ARBITRARY_USERNAME_TEMP}" | sed -r "s/^(.{3,30})//" | wc -L`
 		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${ARBITRARY_USERNAME_TEMP}" = "" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${ARBITRARY_USERNAME_TEMP}${NRML}'."
@@ -4646,7 +4651,7 @@ undo_init_vnc_desktop ()
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-sshfs-daemon process!\n"
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-vnc-desktop process!\n"
 		return 2
 	fi
 
@@ -4950,6 +4955,719 @@ init_vnc_desktop ()
 		echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_NAME}:10${NRML}"
 		echo -e "${LGRN}${ARBITRARY_USERNAME}@${HOST_LAN_IP}:10${NRML}\n\n"
 	fi
+
+	return 0
+}
+
+undo_init_wifi_ap ()
+{
+
+	ERROR_COUNT=0
+
+	# Destroy the WLAN interface, if it was created.
+	if [ ${INIT_WIFI_AP_WLAN_CREATED} = true ]
+	then
+		ifconfig ${WIFI_AP_WLAN_IFACE} destroy > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo any network bridge config changes.
+	if [ ${INIT_WIFI_AP_BRIDGE_UP} = true ]
+	then
+		ifconfig ${WIFI_AP_BRIDGE_IFACE} down > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_WIFI_AP_BRIDGE_ADDM} = true ]
+	then
+		ifconfig ${WIFI_AP_BRIDGE_IFACE} deletem ${LAN_NET_IFACE} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_WIFI_AP_BRIDGE_CREATE} = true ]
+	then
+		ifconfig ${WIFI_AP_BRIDGE_IFACE} destroy > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Unload any loaded kernel modules.
+	if [ ${INIT_WIFI_AP_BRIDGE_LOAD} = true ]
+	then
+		kldunload if_bridge
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_WIFI_AP_BRIDGESTP_LOAD} = true ]
+	then
+		kldunload bridgestp
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Stop hostapd, if it was started.
+	if [ ${INIT_WIFI_AP_HOSTAPD_STARTED} = true ]
+	then
+		service hostapd stop
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo host system modifications.
+	if [ ${INIT_WIFI_AP_SYSTEM_MODIFIED} = true ]
+	then
+		# Undo install_file_tree of repo configs to the system.
+		undo_install_file_tree configs/${HOST_NAME} / init-wifi-ap
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo repo modifications.
+	if [ ${INIT_WIFI_AP_REPO_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_WIFI_AP}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_WIFI_AP}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			git clean -f -d
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-wifi-ap process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+}
+
+init_wifi_ap ()
+{
+
+	INIT_WIFI_AP_REPO_MODIFIED=false
+	INIT_WIFI_AP_SYSTEM_MODIFIED=false
+	INIT_WIFI_AP_HOSTAPD_STARTED=false
+	INIT_WIFI_AP_BRIDGE_LOAD=false
+	INIT_WIFI_AP_BRIDGESTP_LOAD=false
+	INIT_WIFI_AP_BRIDGE_CREATE=false
+	INIT_WIFI_AP_BRIDGE_ADDM=false
+	INIT_WIFI_AP_BRIDGE_UP=false
+	INIT_WIFI_AP_WLAN_CREATED=false
+
+	trap 'undo_init_wifi_ap ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_WIFI_AP=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
+		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check for unsaved registered host config files.
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		return 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the host.conf file is accessible.
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the wifi-ap subsystem is not already initialised.
+	WIFI_AP_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.wifi-ap_compat`
+	if [ "${WIFI_AP_SUBSYS_COMPAT}" != "null" ] && [ "${WIFI_AP_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the WiFi AP subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-wifi-ap${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
+	# Get the LAN interface for this host.
+	CONFIG_LAN_NET_IFACE=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .network.interface.lan.id`
+	if [ ${?} -ne 0 ] || [ "${CONFIG_LAN_NET_IFACE}" = "null" ] || [ "${CONFIG_LAN_NET_IFACE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the LAN interface id from the host config file!\n       Aborting.\n"
+		return 2
+	fi
+	LAN_NET_IFACE=""
+	HOST_LAN_IP_ADDRESSES=""
+	NET_IFACES=`ifconfig -l`
+	for IFACE in ${NET_IFACES}
+	do
+		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
+		then
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
+			then
+				LAN_NET_IFACE="${IFACE}"
+			fi
+		fi
+	done
+
+	# Exit if the LAN subnet interface was not found.
+	if [ "${LAN_NET_IFACE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
+		return 1
+	fi
+
+	# Get list of available WiFi interfaces and number thereof.
+	WIFI_AP_NET_IFACES=`sysctl -n net.wlan.devices`
+	WIFI_AP_NUM_NET_IFACES=`echo ${WIFI_AP_NET_IFACES} | wc -w`
+	if [ ${WIFI_AP_NUM_NET_IFACES} -lt 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No WiFi (WLAN) devices found!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+
+	# Get the WAN interface to use.
+	if [ ${WIFI_AP_NUM_NET_IFACES} -lt 2 ]
+	then
+		WIFI_AP_NET_IFACE=${WIFI_AP_NET_IFACES}
+		echo -e "\n${YELL}Using '${NRML}${WIFI_AP_NET_IFACE}${YELL}' as the WiFi interface,${NRML}"
+		echo -e "${YELL}since it's all that's available.${NRML}\n"
+	else
+		WIFI_AP_NET_IFACE=""
+		while [ "${WIFI_AP_NET_IFACE}" = "" ]
+		do
+			dialog --no-items --no-cancel --menu "Select the WiFi interface to use:" 18 60 16 ${WIFI_AP_NET_IFACES} 2> ${DIALOG_OUT_FILE}
+			WIFI_AP_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${WIFI_AP_NET_IFACE_TEMP}${LCYN}' as the WiFi interface to use.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				WIFI_AP_NET_IFACE="${WIFI_AP_NET_IFACE_TEMP}"
+				break
+			fi
+			sleep 4
+		done
+	fi
+
+	if [ "${WIFI_AP_NET_IFACE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No WiFi (WLAN) device selected!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+
+	# Get the next available WLAN ID number.
+	WIFI_AP_WLAN_ID=-1
+	WIFI_AP_WLAN_ID_TEMP=0
+	NET_IFACE_IN_USE_BY=""
+	while [ ${WIFI_AP_WLAN_ID} -lt 0 ]
+	do
+		ifconfig "wlan${WIFI_AP_WLAN_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "ifconfig_wlan${WIFI_AP_WLAN_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			ifconfig "wlan${WIFI_AP_WLAN_ID_TEMP}" | grep "parent interface: ${WIFI_AP_NET_IFACE}$" > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				NET_IFACE_IN_USE_BY="wlan${WIFI_AP_WLAN_ID_TEMP}"
+			fi
+			WIFI_AP_WLAN_ID_TEMP=$(( ${WIFI_AP_WLAN_ID_TEMP} + 1 ))
+		else
+			WIFI_AP_WLAN_ID=${WIFI_AP_WLAN_ID_TEMP}
+		fi
+	done
+
+	if [ "${NET_IFACE_IN_USE_BY}" != "" ]
+	then
+		question_yes_no "\nThe interface '${NRML}${WIFI_AP_NET_IFACE}${LCYN}' is already assigned to '${NRML}${NET_IFACE_IN_USE_BY}${LCYN}',\nwould you like to continue?"
+		if [ "${ANSWER}" = "no" ]
+		then
+			undo_init_wifi_ap
+			return 1
+		else
+			WIFI_AP_WLAN_IFACE="${NET_IFACE_IN_USE_BY}"
+		fi
+	else
+		WIFI_AP_WLAN_IFACE="wlan${WIFI_AP_WLAN_ID}"
+	fi
+
+	# Get WiFi device and crypto capabilities.
+	ifconfig ${WIFI_AP_WLAN_IFACE} destroy > /dev/null 2>&1
+	ifconfig ${WIFI_AP_WLAN_IFACE} create wlandev ${WIFI_AP_NET_IFACE} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst checking WiFi device capabilities!\n"
+		undo_init_wifi_ap
+		return 2
+	else
+		INIT_WIFI_AP_WLAN_CREATED=true
+	fi
+	WIFI_AP_DEVICECAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep -E "^drivercaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
+	WIFI_AP_CRYPTOCAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep -E "^cryptocaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
+	echo "${WIFI_AP_DEVICECAPS}" | grep -E "^HOSTAP$" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The selected WiFi device is not capable of running in AP mode!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+	echo "${WIFI_AP_DEVICECAPS}" | grep -E "^WPA2$" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The selected WiFi device is not capable of WPA2 security!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+	echo "${WIFI_AP_CRYPTOCAPS}" | grep -E "^AES_CCM$" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} The selected WiFi device is not capable of AES CCMP encryption!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+
+	# Recreate the WLAN interface, putting it into HOSTAP mode.
+	ifconfig ${WIFI_AP_WLAN_IFACE} destroy > /dev/null 2>&1
+	ifconfig ${WIFI_AP_WLAN_IFACE} create wlandev ${WIFI_AP_NET_IFACE} wlanmode hostapd > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst putting the selected\n       WiFi device into HOSTAP mode!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Get the SSID.
+	WIFI_AP_SSID=""
+	while [ "${WIFI_AP_SSID}" = "" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the SSID for the WiFi AP: ${NRML}" WIFI_AP_SSID_TEMP
+
+		# Check that the SSID only contains letters, numbers, spaces, periods, underscores and hyphens between 3 and 30 characters.
+		IS_SYNTAX_OK=`echo "${WIFI_AP_SSID_TEMP}" | sed -r "s/^[a-zA-Z0-9][a-zA-Z0-9\.\_\-\ ]+[a-zA-Z0-9]//" | wc -L`
+		IS_LENGTH_OK=`echo "${WIFI_AP_SSID_TEMP}" | sed -r "s/^(.{3,30})//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${WIFI_AP_SSID_TEMP}" = "" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The SSID can not be '${ORNG}${WIFI_AP_SSID_TEMP}${NRML}'."
+			echo -e "       It must be between 3 and 30 characters and only contain "
+			echo -e "       letters, numbers, spaces, periods, underscores and hyphens.\n"
+		elif [ `cat /etc/hostapd.conf | grep -E "^ssid=${WIFI_AP_SSID_TEMP}$" | wc -l` -gt 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The SSID '${ORNG}${WIFI_AP_SSID_TEMP}${NRML}' already exists on this host.\n"
+		else
+			question_yes_no "\nYou have entered '${NRML}${WIFI_AP_SSID_TEMP}${LCYN}' as the SSID.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				WIFI_AP_SSID=${WIFI_AP_SSID_TEMP}
+				break
+			fi
+		fi
+		sleep 4
+	done
+
+	# Get the WPA2 PSK.
+	WIFI_AP_PSK=""
+	while [ "${WIFI_AP_PSK}" = "" ]
+	do
+		echo -e ""
+		readee -p "${LCYN}Enter the PSK (Pre-Shared Key) for the WiFi AP: ${NRML}" WIFI_AP_PSK_TEMP
+
+		# Check that the PSK is between 8 and 63 characters.
+		IS_LENGTH_OK=`echo "${WIFI_AP_PSK_TEMP}" | sed -r "s/^(.{8,63})//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${WIFI_AP_PSK_TEMP}" = "" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The PSK can not be '${ORNG}${WIFI_AP_PSK_TEMP}${NRML}'."
+			echo -e "       It must be between 8 and 63 characters long.\n"
+		elif [ -e "/etc/hostapd.conf" ] && [ `cat /etc/hostapd.conf | grep -E "^wpa_passphrase=${WIFI_AP_PSK_TEMP}$" | wc -l` -gt 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The PSK '${ORNG}${WIFI_AP_PSK_TEMP}${NRML}' already exists on this host.\n"
+		else
+			question_yes_no "\nYou have entered '${NRML}${WIFI_AP_PSK_TEMP}${LCYN}' as the PSK.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				WIFI_AP_PSK=${WIFI_AP_PSK_TEMP}
+				break
+			fi
+		fi
+		sleep 4
+	done
+
+	# Get available country codes for this WLAN device (crude parsing due to ifconfigs' output layout).
+	WIFI_AP_COUNTRIES_MATRIX=`ifconfig "${WIFI_AP_WLAN_IFACE}" list countries | sed -n "/^Regulatory domains:/q;p" | sed "/^$/d" | sed "/^Country codes:/d"`
+	WIFI_AP_COUNTRIES_LIST=`echo "${WIFI_AP_COUNTRIES_MATRIX}" | sed "s/^DEBUG Debug//" | sed "s/\([A-Z][A-Z0-9]\)/\n\1/g" | sed "/^[ ]*$/d"`
+	WIFI_AP_COUNTRIES_LIST_MENU=`echo "${WIFI_AP_COUNTRIES_LIST}" | sed "s/\([A-Z][A-Z0-9]\) /\1%/" | sed "s/[ ]*$//" | sort | tr '\n' '%'`
+
+	# Get the applicable regulatory 2 digit country code.
+	CURRENT_IFS="${IFS}"
+	IFS="%"
+	WIFI_AP_COUNTRY_CODE=""
+	while [ "${WIFI_AP_COUNTRY_CODE}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the WiFi regulatory country:" 18 60 16 ${WIFI_AP_COUNTRIES_LIST_MENU} 2> ${DIALOG_OUT_FILE}
+		WIFI_AP_COUNTRY_CODE_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${WIFI_AP_COUNTRY_CODE_TEMP}${LCYN}' as the WiFi regulatory country.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			WIFI_AP_COUNTRY_CODE="${WIFI_AP_COUNTRY_CODE_TEMP}"
+			break
+		fi
+		sleep 4
+	done
+	IFS="${CURRENT_IFS}"
+
+	if [ "${WIFI_AP_COUNTRY_CODE}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No WiFi regulatory country selected!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+
+	# Set the regulatory domain country for the WiFi device.
+	ifconfig "${WIFI_AP_WLAN_IFACE}" country "${WIFI_AP_COUNTRY_CODE}" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the WiFi regulatory country!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Get regulatory domain channel capabilities for this WLAN device (crude parsing due to ifconfigs' output layout).
+	WIFI_AP_CHANNEL_CAPS_LIST=`ifconfig -v "${WIFI_AP_WLAN_IFACE}" list chan | sed "s/\(Channel .*\)Channel/\1\nChannel/g" | sed "s/[ ]*$//" | sort -n`
+	WIFI_AP_CHANNELS=`echo "${WIFI_AP_CHANNEL_CAPS_LIST}" | awk '{print $6 " " $1 " " $2 ":" $7}' | sed "s/[:]$//" | sed "s/Channel/channel/"`
+
+	# Get the desired WiFi mode and channel.
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
+	WIFI_AP_MODE_CHANNEL=""
+	while [ "${WIFI_AP_MODE_CHANNEL}" = "" ]
+	do
+		dialog --no-items --no-cancel --menu "Select the WiFi mode and channel:" 18 60 16 ${WIFI_AP_CHANNELS} 2> ${DIALOG_OUT_FILE}
+		WIFI_AP_MODE_CHANNEL_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${WIFI_AP_MODE_CHANNEL_TEMP}${LCYN}' as the WiFi mode and channel.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			WIFI_AP_MODE_CHANNEL="${WIFI_AP_MODE_CHANNEL_TEMP}"
+			break
+		fi
+		sleep 4
+	done
+	IFS="${CURRENT_IFS}"
+
+	if [ "${WIFI_AP_MODE_CHANNEL}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No WiFi mode and channel selected!\n"
+		undo_init_wifi_ap
+		return 1
+	fi
+
+	# Set the mode and channel for the WiFi device.
+	ifconfig "${WIFI_AP_WLAN_IFACE}" mode ${WIFI_AP_MODE_CHANNEL} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the WiFi mode and channel!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Get the max txpower allowed for the selected reguatory domain country.
+	WIFI_AP_CHANNEL=`echo "${WIFI_AP_MODE_CHANNEL}" | awk '{print $3}'`
+	WIFI_AP_CHANNEL_NO_BAND=`echo "${WIFI_AP_CHANNEL}" | cut -d: -f1`
+	WIFI_AP_CHANNEL_TXPOWER_LIST=`ifconfig ${WIFI_AP_WLAN_IFACE} list txpower | sed "s/\(Channel .*\)Channel/\1\nChannel/g" | sort`
+	WIFI_AP_CHANNEL_TXPOWER_INFO=`echo "${WIFI_AP_CHANNEL_TXPOWER_LIST}" | grep -E "^Channel[ ]+${WIFI_AP_CHANNEL_NO_BAND} "`
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst finding the current txpower options!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	WIFI_AP_CHANNEL_TXPOWER_MAX=`echo "${WIFI_AP_CHANNEL_TXPOWER_INFO}" | awk '{print $8}'`
+
+	# Ask if we want to use a specific txpower level.
+	question_yes_no "\nDo you want to use a specific txpower level? (Otherwise uses max)."
+	USE_SPECIFIED_TXPOWER=${ANSWER}
+	if [ "${USE_SPECIFIED_TXPOWER}" = "yes" ]
+	then
+		WIFI_AP_CHANNEL_TXPOWER=-1
+			while [ ${WIFI_AP_CHANNEL_TXPOWER} -lt 0 ]
+			do
+				echo -e ""
+				readee -p "${LCYN}Enter the txpower (0-${WIFI_AP_CHANNEL_TXPOWER_MAX}): ${NRML}" WIFI_AP_CHANNEL_TXPOWER_TEMP
+				# Check that the entered value only contains numbers being a minimum of 0 and maximum of WIFI_AP_CHANNEL_TXPOWER_MAX.
+				test_valid_integer "${WIFI_AP_CHANNEL_TXPOWER_TEMP}" 0 ${WIFI_AP_CHANNEL_TXPOWER_MAX}
+				if [ "${VALID_INTEGER}" = "no" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The txpower can not be '${ORNG}${WIFI_AP_CHANNEL_TXPOWER_TEMP}${NRML}'."
+					echo -e "       It must be a number between 0 and ${WIFI_AP_CHANNEL_TXPOWER_MAX}.\n"
+				else
+					question_yes_no "\nYou have entered '${NRML}${WIFI_AP_CHANNEL_TXPOWER_TEMP}${LCYN}' as the txpower.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						WIFI_AP_CHANNEL_TXPOWER=${WIFI_AP_CHANNEL_TXPOWER_TEMP}
+					fi
+				fi
+			done
+	else
+		WIFI_AP_CHANNEL_TXPOWER="${WIFI_AP_CHANNEL_TXPOWER_MAX}"
+	fi
+
+	# Set the txpower for the WiFi device.
+	ifconfig "${WIFI_AP_WLAN_IFACE}" txpower ${WIFI_AP_CHANNEL_TXPOWER} > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the WiFi txpower!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Load required kernel modules.
+	kldstat -n if_bridge > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_WIFI_AP_BRIDGE_LOAD=true
+		kldload if_bridge 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	kldstat -n bridgestp > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_WIFI_AP_BRIDGESTP_LOAD=true
+		kldload bridgestp 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading the WiFi AP subsystem kernel modules!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Get next available bridge id.
+	WIFI_AP_BRIDGE_ID=-1
+	WIFI_AP_BRIDGE_ID_TEMP=0
+	while [ ${WIFI_AP_BRIDGE_ID} -lt 0 ]
+	do
+		ifconfig "bridge${WIFI_AP_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT1=${?}
+		sysrc "ifconfig_bridge${WIFI_AP_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		RESULT2=${?}
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		then
+			WIFI_AP_BRIDGE_ID_TEMP=$(( ${WIFI_AP_BRIDGE_ID_TEMP} + 1 ))
+		else
+			WIFI_AP_BRIDGE_ID=${WIFI_AP_BRIDGE_ID_TEMP}
+		fi
+	done
+
+	WIFI_AP_BRIDGE_IFACE="bridge${WIFI_AP_BRIDGE_ID}"
+
+	# Setup network bridge interface.
+	INIT_WIFI_AP_BRIDGE_CREATE=true
+	ifconfig "${WIFI_AP_BRIDGE_IFACE}" create > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	INIT_WIFI_AP_BRIDGE_ADDM=true
+	ifconfig "${WIFI_AP_BRIDGE_IFACE}" addm "${LAN_NET_IFACE}" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	ifconfig "${WIFI_AP_BRIDGE_IFACE}" addm "${WIFI_AP_WLAN_IFACE}" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	INIT_WIFI_AP_BRIDGE_UP=true
+	ifconfig "${WIFI_AP_BRIDGE_IFACE}" up > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Unable to configure the network bridge for the WiFi AP subsystem!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Install required packages.
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	ASSUME_ALWAYS_YES=yes pkg update -fq
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	ASSUME_ALWAYS_YES=yes pkg install -Rfy ${WIFI_AP_PACKAGES}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# Get FreeBSD version strings.
+	get_freebsd_version
+
+	INIT_WIFI_AP_REPO_MODIFIED=true
+
+	# Copy init-wifi-ap template configs to this hosts' repo profile.
+	install_file_tree config-templates/init-wifi-ap/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo -e ""
+
+	# Copy local startup & shutdown scripts to repo, or create them if they don't exist.
+	if [ -e /etc/rc.local ]
+	then
+		backup_file /etc/rc.local init-wifi-ap
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		cp /etc/rc.local configs/${HOST_NAME}/etc/rc.local
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		touch configs/${HOST_NAME}/etc/rc.local
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Add bridge creation command to rc.local, to ensure the bridge gets created on boot.
+	echo -e "\n# Force create bridge on boot.\nifconfig ${WIFI_AP_BRIDGE_IFACE} create" >>  configs/${HOST_NAME}/etc/rc.local
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Enable hostapd and set it to use the ports version in rc.conf.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostapd_enable=YES" > /dev/null 2>&1
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostapd_program=/usr/local/sbin/hostapd" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set persitent bridge interface configuration in rc.conf.
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${WIFI_AP_BRIDGE_IFACE}" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^#ifconfig_WIFI_AP_BRIDGE_IFACE=\"\"/ifconfig_${WIFI_AP_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE} up\"/" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set persitent WiFi interface configuration in rc.conf.
+	sed -i "" "s/^#wlans_WIFI_AP_NET_IFACE=\"\"/wlans_${WIFI_AP_NET_IFACE}=\"${WIFI_AP_WLAN_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^#create_args_wlanWIFI_AP_WLAN_ID=\"\"/create_args_wlan${WIFI_AP_WLAN_ID}=\"wlanmode hostap country ${WIFI_AP_COUNTRY_CODE} txpower ${WIFI_AP_CHANNEL_TXPOWER}\"/" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s|^#ifconfig_wlanWIFI_AP_WLAN_ID=\"\"|ifconfig_wlan${WIFI_AP_WLAN_ID}=\"mode ${WIFI_AP_MODE_CHANNEL}\"|" configs/${HOST_NAME}/etc/rc.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set persitent WiFi HOSTAP configuration in hostapd.conf.
+	sed -i "" "s/WIFI_AP_WLAN_ID/${WIFI_AP_WLAN_ID}/g" configs/${HOST_NAME}/etc/hostapd.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/WIFI_AP_SSID/${WIFI_AP_SSID}/g" configs/${HOST_NAME}/etc/hostapd.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/WIFI_AP_PSK/${WIFI_AP_PSK}/g" configs/${HOST_NAME}/etc/hostapd.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Store subsystem configuration details.
+	${UCL_CMD} set -f configs/${HOST_NAME}${WIFI_AP_CONF_PATH} -t number .network.bridge_id_num "${WIFI_AP_BRIDGE_ID}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${WIFI_AP_CONF_PATH} -t string .network.bridge_nic_id "${LAN_NET_IFACE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${WIFI_AP_CONF_PATH} -t string .network.wifi_ap_net_iface "${WIFI_AP_NET_IFACE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${WIFI_AP_CONF_PATH} -t number .network.wifi_ap_wlan_id_num "${WIFI_AP_WLAN_ID}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t number .subsystems.wifi-ap_compat ${LATEST_WIFI_AP_SUBSYS_COMPAT}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Save the list of packages installed to the host config file.
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${WIFI_AP_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the host configs!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	INIT_WIFI_AP_SYSTEM_MODIFIED=true
+
+	# Backup host system configs.
+	backup_file_tree configs/${HOST_NAME} / init-wifi-ap
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install host repo configs to the system.
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the host configs!\n"
+		undo_init_vnc_desktop
+		return 2
+	fi
+
+	echo -e ""
+
+	# Start hostapd service.
+	service hostapd status > /dev/null
+	if [ ${?} -ne 0 ]
+	then
+		INIT_WIFI_AP_HOSTAPD_STARTED=true
+		service hostapd start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst starting the hostapd service!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
+	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	git commit -m "Updating host after 'init-wifi-ap'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_init_wifi_ap
+		return 2
+	fi
+
+	# If a remote repo is in use, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+		fi
+	fi
+
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
+	echo -e "\n${LGRN}Congratulations! We have now finished setting up a WiFi AP on this host.${NRML}\n"
 
 	return 0
 }
@@ -8865,7 +9583,7 @@ create_vm_template ()
 				VM_NUM_CORES=${VM_NUM_CORES_TEMP}
 			fi
 		else
-			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${ORNG}${VM_NUM_CORES}${NRML}'."
+			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${ORNG}${VM_NUM_CORES_TEMP}${NRML}'."
 			echo -e "       It must contain only numbers of value between ${VM_MIN_CORES} and ${VM_MAX_CORES}.\n"
 		fi
 	done
@@ -9650,7 +10368,7 @@ create_vm_instance ()
 				VM_NUM_CORES=${VM_NUM_CORES_TEMP}
 			fi
 		else
-			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${ORNG}${VM_NUM_CORES}${NRML}'."
+			echo -e "\n${LRED}ERROR:${NRML} The VM core count can not be '${ORNG}${VM_NUM_CORES_TEMP}${NRML}'."
 			echo -e "       It must contain only numbers of value between ${VM_MIN_CORES} and ${VM_MAX_CORES}.\n"
 		fi
 	done
@@ -10587,6 +11305,13 @@ case "${SUB_CMD}" in
 		# Install minimal X desktop environment accessible via VNC using IceWM, Roxterm, Xfe, Firefox and TightVNC.
 		update_local_repo
 		init_vnc_desktop
+		exit ${?}
+		;;
+
+	init-wifi-ap)
+		# Initialise and configure the WiFi AP subsystem.
+		update_local_repo
+		init_wifi_ap
 		exit ${?}
 		;;
 
