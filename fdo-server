@@ -716,9 +716,15 @@ get_freebsd_version ()
 	FREEBSD_MAJOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f1`
 	FREEBSD_MINOR_VERSION=`echo ${FREEBSD_VERSION} | cut -d. -f2`
 	FREEBSD_CADENCE=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f2`
-	FREEBSD_PATCH_LEVEL=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3`
+	FREEBSD_PATCH_LEVEL_RAW=`echo ${FREEBSD_VERSION_STRING} | cut -d- -f3 | sed "s/^p//"`
 	FREEBSD_ARCH=`uname -m`
 
+	if [ "${FREEBSD_PATCH_LEVEL_RAW}" = "" ]
+	then
+		FREEBSD_PATCH_LEVEL="0"
+	else
+		FREEBSD_PATCH_LEVEL="${FREEBSD_PATCH_LEVEL_RAW}"
+	fi
 }
 
 get_class_b_subnet ()
@@ -4599,7 +4605,7 @@ patch_host ()
 	echo -e "\n${LGRN}This host has been successfully patched!${NRML}\n"
 
 	FREEBSD_INSTALLED_KERNEL_VERSION=`freebsd-version -k`
-	FREEBSD_RUNNING_KERNEL_VERSION=`uname -v`
+	FREEBSD_RUNNING_KERNEL_VERSION=`uname -v | awk '{print $2}'`
 	if [ "${FREEBSD_RUNNING_KERNEL_VERSION}" != "${FREEBSD_INSTALLED_KERNEL_VERSION}" ]
 	then
 		PATCH_HOST_NEEDS_REBOOT="yes"
