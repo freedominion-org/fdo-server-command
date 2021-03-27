@@ -29,3 +29,4 @@ FIXED
 - ``uclcmd`` can't set string that start with number, e.g: 100GB_Scratch/100GB_Scratch.
 - ``create-vm-template|instance`` during eject iso image, it should not say 'as the ISO image to detach' (eject).
 - ``create-vm-template|instance`` should be able to cancel and eject iso image. Same with insert, attach, detach.
+- ``patch-host``: doesn't seem to update FreeBSD version info.
