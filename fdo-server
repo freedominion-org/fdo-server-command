@@ -62,6 +62,7 @@ LATEST_HOTDESK_SUBSYS_COMPAT=1
 LATEST_SSHFS_DAEMON_SUBSYS_COMPAT=1
 LATEST_VNC_DESKTOP_SUBSYS_COMPAT=1
 LATEST_WIFI_AP_SUBSYS_COMPAT=1
+LATEST_MPD_SERVER_SUBSYS_COMPAT=1
 LATEST_JAILS_SUBSYS_COMPAT=1
 LATEST_VMS_SUBSYS_COMPAT=1
 LATEST_PARTIMAG_SUBSYS_COMPAT=1
@@ -118,6 +119,16 @@ VNC_DESKTOP_CONF_PATH=${VNC_DESKTOP_CONF_PATH:-"${FDO_CONFIG_ROOT}/vnc-desktop.c
 
 WIFI_AP_PACKAGES="hostapd"
 WIFI_AP_CONF_PATH=${WIFI_AP_CONF_PATH:-"${FDO_CONFIG_ROOT}/wifi-ap.conf"}
+
+MPD_SERVER_PACKAGES="musicpd"
+MPD_SERVER_CONF_PATH=${MPD_SERVER_CONF_PATH:-"${FDO_CONFIG_ROOT}/mpd-server.conf"}
+MPD_SERVER_MPD_CONF_PATH="/usr/local/etc/musicpd.conf"
+MPD_SERVER_SAMPLERATE_OPTIONS="32000 32kHz 40000 40kHz 441000 44.1kHz(CD) 48000 48kHz 88200 88.2kHz 96000 96kHz"
+MPD_SERVER_SAMPLERATE_OPTIONS="${MPD_SERVER_SAMPLERATE_OPTIONS} 176400 176.4kHz 192000 192kHz 352800 352.8kHz 384000 384kHz"
+MPD_SERVER_SAMPLE_BITS_OPTIONS="8 8bit(legacy) 16 16bit(CD) 24 24bit 32 32bit"
+MPD_SERVER_CHANNELS_OPTIONS="1.0 Mono 2.0 Stereo 2.1 Stereo+LFE 3.0 3-Channels 4.0 4-Channels 4.1 4-Channels+LFE 5.0 5-Channels"
+MPD_SERVER_CHANNELS_OPTIONS="${MPD_SERVER_CHANNELS_OPTIONS} 5.1 5-Channels+LFE 6.0 6-Channels 6.1 6-Channels+LFE 7.1 7-Channels+LFE"
+MPD_SERVER_DEFAULT_PORT_NUM=6600
 
 NET_IFACES_IGNORED="^tun[0-9]|^vboxnet[0-9]|^lo[0-9]|^vlan[0-9]|^pflog[0-9]"
 AUX_LOCAL_SERVER_IP_MIN=2
@@ -217,6 +228,8 @@ usage ()
 	echo -e "${LCYN}    ---- SUBSYSTEMS INITIALISATION ----${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-hotdesk${NRML}"
+	echo -e ""
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-mpd-server${NRML}"
 	echo -e ""
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} init-partimag${NRML}"
 	echo -e ""
@@ -4965,6 +4978,999 @@ init_vnc_desktop ()
 	fi
 
 	return 0
+}
+
+undo_init_mpd_server ()
+{
+
+	ERROR_COUNT=0
+
+	# Stop musicpd, if it was started.
+	if [ ${INIT_MPD_SERVER_MUSICPD_STARTED} = true ]
+	then
+		service musicpd stop
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		echo -e ""
+	fi
+
+	# Unload any loaded kernel modules.
+	if [ ${INIT_MPD_SERVER_DRIVER_LOAD} = true ]
+	then
+		kldunload snd_driver
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ ${INIT_MPD_SERVER_UAUDIO_LOAD} = true ]
+	then
+		kldunload snd_uaudio
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo host system modifications.
+	if [ ${INIT_MPD_SERVER_SYSTEM_MODIFIED} = true ]
+	then
+		# Undo install_file_tree of repo configs to the system.
+		undo_install_file_tree configs/${HOST_NAME} / init-mpd-server
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Undo repo modifications.
+	if [ ${INIT_MPD_SERVER_REPO_MODIFIED} = true ]
+	then
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_INIT_MPD_SERVER}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_INIT_MPD_SERVER}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			git clean -f -d
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
+
+	# Undo sysctl modifications.
+	if [ ${INIT_MPD_SERVER_SYSCTL_MODIFIED} = true ]
+	then
+		sysctl ${MPD_SERVER_PREV_HW_SND_DEFAULT_AUTO} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_HW_SND_DEFAULT_UNIT} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_HW_SND_FEEDER_RATE_QUALITY} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_HW_SND_VERBOSE} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_HW_SND_VPC_AUTORESET} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_HW_SND_VPC_MIXER_BYPASS} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sysctl ${MPD_SERVER_PREV_DEV_PCM_BITPERFECT} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		echo "${MPD_SERVER_PREV_DEV_PCM_BITPERFECT}" | grep "0$" > /dev/null 2>&1
+		if [ "${?}" -eq 0 ]
+		then
+			sysctl ${MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANS} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
+			then
+				sysctl ${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS} > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+			sysctl ${MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANFORMAT} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT}" != "" ]
+			then
+				sysctl ${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT} > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+			sysctl ${MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANMODE} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE}" != "" ]
+			then
+				sysctl ${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE} > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+			sysctl ${MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANRATE} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE}" != "" ]
+			then
+				sysctl ${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE} > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		fi
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the init-mpd-server process!\n"
+		return 2
+	fi
+
+	echo -e "\nAborting.\n"
+	return 0
+}
+
+init_mpd_server ()
+{
+
+	INIT_MPD_SERVER_REPO_MODIFIED=false
+	INIT_MPD_SERVER_SYSTEM_MODIFIED=false
+	INIT_MPD_SERVER_SYSCTL_MODIFIED=false
+	INIT_MPD_SERVER_MUSICPD_STARTED=false
+	INIT_MPD_SERVER_DRIVER_LOAD=false
+	INIT_MPD_SERVER_UAUDIO_LOAD=false
+
+	trap 'undo_init_mpd_server ; exit 3' HUP INT QUIT KILL TERM
+
+	# Save git commit reference so we can roll back changes later.
+	COMMIT_BEFORE_INIT_MPD_SERVER=`git log --format=format:%H -1`
+
+	ERROR_COUNT=0
+
+	# Check that the host is already registered.
+	if [ ! -d "configs/${HOST_NAME}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} This host has not yet been registered in the repo!"
+		echo -e "       Please use the '${LBLU}init-host${NRML}' subcommand first.\n       Aborting.\n"
+		return 1
+	fi
+
+	# Check for unsaved registered host config files.
+	echo -e "\n${YELL}Now we need to check if there are any unsaved changes to this hosts registered${NRML}"
+	echo -e "${YELL}config files...${NRML}\n"
+	check_configs configs/${HOST_NAME} / --silent > /dev/null 2>&1
+	if [ ${?} -gt 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} One or more host config files are not updated in the repo."
+		echo -e "       Please use the '${LBLU}check-configs${NRML}' subcommand to see what's out-of-date."
+		echo -e "       Please use the '${LBLU}update-config${NRML}' subcommand to keep the repo up-to-date.\n       Aborting.\n"
+		return 1
+	fi
+
+	echo -e "\n${LGRN}All registered configs for this host are up to date in the repo!${NRML}\n"
+
+	# Check that the host.conf file is accessible.
+	TEST_UCL=`${UCL_CMD} get -u -f ${HOST_CONF_PATH} .general 2>&1`
+	if [ ${?} -ne 0 ] || [ "${TEST_UCL}" = "null" ] || [ "${TEST_UCL}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to access the config file '${HOST_CONF_PATH}'!\n       Aborting.\n"
+		return 2
+	fi
+
+	# Check that the mpd-server subsystem is not already initialised.
+	MPD_SERVER_SUBSYS_COMPAT=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .subsystems.mpd-server_compat`
+	if [ "${MPD_SERVER_SUBSYS_COMPAT}" != "null" ] && [ "${MPD_SERVER_SUBSYS_COMPAT}" != "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} It appears that the MPD Server subsystem is already initialised."
+		echo -e "       Consider using the command:"
+		echo -e "       ${LBLU}${SCRIPT_NAME} dismantle-mpd-server${NRML}\n       Aborting.\n"
+		return 1
+	fi
+
+	# Get available interfaces and the quantity thereof.
+	MPD_SERVER_IP_ADDRESSES=`ifconfig | grep -E "inet .* netmask .* broadcast " | grep -v " netmask 0xffffffff" | awk '{print $2}'`
+	MPD_SERVER_NUM_IP_ADDRESSES=`echo ${MPD_SERVER_IP_ADDRESSES} | wc -w`
+	if [ ${MPD_SERVER_NUM_IP_ADDRESSES} -lt 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No usable IP addresses found!\n       Aborting.\n"
+		undo_init_mpd_server
+		return 1
+	fi
+
+	# Get the IP address to listen on, or 'any' for all.
+	DIALOG_PROMPT="Select the host IP address to listen on ('any' listens on all):"
+	while [ "${MPD_SERVER_IP_LISTEN}" = "" ]
+	do
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 40 10 "any" ${MPD_SERVER_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_IP_LISTEN_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_IP_LISTEN_TEMP}${LCYN}' as the IP address to listen on.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_IP_LISTEN="${MPD_SERVER_IP_LISTEN_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+
+	# Get the port to listen on, empty=default=6600.
+	question_yes_no "\nWould you like to use a custom TCP port number?"
+	MPD_SERVER_USE_CUSTOM_PORT=${ANSWER}
+	if [ "${MPD_SERVER_USE_CUSTOM_PORT}" = "yes" ]
+	then
+		while [ "${MPD_SERVER_PORT_NUM}" = "" ]
+		do
+			echo -e ""
+			readee -p "${LCYN}Enter the port number to listen on (1-49151): ${NRML}" MPD_SERVER_PORT_NUM_TEMP
+			# Check that the port number only contains numbers being a minimum of 1 and maximum of 49151.
+			test_valid_integer "${MPD_SERVER_PORT_NUM_TEMP}" 1 49151
+			if [ "${VALID_INTEGER}" = "no" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The port number can not be '${ORNG}${MPD_SERVER_PORT_NUM_TEMP}${NRML}'."
+				echo -e "       It must be a number between 1 and 49151.\n"
+			else
+				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PORT_NUM_TEMP}${LCYN}' as the port number.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					MPD_SERVER_PORT_NUM=${MPD_SERVER_PORT_NUM_TEMP}
+				fi
+			fi
+		done
+	else
+		MPD_SERVER_PORT_NUM=${MPD_SERVER_DEFAULT_PORT_NUM}
+	fi
+
+	# Get the MPD password.
+	question_yes_no "\nWould you like to use a password to access the MPD server?"
+	MPD_SERVER_USE_PASSWORD=${ANSWER}
+	if [ "${MPD_SERVER_USE_PASSWORD}" = "yes" ]
+	then
+		while [ "${MPD_SERVER_PASSWORD}" = "" ]
+		do
+			echo -e ""
+			readee -p "${LCYN}Enter the MPD password: ${NRML}" MPD_SERVER_PASSWORD_TEMP
+			# Check that the password contains only valid characters.
+			test_valid_alpha_numeric_string "${MPD_SERVER_PASSWORD_TEMP}" 3 20
+			if [ "${VALID_ALPHA_NUMERIC_STRING}" = "no" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The MPD password can not be '${ORNG}${MPD_SERVER_PASSWORD_TEMP}${NRML}'."
+				echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20.\n"
+			else
+				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PASSWORD_TEMP}${LCYN}' as the MPD password.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					MPD_SERVER_PASSWORD=${MPD_SERVER_PASSWORD_TEMP}
+				fi
+			fi
+		done
+	fi
+
+	# Load required kernel modules.
+	kldstat -n snd_driver > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_MPD_SERVER_DRIVER_LOAD=true
+		kldload snd_driver 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	kldstat -n snd_uaudio > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		INIT_MPD_SERVER_UAUDIO_LOAD=true
+		kldload snd_uaudio 2> /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading the MPD Server subsystem kernel modules!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Detect and display the currently available audio PCM devices.
+	MPD_SERVER_SCAN_COMPLETE=false
+	while [ ${MPD_SERVER_SCAN_COMPLETE} = false ]
+	do
+		MPD_SERVER_SNDSTAT_PCM_LIST=`cat /dev/sndstat | grep -E "^pcm[0-9]" | sed "s/^\(pcm[0-9]*:\) <\(.*\)>.*/\1\2/"`
+		MPD_SERVER_PCM_NUM_LIST=`echo "${MPD_SERVER_SNDSTAT_PCM_LIST}" | cut -d: -f1 | sed "s/^pcm\([0-9]*\)/\1/"`
+		MPD_SERVER_PCM_LIST=""
+		for MPD_SERVER_PCM_NUM in ${MPD_SERVER_PCM_NUM_LIST}
+		do
+			MPD_SERVER_SNDSTAT_PCM=`cat /dev/sndstat | grep -E "^pcm${MPD_SERVER_PCM_NUM}" | sed "s/^\(pcm${MPD_SERVER_PCM_NUM}:\) <\(.*\)>.*/\1\2/"`
+			MPD_SERVER_PCM_PARENT_ID=`sysctl -a | grep -E "^dev.pcm.${MPD_SERVER_PCM_NUM}.%parent: " | awk '{print $2}'`
+			MPD_SERVER_PCM_PARENT_DRIVER=`echo "${MPD_SERVER_PCM_PARENT_ID}" | sed "s/\([a-z]*\)[0-9]*/\1/"`
+			MPD_SERVER_PCM_PARENT_NAME=`usbconfig show_ifdrv | grep -E "^ugen[0-9.]*: ${MPD_SERVER_PCM_PARENT_ID}: " | sed "s/.* <\(.*\)>.*/\1/"`
+			if [ "${MPD_SERVER_PCM_LIST}" = "" ]
+			then
+				MPD_SERVER_PCM_LIST="${MPD_SERVER_SNDSTAT_PCM}"
+			else
+				MPD_SERVER_PCM_LIST="${MPD_SERVER_PCM_LIST}${CARRIAGE_RETURN}${MPD_SERVER_SNDSTAT_PCM}"
+			fi
+			if [ "${MPD_SERVER_PCM_PARENT_DRIVER}" = "uaudio" ]
+			then
+				MPD_SERVER_PCM_LIST="${MPD_SERVER_PCM_LIST} [${MPD_SERVER_PCM_PARENT_NAME}]"
+			fi
+		done
+
+		echo -e "\n\n${YELL}These are the currently detected audio devices:${NRML}"
+		echo -e "\n${ORNG}${MPD_SERVER_PCM_LIST}${NRML}\n"
+
+		while true
+		do
+			echo -e "${LCYN}Would you like to proceed to device selection or rescan for audio devices?${NRML}"
+			readee -p "${LCYN}(proceed|rescan): ${NRML}" ANSWER
+			if [ "${ANSWER}" = "proceed" ] || [ "${ANSWER}" = "rescan" ]
+			then
+				break
+			fi
+			echo ""
+		done
+		if [ "${ANSWER}" = "proceed" ]
+		then
+			MPD_SERVER_SCAN_COMPLETE=true
+		fi
+	done
+
+	# Get the desired audio device to be configured and used by musicpd.
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
+	MPD_SERVER_PCM_DESC=""
+	while [ "${MPD_SERVER_PCM_DESC}" = "" ]
+	do
+		dialog --no-items --no-cancel --menu "Select the PCM (audio) device to use for MPD playback:" 18 60 16 ${MPD_SERVER_PCM_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_PCM_DESC_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_DESC_TEMP}${LCYN}' as the PCM device for MPD.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_PCM_DESC="${MPD_SERVER_PCM_DESC_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+	IFS="${CURRENT_IFS}"
+
+	# Get the chosen PCM numeric ID and name from its description.
+	MPD_SERVER_PCM_NUM=`echo "${MPD_SERVER_PCM_DESC}" | cut -d: -f1 | sed "s/^pcm\([0-9]*\)/\1/"`
+	MPD_SERVER_PCM_DEVICE_NAME=`echo "${MPD_SERVER_PCM_DESC}" | cut -d: -f2`
+	MPD_SERVER_PCM_PARENT_ID=`sysctl -a | grep -E "^dev.pcm.${MPD_SERVER_PCM_NUM}.%parent: " | awk '{print $2}'`
+	MPD_SERVER_PCM_PARENT_DRIVER=`echo "${MPD_SERVER_PCM_PARENT_ID}" | sed "s/\([a-z]*\)[0-9]*/\1/"`
+
+	# Prompt for whether to use custom PCM device name.
+	echo -e "\n${YELL}The chosen PCM (audio device) has the following name:${NRML}\n${ORNG}${MPD_SERVER_PCM_DEVICE_NAME}${NRML}\n"
+	question_yes_no "Would you like to use a custom name for the MPD audio output instead?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		# Get valid custom MPD audio output name.
+		MPD_SERVER_PCM_NAME=""
+		while [ "${MPD_SERVER_PCM_NAME}" = "" ]
+		do
+			echo -e ""
+			readee -p "${LCYN}Enter custom audio output name: ${NRML}" MPD_SERVER_PCM_NAME_TEMP
+
+			# Check that the name only contains letters, numbers, brackets, commas, periods, spaces, underscores and hyphens between 3 and 50 characters.
+			IS_SYNTAX_OK=`echo "${MPD_SERVER_PCM_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\-\(\)][a-zA-Z0-9\,\.\_\-\(\) ]+[a-zA-Z0-9\_\-\(\)]//" | wc -L`
+			IS_LENGTH_OK=`echo "${MPD_SERVER_PCM_NAME_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+			if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${MPD_SERVER_PCM_NAME_TEMP}" = "" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}'."
+				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+				echo -e "       brackets, commas, periods,spaces, underscores and hyphens.\n"
+			elif [ `cat configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH} | egrep "name[ 	]*\"${MPD_SERVER_PCM_NAME_TEMP}\"" | wc -l` -gt 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} The name '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}' already exists.\n"
+			else
+				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PCM_NAME_TEMP}${LCYN}' as the name.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					MPD_SERVER_PCM_NAME=${MPD_SERVER_PCM_NAME_TEMP}
+					break
+				fi
+			fi
+			sleep 2
+		done
+	else
+		MPD_SERVER_PCM_NAME=${MPD_SERVER_PCM_DEVICE_NAME}
+	fi
+
+	# Prompt for whether to use the selected PCM as the system default.
+	question_yes_no "\nWould you like to make the selected PCM device the system default?"
+	MPD_SERVER_USE_DEFAULT_UNIT="${ANSWER}"
+
+	# Get existing sysctl values for use in undo function.
+	MPD_SERVER_PREV_HW_SND_DEFAULT_AUTO=`sysctl "hw.snd.default_auto" | sed "s/: /=/"`
+	MPD_SERVER_PREV_HW_SND_DEFAULT_UNIT=`sysctl "hw.snd.default_unit" | sed "s/: /=/"`
+	MPD_SERVER_PREV_HW_SND_FEEDER_RATE_QUALITY=`sysctl "hw.snd.feeder_rate_quality" | sed "s/: /=/"`
+	MPD_SERVER_PREV_HW_SND_VERBOSE=`sysctl "hw.snd.verbose" | sed "s/: /=/"`
+	MPD_SERVER_PREV_HW_SND_VPC_AUTORESET=`sysctl "hw.snd.vpc_autoreset" | sed "s/: /=/"`
+	MPD_SERVER_PREV_HW_SND_VPC_MIXER_BYPASS=`sysctl "hw.snd.vpc_mixer_bypass" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_BITPERFECT=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANS=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_REC_VCHANS=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans" | sed "s/: /=/"`
+
+	INIT_MPD_SERVER_SYSCTL_MODIFIED=true
+
+	# If wanted, set system default PCM device to the chosen one.
+	MPD_SERVER_HW_SND_DEFAULT_UNIT="hw.snd.default_unit=${MPD_SERVER_PCM_NUM}"
+	if [ "${MPD_SERVER_USE_DEFAULT_UNIT}" = "yes" ]
+	then
+		sysctl ${MPD_SERVER_HW_SND_DEFAULT_UNIT} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the default PCM (audio) device!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Set the number of PCM virtual channels to 1 so that other vchan sysctls can always be got and set.
+	MPD_SERVER_DEV_PCM_PLAY_VCHANS_1="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=1"
+	MPD_SERVER_DEV_PCM_REC_VCHANS_1="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=1"
+	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANS_1} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
+	then
+		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANS_1} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM virtual channels to 1!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Get virtual channel existing sysctl values for use in undo function and setting partial vchanformat changes.
+	MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANFORMAT=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat" | sed "s/: /=/"`
+	MPD_SERVER_PREV_PCM_PLAY_SAMPLE_BITS=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat" | cut -d: -f1 | sed "s/^s\([0-9]*\)le/\1/"`
+	MPD_SERVER_PREV_PCM_PLAY_CHANNELS=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat" | cut -d: -f2`
+	MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat" | sed "s/: /=/"`
+	MPD_SERVER_PREV_PCM_REC_SAMPLE_BITS=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat" | cut -d: -f1 | sed "s/^s\([0-9]*\)le/\1/"`
+	MPD_SERVER_PREV_PCM_REC_CHANNELS=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat" | cut -d: -f2`
+	MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANMODE=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanmode" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanmode" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_PLAY_VCHANRATE=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate" | sed "s/: /=/"`
+	MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE=`sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanrate" | sed "s/: /=/"`
+
+	# Get the chosen audio output sample rate to use for the PCM and MPD.
+	MPD_SERVER_SAMPLERATE_LIST="${MPD_SERVER_SAMPLERATE_OPTIONS}"
+	MPD_SERVER_PCM_SAMPLERATE=""
+	while [ "${MPD_SERVER_PCM_SAMPLERATE}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the audio output sample rate (Hz):" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLERATE_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_PCM_SAMPLERATE_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_SAMPLERATE_TEMP}${LCYN}' as the audio output sample rate (Hz).\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_DEV_PCM_PLAY_VCHANRATE="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate=${MPD_SERVER_PCM_SAMPLERATE_TEMP}"
+			if [ "${MPD_SERVER_PCM_SAMPLERATE_TEMP}" != "*" ]
+			then
+				sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANRATE} > /dev/null 2>&1
+				MPD_SERVER_NEW_DEV_PCM_PLAY_VCHANRATE=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate"`
+				if [ "${MPD_SERVER_NEW_DEV_PCM_PLAY_VCHANRATE}" != "${MPD_SERVER_PCM_SAMPLERATE_TEMP}" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Unable to set the selected sample rate for this PCM!\nPlease choose another option.\n"
+					pause_prompt 8
+					continue
+				fi
+			fi
+			MPD_SERVER_PCM_SAMPLERATE="${MPD_SERVER_PCM_SAMPLERATE_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+
+	# Set the PCM rec virtual channel sample rate to the chosen one. FIXes distortion issue on some USB audio devices.
+	MPD_SERVER_DEV_PCM_REC_VCHANRATE="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanrate=${MPD_SERVER_PCM_SAMPLERATE}"
+	if [ "${MPD_SERVER_PCM_SAMPLERATE}" != "*" ] && [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE}" != "" ]
+	then
+		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANRATE} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM virtual channel format!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Get the chosen audio output sample bits.
+	MPD_SERVER_SAMPLE_BITS_LIST="${MPD_SERVER_SAMPLE_BITS_OPTIONS}"
+	MPD_SERVER_PCM_SAMPLE_BITS=""
+	while [ "${MPD_SERVER_PCM_SAMPLE_BITS}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the audio output sample bits size:" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLE_BITS_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_PCM_SAMPLE_BITS_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_SAMPLE_BITS_TEMP}${LCYN}' as the audio output sample bits size.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_PCM_SAMPLE_BITS="${MPD_SERVER_PCM_SAMPLE_BITS_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+
+	# Get the chosen audio output channels.
+	MPD_SERVER_CHANNELS_LIST="${MPD_SERVER_CHANNELS_OPTIONS}"
+	MPD_SERVER_PCM_CHANNELS=""
+	while [ "${MPD_SERVER_PCM_CHANNELS}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the audio output channels:" 18 60 16 \* Unspecified ${MPD_SERVER_CHANNELS_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_PCM_CHANNELS_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_CHANNELS_TEMP}${LCYN}' as the audio output channels.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_PCM_CHANNELS="${MPD_SERVER_PCM_CHANNELS_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+
+	# Set the PCM virtual channel formats to the chosen one or composite of chosen and unspecified ones.
+	if [ "${MPD_SERVER_PCM_SAMPLE_BITS}" = "*" ]
+	then
+		MPD_SERVER_NEXT_PCM_PLAY_SAMPLE_BITS=${MPD_SERVER_PREV_PCM_PLAY_SAMPLE_BITS}
+		MPD_SERVER_NEXT_PCM_REC_SAMPLE_BITS=${MPD_SERVER_PREV_PCM_REC_SAMPLE_BITS}
+	else
+		MPD_SERVER_NEXT_PCM_PLAY_SAMPLE_BITS=${MPD_SERVER_PCM_SAMPLE_BITS}
+		MPD_SERVER_NEXT_PCM_REC_SAMPLE_BITS=${MPD_SERVER_PCM_SAMPLE_BITS}
+	fi
+	if [ "${MPD_SERVER_PCM_CHANNELS}" = "*" ]
+	then
+		MPD_SERVER_NEXT_PCM_PLAY_CHANNELS=${MPD_SERVER_PREV_PCM_PLAY_CHANNELS}
+		MPD_SERVER_NEXT_PCM_REC_CHANNELS=${MPD_SERVER_PREV_PCM_REC_CHANNELS}
+	else
+		MPD_SERVER_NEXT_PCM_PLAY_CHANNELS=${MPD_SERVER_PCM_CHANNELS}
+		MPD_SERVER_NEXT_PCM_REC_CHANNELS=${MPD_SERVER_PCM_CHANNELS}
+	fi
+	MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat=s${MPD_SERVER_NEXT_PCM_PLAY_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_PLAY_CHANNELS}"
+	MPD_SERVER_DEV_PCM_REC_VCHANFORMAT="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat=s${MPD_SERVER_NEXT_PCM_REC_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_REC_CHANNELS}"
+	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT}" != "" ]
+	then
+		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT} > /dev/null 2>&1
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM virtual channel format!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Get the choice whether to use bitperfect mode; partially, fully, or not.
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
+	MPD_SERVER_BITPERFECT_MODE_LIST="none${CARRIAGE_RETURN}Software mixing (volume control)"
+	MPD_SERVER_BITPERFECT_MODE_LIST="${MPD_SERVER_BITPERFECT_MODE_LIST}${CARRIAGE_RETURN}format/rate${CARRIAGE_RETURN}Only resample format/rate"
+	MPD_SERVER_BITPERFECT_MODE_LIST="${MPD_SERVER_BITPERFECT_MODE_LIST}${CARRIAGE_RETURN}full${CARRIAGE_RETURN}Full bit-perfect mode"
+	MPD_SERVER_BITPERFECT_MODE=""
+	while [ "${MPD_SERVER_BITPERFECT_MODE}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the bit-perfect mode:" 18 60 16 ${MPD_SERVER_BITPERFECT_MODE_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_BITPERFECT_MODE_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_BITPERFECT_MODE_TEMP}${LCYN}' as the bit-perfect mode.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_BITPERFECT_MODE="${MPD_SERVER_BITPERFECT_MODE_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+	IFS="${CURRENT_IFS}"
+
+	# Set variables that depend on the chosen bit-perfect mode.
+	case "${MPD_SERVER_BITPERFECT_MODE}" in
+		"none")
+			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=0"
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=8"
+			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=8"
+			MPD_SERVER_MIXER_TYPE="software"
+			;;
+		"format/rate")
+			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=1"
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=8"
+			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=8"
+			MPD_SERVER_MIXER_TYPE="hardware"
+			;;
+		"full")
+			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=1"
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=0"
+			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=0"
+			MPD_SERVER_MIXER_TYPE="hardware"
+			;;
+	esac
+
+	# Set the PCM bit-perfect mode to the chosen one.
+	sysctl ${MPD_SERVER_DEV_PCM_BITPERFECT} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM bit-perfect mode!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Set the PCM virtual channel mode to 'passthrough'.
+	MPD_SERVER_DEV_PCM_PLAY_VCHANMODE="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanmode=passthrough"
+	MPD_SERVER_DEV_PCM_REC_VCHANMODE="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanmode=passthrough"
+	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE}" != "" ]
+	then
+		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANMODE} > /dev/null 2>&1
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM channel mode!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Set the number of PCM virtual channels based on the choice of bit-perfect mode.
+	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANS} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
+	then
+		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANS} > /dev/null 2>&1
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the PCM virtual channels!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Get the chosen feeder rate quality to use for the PCM.
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
+	MPD_SERVER_RATE_QUALITY_LIST="4${CARRIAGE_RETURN}Highest quality, highest MEM/CPU load"
+	MPD_SERVER_RATE_QUALITY_LIST="${MPD_SERVER_RATE_QUALITY_LIST}${CARRIAGE_RETURN}3${CARRIAGE_RETURN}High quality, high MEM/CPU load"
+	MPD_SERVER_RATE_QUALITY_LIST="${MPD_SERVER_RATE_QUALITY_LIST}${CARRIAGE_RETURN}2${CARRIAGE_RETURN}Medium quality, medium MEM/CPU load"
+	MPD_SERVER_RATE_QUALITY_LIST="${MPD_SERVER_RATE_QUALITY_LIST}${CARRIAGE_RETURN}1${CARRIAGE_RETURN}Low quality, low MEM/CPU load"
+	MPD_SERVER_RATE_QUALITY=""
+	while [ "${MPD_SERVER_RATE_QUALITY}" = "" ]
+	do
+		dialog --no-cancel --menu "Select the audio feeder rate quality:" 18 60 16 ${MPD_SERVER_RATE_QUALITY_LIST} 2> ${DIALOG_OUT_FILE}
+		MPD_SERVER_RATE_QUALITY_TEMP=`cat ${DIALOG_OUT_FILE}`
+		echo -e "\n"
+		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_RATE_QUALITY_TEMP}${LCYN}' as the feeder rate quality.\nIs this correct?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			MPD_SERVER_RATE_QUALITY="${MPD_SERVER_RATE_QUALITY_TEMP}"
+			break
+		fi
+		sleep 2
+	done
+	IFS="${CURRENT_IFS}"
+
+	# Set system feeder_rate_quality to the chosen one.
+	MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY="hw.snd.feeder_rate_quality=${MPD_SERVER_RATE_QUALITY}"
+	sysctl ${MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting the feeder rate quality!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Prepare remaining sysctl variables.
+	MPD_SERVER_HW_SND_DEFAULT_AUTO="hw.snd.default_auto=0"
+	MPD_SERVER_HW_SND_VERBOSE="hw.snd.verbose=2"
+	MPD_SERVER_HW_SND_VPC_AUTORESET="hw.snd.vpc_autoreset=0"
+	MPD_SERVER_HW_SND_VPC_MIXER_BYPASS="hw.snd.vpc_mixer_bypass=0"
+
+	# Set remaining sysctl variables.
+	sysctl ${MPD_SERVER_HW_SND_DEFAULT_AUTO} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sysctl ${MPD_SERVER_HW_SND_VERBOSE} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sysctl ${MPD_SERVER_HW_SND_VPC_AUTORESET} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sysctl ${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS} > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst setting audio system presets!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Flatten channels descriptor to an integer.
+	if [ "${MPD_SERVER_PCM_CHANNELS}" != "*" ]
+	then
+		MPD_SERVER_SPEAKER_CHANS=`echo ${MPD_SERVER_PCM_CHANNELS} | cut -d. -f1`
+		MPD_SERVER_LFE_CHANS=`echo ${MPD_SERVER_PCM_CHANNELS} | cut -d. -f2`
+		MPD_SERVER_PCM_CHANNELS_FLAT=$(( ${MPD_SERVER_SPEAKER_CHANS} + ${MPD_SERVER_LFE_CHANS} ))
+	else
+		MPD_SERVER_PCM_CHANNELS_FLAT=${MPD_SERVER_PCM_CHANNELS}
+	fi
+
+	# Compile an audio format string for musicpd.conf; audio_output > format.
+	MPD_SERVER_PCM_FORMAT="${MPD_SERVER_PCM_SAMPLERATE}:${MPD_SERVER_PCM_SAMPLE_BITS}:${MPD_SERVER_PCM_CHANNELS_FLAT}"
+
+	# Install required packages.
+	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
+	pause_prompt 8
+	ASSUME_ALWAYS_YES=yes pkg update -fq
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	ASSUME_ALWAYS_YES=yes pkg install -Rfy ${MPD_SERVER_PACKAGES}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst installing required packages!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Get FreeBSD version strings.
+	get_freebsd_version
+
+	INIT_MPD_SERVER_REPO_MODIFIED=true
+
+	# Copy init-mpd-server template configs to this hosts' repo profile.
+	install_file_tree config-templates/init-mpd-server/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	echo -e ""
+
+	# Enable musicpd in rc.conf.
+	sysrc -f configs/${HOST_NAME}/etc/rc.conf "musicpd_enable=YES" > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set USB audio module to load at boot.
+	sed -i "" "s/^[#]*snd_driver_load=.*/snd_driver_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*snd_uaudio_load=.*/snd_uaudio_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set audio subsystem and PCM configuration in sysctl.conf.
+	sed -i "" "s/^[#]*hw.snd.default_auto=[a-z0-9:.]*/${MPD_SERVER_HW_SND_DEFAULT_AUTO}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_USE_DEFAULT_UNIT}" = "yes" ]
+	then
+		sed -i "" "s/^[#]*hw.snd.default_unit=[a-z0-9:.]*/${MPD_SERVER_HW_SND_DEFAULT_UNIT}/" configs/${HOST_NAME}/etc/sysctl.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	sed -i "" "s/^[#]*hw.snd.feeder_rate_quality=[a-z0-9:.]*/${MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*hw.snd.verbose=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VERBOSE}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*hw.snd.vpc_autoreset=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VPC_AUTORESET}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*hw.snd.vpc_mixer_bypass=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*dev.pcm.0.bitperfect=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_BITPERFECT}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^[#]*dev.pcm.0.play.vchans=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANS}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
+	then
+		sed -i "" "s/^[#]*dev.pcm.0.rec.vchans=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANS}/" configs/${HOST_NAME}/etc/sysctl.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ "${MPD_SERVER_PCM_SAMPLE_BITS}" != "*" ] || [ "${MPD_SERVER_PCM_CHANNELS}" != "*" ]
+	then
+		sed -i "" "s/^[#]*dev.pcm.0.play.vchanformat=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT}/" configs/${HOST_NAME}/etc/sysctl.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT}" != "" ]
+		then
+			sed -i "" "s/^[#]*dev.pcm.0.rec.vchanformat=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT}/" configs/${HOST_NAME}/etc/sysctl.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
+	sed -i "" "s/^[#]*dev.pcm.0.play.vchanmode=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE}/" configs/${HOST_NAME}/etc/sysctl.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE}" != "" ]
+	then
+		sed -i "" "s/^[#]*dev.pcm.0.rec.vchanmode=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANMODE}/" configs/${HOST_NAME}/etc/sysctl.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ "${MPD_SERVER_PCM_SAMPLERATE}" != "*" ]
+	then
+		sed -i "" "s/^[#]*dev.pcm.0.play.vchanrate=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANRATE}/" configs/${HOST_NAME}/etc/sysctl.conf
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE}" != "" ]
+		then
+			sed -i "" "s/^[#]*dev.pcm.0.rec.vchanrate=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANRATE}/" configs/${HOST_NAME}/etc/sysctl.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
+
+	# Set audio output configuration in musicpd.conf.
+	sed -i "" "s/^\([\t ]*\)bind_to_address\([\t ]*\)\".*\"/\1bind_to_address\2\"${MPD_SERVER_IP_LISTEN}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_USE_CUSTOM_PORT}" = "yes" ]
+	then
+		sed -i "" "s/^\([\t ]*\)[#]*port\([\t ]*\)\".*\"/\1port\2\"${MPD_SERVER_PORT_NUM}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	if [ "${MPD_SERVER_USE_PASSWORD}" = "yes" ]
+	then
+		sed -i "" "s/^\([\t ]*\)[#]*password\([\t ]*\)\".*@/\1password\2\"${MPD_SERVER_PASSWORD}@/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	sed -i "" "s/^\([\t ]*\)[#]*name\([\t ]*\)\"OSS Output\"/\1name\2\"${MPD_SERVER_PCM_NAME}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^\([\t ]*[#]*\)format\([\t ]*\)\".*\"/\1format\2\"${MPD_SERVER_PCM_FORMAT}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s/^\([\t ]*\)[#]*mixer_type\([\t ]*\)\".*\"/\1mixer_type\2\"${MPD_SERVER_MIXER_TYPE}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ "${MPD_SERVER_USE_DEFAULT_UNIT}" = "no" ]
+	then
+		sed -i "" "s|^\([\t ]*\)[#]*device\([\t ]*\)\"/dev/dsp\"|\1device\2\"/dev/dsp${MPD_SERVER_PCM_NUM}.0\"|" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	# Set volume levels to full in case user does not know they are at 75 by default.
+	mixer -f /dev/mixer${MPD_SERVER_PCM_NUM} vol 100 pcm 100
+
+	# Store subsystem configuration details.
+	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t string .network.mpd_listen_ip_addr "${MPD_SERVER_IP_LISTEN}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t number .network.mpd_listen_port_num "${MPD_SERVER_PORT_NUM}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t string .audio.pcm_num "${MPD_SERVER_PCM_NUM}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t string .audio.pcm_device_name "${MPD_SERVER_PCM_DEVICE_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t string .audio.pcm_parent_driver "${MPD_SERVER_PCM_PARENT_DRIVER}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Add subsystems compat level and init marker to host config file.
+	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t number .subsystems.mpd-server_compat ${LATEST_MPD_SERVER_SUBSYS_COMPAT}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Save the list of packages installed to the host config file.
+	ucl_array_length configs/${HOST_NAME}${HOST_CONF_PATH} .packages
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	for PACKAGE_NAME in ${MPD_SERVER_PACKAGES}
+	do
+		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .packages.${UCL_ARRAY_LENGTH} "${PACKAGE_NAME}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
+	done
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the host configs!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	INIT_MPD_SERVER_SYSTEM_MODIFIED=true
+
+	# Backup host system configs.
+	backup_file_tree configs/${HOST_NAME} / init-mpd-server
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Install host repo configs to the system.
+	install_file_tree configs/${HOST_NAME} /
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the host configs!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# Prepare directories and files required for musicpd.
+	mkdir -p /var/mpd/.mpd/playlists > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	touch /var/mpd/.mpd/log > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	chown -R mpd:mpd /var/mpd/.mpd > /dev/null 2>&1
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	echo -e "\n\n${YELL}We are now going to start the musicpd service for the first time.${NRML}"
+	echo -e "${YELL}Ignore the exception about the missing database file, it will be created.${NRML}\n"
+
+	pause_prompt 8
+
+	# Start the musicpd service.
+	service musicpd status > /dev/null
+	if [ ${?} -ne 0 ]
+	then
+		INIT_MPD_SERVER_MUSICPD_STARTED=true
+		service musicpd start
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst starting the musicpd service!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	echo -e "\n"
+
+	# Prompt whether to test the MPD server with a client.
+	question_yes_no "Would you like to test the MPD server with a client before finalising?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		echo -e "\n\n${YELL}Using your MPD client of choice, connect now with one of the following details,${NRML}"
+		echo -e "${YELL}entering your server password if set. Once connected, update the MPD datatbase${NRML}"
+		echo -e "${YELL}and select and play the sample track from the 'Tests' directory.${NRML}\n"
+		echo -e "${ORNG}Server details:${NRML}"
+		if [ "${MPD_SERVER_IP_LISTEN}" = "any" ]
+		then
+			for IP_ADDRESS in ${MPD_SERVER_IP_ADDRESSES}
+			do
+				echo -e "${ORNG}Host IP address:${NRML} ${IP_ADDRESS}    ${ORNG}Port:${NRML} ${MPD_SERVER_PORT_NUM}"
+			done
+			echo -e "\n"
+		else
+			echo -e "${ORNG}Host IP address:${NRML} ${MPD_SERVER_IP_LISTEN}    ${ORNG}Port:${NRML} ${MPD_SERVER_PORT_NUM}\n\n"
+		fi
+		while true
+		do
+			echo -e "${LCYN}Would you like to proceed and finalise or cancel 'init-mpd-server'?${NRML}"
+			readee -p "${LCYN}(proceed|cancel): ${NRML}" ANSWER
+			if [ "${ANSWER}" = "proceed" ] || [ "${ANSWER}" = "cancel" ]
+			then
+				break
+			fi
+			echo ""
+		done
+		if [ "${ANSWER}" = "cancel" ]
+		then
+			echo -e "\n${YELL}INFO:${NRML} 'init-mpd-server' has been cancelled!\n"
+			undo_init_mpd_server
+			return 1
+		fi
+	fi
+
+	# Remove audio 'Tests' directory.
+	rm -rf configs/${HOST_NAME}/var/mpd/music/Tests > /dev/null 2>&1
+	rm -rf /var/mpd/music/Tests > /dev/null 2>&1
+
+	# Commit configuration changes to the local repo.
+	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
+	git add configs/${HOST_NAME}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	git commit -m "Updating host after 'init-mpd-server'; ${HOST_NAME}."
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
+		undo_init_mpd_server
+		return 2
+	fi
+
+	# If a remote repo is in use, push changes to the remote.
+	if [ "${REPO_URI}" != "local" ]
+	then
+		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
+		git_push origin master
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to push commit to the remote git repo."
+			echo -e "       Please consider manually running '${LBLU}git push${NRML}' from within '${ORNG}/${REPO_NAME}${NRML}'.\n"
+		fi
+	fi
+
+	# Undo (clean-up) of backup host system configs.
+	undo_backup_file_tree
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} a error occured removing temporary config backup files.\n"
+	fi
+
+	echo -e "\n\n${LGRN}Congratulations! We have now finished setting up a MPD Server on this host.${NRML}\n"
+	echo -e "${YELL}Add or mount your music/audio collection inside the following directory:${NRML}\n"
+	echo -e "${ORNG}/var/mpd/music${NRML}\n"
+	echo -e "${YELL}To connect to the MPD server from your MPD client of choice,${NRML}"
+	echo -e "${YELL}Use one of the following details.${NRML}\n"
+	echo -e "${ORNG}Server details:${NRML}"
+	if [ "${MPD_SERVER_IP_LISTEN}" = "any" ]
+	then
+		for IP_ADDRESS in ${MPD_SERVER_IP_ADDRESSES}
+		do
+			echo -e "${ORNG}Host IP address:${NRML} ${IP_ADDRESS}    ${ORNG}Port:${NRML} ${MPD_SERVER_PORT_NUM}"
+		done
+		echo -e ""
+	else
+		echo -e "${ORNG}Host IP address:${NRML} ${MPD_SERVER_IP_LISTEN}    ${ORNG}Port:${NRML} ${MPD_SERVER_PORT_NUM}\n"
+	fi
+
+	return 0
+
 }
 
 undo_init_wifi_ap ()
@@ -11331,6 +12337,13 @@ case "${SUB_CMD}" in
 		# Initialise and configure the WiFi AP subsystem.
 		update_local_repo
 		init_wifi_ap
+		exit ${?}
+		;;
+
+	init-mpd-server)
+		# Initialise and configure the MPD Server subsystem.
+		update_local_repo
+		init_mpd_server
 		exit ${?}
 		;;
 
