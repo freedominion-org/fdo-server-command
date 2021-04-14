@@ -278,7 +278,7 @@ pause_prompt ()
 	then
 		PAUSE_DURATION=250
 	fi
-	echo -e "\n${GREY}Press any key to continue...${NRML}\c"
+	echo -e "\n${GREY}Press any key to proceed...${NRML}\c"
 	CURRENT_TTY_SETTINGS=$(stty -g)
 	stty raw -echo min 0 time ${PAUSE_DURATION}
 	printf '%s' $(dd bs=1 count=1 2>/dev/null) > /dev/null
@@ -1142,7 +1142,7 @@ fetch_latest_self ()
 	fetch -d ${FETCH_LATEST_SELF_URL}${SCRIPT_NAME}
 	if [ ${?} -ne 0 ]
 	then
-		question_yes_no "\nUnable to fetch the latest version of this utility.\nWould you like to continue anyway?"
+		question_yes_no "\nUnable to fetch the latest version of this utility.\nWould you like to proceed anyway?"
 		if [ "${ANSWER}" = "no" ]
 		then
 			echo -e "\nAborting.\n"
@@ -4114,8 +4114,8 @@ init_host ()
 		UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
 	done
 
-	# Ask if we want to continue past point of no return.
-	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to continue?"
+	# Ask if we want to proceed past point of no return.
+	question_yes_no "\nWe will now make permanent changes to the new host system,\nwould you like to proceed?"
 	if [ "${ANSWER}" = "no" ]
 	then
 		undo_init_host
@@ -4517,7 +4517,7 @@ patch_host ()
 			echo -e "       Check for network related issues.\n       Aborting.\n"
 			return 1
 		else
-			question_yes_no "It seems you are on an unsupported version of FreeBSD.\nWould you like to continue?"
+			question_yes_no "It seems you are on an unsupported version of FreeBSD.\nWould you like to proceed?"
 			if [ "${ANSWER}" = "no" ]
 			then
 				return 1
@@ -6206,7 +6206,7 @@ init_wifi_ap ()
 
 	if [ "${NET_IFACE_IN_USE_BY}" != "" ]
 	then
-		question_yes_no "\nThe interface '${NRML}${WIFI_AP_NET_IFACE}${LCYN}' is already assigned to '${NRML}${NET_IFACE_IN_USE_BY}${LCYN}',\nwould you like to continue?"
+		question_yes_no "\nThe interface '${NRML}${WIFI_AP_NET_IFACE}${LCYN}' is already assigned to '${NRML}${NET_IFACE_IN_USE_BY}${LCYN}',\nwould you like to proceed?"
 		if [ "${ANSWER}" = "no" ]
 		then
 			undo_init_wifi_ap
