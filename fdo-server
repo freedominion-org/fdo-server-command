@@ -4570,6 +4570,7 @@ patch_host ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4881,6 +4882,7 @@ init_vnc_desktop ()
 	/usr/bin/su ${ARBITRARY_USERNAME} -c "/usr/local/bin/vncserver :10 -geometry ${VNC_DESKTOP_SCREEN_SIZE} -alwaysshared -localhost -dpi 96"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -5549,11 +5551,13 @@ init_wifi_ap ()
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostapd_program=/usr/local/sbin/hostapd" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Set persitent bridge interface configuration in rc.conf.
+	# Set network bridge modules to load at boot.
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Set persitent bridge interface configuration in rc.conf.
 	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${WIFI_AP_BRIDGE_IFACE}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#ifconfig_WIFI_AP_BRIDGE_IFACE=\"\"/ifconfig_${WIFI_AP_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE} up\"/" configs/${HOST_NAME}/etc/rc.conf
@@ -5619,13 +5623,13 @@ init_wifi_ap ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the host configs!\n"
-		undo_init_vnc_desktop
+		undo_init_wifi_ap
 		return 2
 	fi
 
 	echo -e ""
 
-	# Start hostapd service.
+	# Start the hostapd service.
 	service hostapd status > /dev/null
 	if [ ${?} -ne 0 ]
 	then
@@ -5641,6 +5645,7 @@ init_wifi_ap ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -6232,6 +6237,7 @@ init_hotdesk ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -6474,7 +6480,7 @@ init_sshfs_daemon ()
 
 	echo -e "\n"
 
-	# Start fdo_sshfsd service for the first time.
+	# Start the fdo_sshfsd service for the first time.
 	service fdo_sshfsd onestart
 	if [ ${?} -ne 0 ]
 	then
@@ -6483,6 +6489,7 @@ init_sshfs_daemon ()
 		INIT_SSHFS_DAEMON_SERVICE_START=true
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -7047,6 +7054,7 @@ init_jails ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -7590,6 +7598,7 @@ create_jail ()
 		git add configs/${JAIL_NAME}@${HOST_NAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+		# Commit configuration changes to the local repo.
 		echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 		git commit -m "Updating host after 'create-jail ${JAIL_NAME} ${JAIL_HOST_NAME}'; ${HOST_NAME}."
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -8525,6 +8534,7 @@ init_vms ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -10124,6 +10134,7 @@ create_vm_template ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'create-vm-template ${VM_NAME}'; ${HOST_NAME}."
@@ -10715,6 +10726,7 @@ create_vm_instance ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	git commit -m "Updating host after 'create-vm-instance ${VM_NAME}'; ${HOST_NAME}."
@@ -11122,6 +11134,7 @@ init_partimag ()
 		return 2
 	fi
 
+	# Commit configuration changes to the local repo.
 	echo -e "\n\n${YELL}Commiting configuration changes to the local repo...${NRML}\n"
 	git add configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
