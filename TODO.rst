@@ -88,3 +88,6 @@ DONE
 - check diffs between FreeBSD-12.0-RELEASE and FreeBSD-12.1-RELEASE configs used in ``config-templates``.
 - Add FreeBSD-12.2-RELEASE configs to ``config-templates``.
 - Set all dialog menu loops to sleep for only 2 sec instead of 4.
+- Convert all 'continue' prompts to 'proceed'.
+- Make all dialog prompts use a DIALOG_PROMPT variable.
+- Make all uses of ifconfig parsing more robust (e.g. grep -v " netmask 0xffffffff" and use spaces in greps).
