@@ -153,7 +153,7 @@ if [ "${CONFIG_LAN_NET_IFACE}" = "null" ]
 then
 	SET_LAN_SUBNET_B="${DEFAULT_LAN_SUBNET_B}"
 else
-	DETECTED_LAN_SUBNET_B=`ifconfig ${CONFIG_LAN_NET_IFACE} | grep "inet.*netmask 0xffff0000" | awk '{print $2}' | sort | head -1 | cut -d. -f1,2`
+	DETECTED_LAN_SUBNET_B=`ifconfig ${CONFIG_LAN_NET_IFACE} | grep "inet .* netmask " | grep -v " netmask 0xffffffff" | awk '{print $2}' | sort | head -1 | cut -d. -f1,2`
 	if [ "${DETECTED_LAN_SUBNET_B}" = "" ]
 	then
 		SET_LAN_SUBNET_B="${DEFAULT_LAN_SUBNET_B}"
@@ -2989,7 +2989,7 @@ undo_connect_internet ()
 		# Destroy all existing interfaces.
 		echo -e "\n${YELL}Destroying existing interfaces...${NRML}\n"
 		pkill -9 dhclient > /dev/null 2>&1
-		NET_IFACES_TO_DESTROY=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "^lo0" | cut -d: -f1`
+		NET_IFACES_TO_DESTROY=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -v "^lo0: " | cut -d: -f1`
 		for IFACE_TO_DESTROY in ${NET_IFACES_TO_DESTROY}
 		do
 			LOOP_WHILE_ZERO=0
@@ -3046,7 +3046,7 @@ connect_internet ()
 	ERROR_COUNT=0
 
 	# Get available interfaces and the quantity thereof.
-	NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}" | cut -d: -f1`
+	NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}" | cut -d: -f1`
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
@@ -3238,7 +3238,7 @@ connect_internet ()
 	echo -e "\n${YELL}Destroying existing interfaces...${NRML}\n"
 	service netif stop > /dev/null 2>&1
 	pkill -9 dhclient > /dev/null 2>&1
-	NET_IFACES_TO_DESTROY=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "^lo0" | cut -d: -f1`
+	NET_IFACES_TO_DESTROY=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -v "^lo0: " | cut -d: -f1`
 	for IFACE_TO_DESTROY in ${NET_IFACES_TO_DESTROY}
 	do
 		LOOP_WHILE_ZERO=0
@@ -3577,7 +3577,7 @@ init_host ()
 	fi
 
 	# Get available interfaces and the quantity thereof.
-	NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}" | cut -d: -f1`
+	NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}" | cut -d: -f1`
 	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
@@ -3917,7 +3917,7 @@ init_host ()
 	# Configure LAN interface.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		REMAINING_NET_IFACES=`ifconfig | grep "^[a-z].*[0-9].*:" | egrep -v "${NET_IFACES_IGNORED}|^${WAN_NET_IFACE}" | cut -d: -f1`
+		REMAINING_NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}|^${WAN_NET_IFACE}" | cut -d: -f1`
 		NUM_REMAINING_NET_IFACES=`echo ${REMAINING_NET_IFACES} | wc -w`
 		if [ ${NUM_REMAINING_NET_IFACES} -lt 2 ]
 		then
@@ -4947,7 +4947,7 @@ init_vnc_desktop ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -5150,7 +5150,7 @@ init_mpd_server ()
 	fi
 
 	# Get available interfaces and the quantity thereof.
-	MPD_SERVER_IP_ADDRESSES=`ifconfig | grep -E "inet .* netmask .* broadcast " | grep -v " netmask 0xffffffff" | awk '{print $2}'`
+	MPD_SERVER_IP_ADDRESSES=`ifconfig | grep "inet .* netmask .* " | grep -v " netmask 0xffffffff" | awk '{print $2}'`
 	MPD_SERVER_NUM_IP_ADDRESSES=`echo ${MPD_SERVER_IP_ADDRESSES} | wc -w`
 	if [ ${MPD_SERVER_NUM_IP_ADDRESSES} -lt 1 ]
 	then
@@ -6137,7 +6137,7 @@ init_wifi_ap ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -6241,8 +6241,8 @@ init_wifi_ap ()
 	else
 		INIT_WIFI_AP_WLAN_CREATED=true
 	fi
-	WIFI_AP_DEVICECAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep -E "^drivercaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
-	WIFI_AP_CRYPTOCAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep -E "^cryptocaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
+	WIFI_AP_DEVICECAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep "^drivercaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
+	WIFI_AP_CRYPTOCAPS=`ifconfig ${WIFI_AP_WLAN_IFACE} list caps | grep "^cryptocaps=" | sed -e "s/.*<\(.*\)>.*/\1/" | tr "," "\n"`
 	echo "${WIFI_AP_DEVICECAPS}" | grep -E "^HOSTAP$" > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -6948,7 +6948,7 @@ init_hotdesk ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -7697,7 +7697,7 @@ init_jails ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -8470,7 +8470,7 @@ create_jail ()
 		FIRST_AVAILABLE_IP=51
 		while true
 		do
-			ifconfig ${LAN_NET_IFACE} | egrep "inet.*netmask 0xffffffff" | egrep "${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
+			ifconfig ${LAN_NET_IFACE} | grep "inet .* netmask 0xffffffff" | grep "${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}" > /dev/null 2>&1
 			if [ ${?} -ne 0 ]
 			then
 				break
@@ -9231,7 +9231,7 @@ init_vms ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -10573,7 +10573,7 @@ create_vm_template ()
 	fi
 
 	# Get the network interface used for the bridge interface.
-	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
@@ -11363,7 +11363,7 @@ create_vm_instance ()
 	fi
 
 	# Get the network interface used for the bridge interface.
-	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | egrep "inet.*netmask" | awk '{print $2}' | sort`
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
@@ -11972,7 +11972,7 @@ init_partimag ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | egrep "inet.*netmask" | awk '{print $2}' | egrep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
