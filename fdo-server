@@ -3072,10 +3072,10 @@ connect_internet ()
 		echo -e "\n${YELL}Using '${NRML}${WAN_NET_IFACE}${YELL}' as the WAN (internet facing) network interface,${NRML}"
 		echo -e "${YELL}since it's all that's available.${NRML}\n"
 	else
-		SELECT_IFACE_PROMPT="Select the WAN network interface (internet facing):"
 		while [ "${WAN_NET_IFACE}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select the WAN network interface (internet facing):"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 			WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${WAN_NET_IFACE_TEMP}${LCYN}' as the WAN interface for this host.\nIs this correct?"
@@ -3589,7 +3589,8 @@ init_host ()
 	SERVER_TYPE=""
 	while [ "${SERVER_TYPE}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the type of server:" 12 80 10 \
+		DIALOG_PROMPT="Select the type of server:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 12 80 10 \
 					 "remote" "Remote Server (Datacenter/Cloud)" \
 					 "primary_local" "Primary Local Server (Internet & LAN Gateway/NAT Router)" \
 					 "auxiliary_local" "Auxiliary Local Server (LAN)" \
@@ -3646,10 +3647,10 @@ init_host ()
 			echo -e "\n${YELL}Using '${NRML}${WAN_NET_IFACE}${YELL}' as the WAN (internet facing) network interface,${NRML}"
 			echo -e "${YELL}since it's all that's available.${NRML}\n"
 		else
-			SELECT_IFACE_PROMPT="Select the WAN network interface (internet facing):"
 			while [ "${WAN_NET_IFACE}" = "" ]
 			do
-				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select the WAN network interface (internet facing):"
+				dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 40 10 ${NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				WAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				echo -e "\n"
 				question_yes_no "\nYou have selected '${NRML}${WAN_NET_IFACE_TEMP}${LCYN}' as the WAN interface for this host.\nIs this correct?"
@@ -3924,10 +3925,10 @@ init_host ()
 			echo -e "\n\n${YELL}Using '${NRML}${LAN_NET_IFACE}${YELL}' as the LAN network interface,${NRML}"
 			echo -e "${YELL}since it's all that's available.${NRML}\n"
 		else
-			SELECT_IFACE_PROMPT="Select the LAN network interface:"
 			while [ "${LAN_NET_IFACE}" = "" ]
 			do
-				dialog --no-items --no-cancel --menu "${SELECT_IFACE_PROMPT}" 12 40 10 ${REMAINING_NET_IFACES} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select the LAN network interface:"
+				dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 40 10 ${REMAINING_NET_IFACES} 2> ${DIALOG_OUT_FILE}
 				LAN_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				echo -e "\n"
 				question_yes_no "\nYou have selected '${NRML}${LAN_NET_IFACE_TEMP}${LCYN}' as the LAN interface for this host.\nIs this correct?"
@@ -3997,7 +3998,8 @@ init_host ()
 
 			while [ "${LAN_IFACE_IP}" = "" ]
 			do
-				dialog --no-cancel --menu "Select LAN interface IP:" 18 40 16 ${SELECT_IP_LIST} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select LAN interface IP:"
+				dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 40 16 ${SELECT_IP_LIST} 2> ${DIALOG_OUT_FILE}
 				IP_LAST_DIGIT=`cat ${DIALOG_OUT_FILE}`
 				LAN_IFACE_IP_TEMP="${LAN_SUBNET_C}.${IP_LAST_DIGIT}"
 				if [ "${LAN_IFACE_IP_TEMP}" = "" ]
@@ -4265,7 +4267,8 @@ init_host ()
 	TZ=""
 	while [ "${TZ}" = "" ]
 	do
-		dialog --no-cancel --no-items --menu "Select timezone for the hosts TZ environment variable:" 30 60 26 ${TZ_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select timezone for the hosts TZ environment variable:"
+		dialog --no-cancel --no-items --menu "${DIALOG_PROMPT}" 30 60 26 ${TZ_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 		TZ_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${TZ_TEMP}${LCYN}' for the TZ for this host.\nIs this correct?"
@@ -4305,7 +4308,8 @@ init_host ()
 		LOCALE=""
 		while [ "${LOCALE}" = "" ]
 		do
-			dialog --no-cancel --no-items --menu "Select the locale for the host:" 30 60 26 ${LOCALE_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select the locale for the host:"
+			dialog --no-cancel --no-items --menu "${DIALOG_PROMPT}" 30 60 26 ${LOCALE_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			LOCALE_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${LOCALE_TEMP}${LCYN}' for the locale for this host.\nIs this correct?"
@@ -4762,7 +4766,8 @@ init_vnc_desktop ()
 	VNC_DESKTOP_SCREEN_SIZE=""
 	while [ "${VNC_DESKTOP_SCREEN_SIZE}" = "" ]
 	do
-		dialog --no-items --no-cancel --menu "Select VNC screen size (if unsure, use 1280x800):" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select VNC screen size (if unsure, use 1280x800):"
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
 		VNC_DESKTOP_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${VNC_DESKTOP_SCREEN_SIZE_TEMP}${LCYN}' as the VNC screen size.\nIs this correct?"
@@ -5155,9 +5160,9 @@ init_mpd_server ()
 	fi
 
 	# Get the IP address to listen on, or 'any' for all.
-	DIALOG_PROMPT="Select the host IP address to listen on ('any' listens on all):"
 	while [ "${MPD_SERVER_IP_LISTEN}" = "" ]
 	do
+		DIALOG_PROMPT="Select the host IP address to listen on ('any' listens on all):"
 		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 40 10 "any" ${MPD_SERVER_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_IP_LISTEN_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
@@ -5295,7 +5300,8 @@ init_mpd_server ()
 	MPD_SERVER_PCM_DESC=""
 	while [ "${MPD_SERVER_PCM_DESC}" = "" ]
 	do
-		dialog --no-items --no-cancel --menu "Select the PCM (audio) device to use for MPD playback:" 18 60 16 ${MPD_SERVER_PCM_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the PCM (audio) device to use for MPD playback:"
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${MPD_SERVER_PCM_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_PCM_DESC_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_DESC_TEMP}${LCYN}' as the PCM device for MPD.\nIs this correct?"
@@ -5418,7 +5424,8 @@ init_mpd_server ()
 	MPD_SERVER_PCM_SAMPLERATE=""
 	while [ "${MPD_SERVER_PCM_SAMPLERATE}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the audio output sample rate (Hz):" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLERATE_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the audio output sample rate (Hz):"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLERATE_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_PCM_SAMPLERATE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_SAMPLERATE_TEMP}${LCYN}' as the audio output sample rate (Hz).\nIs this correct?"
@@ -5462,7 +5469,8 @@ init_mpd_server ()
 	MPD_SERVER_PCM_SAMPLE_BITS=""
 	while [ "${MPD_SERVER_PCM_SAMPLE_BITS}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the audio output sample bits size:" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLE_BITS_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the audio output sample bits size:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 \* Unspecified ${MPD_SERVER_SAMPLE_BITS_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_PCM_SAMPLE_BITS_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_SAMPLE_BITS_TEMP}${LCYN}' as the audio output sample bits size.\nIs this correct?"
@@ -5479,7 +5487,8 @@ init_mpd_server ()
 	MPD_SERVER_PCM_CHANNELS=""
 	while [ "${MPD_SERVER_PCM_CHANNELS}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the audio output channels:" 18 60 16 \* Unspecified ${MPD_SERVER_CHANNELS_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the audio output channels:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 \* Unspecified ${MPD_SERVER_CHANNELS_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_PCM_CHANNELS_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_CHANNELS_TEMP}${LCYN}' as the audio output channels.\nIs this correct?"
@@ -5533,7 +5542,8 @@ init_mpd_server ()
 	MPD_SERVER_BITPERFECT_MODE=""
 	while [ "${MPD_SERVER_BITPERFECT_MODE}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the bit-perfect mode:" 18 60 16 ${MPD_SERVER_BITPERFECT_MODE_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the bit-perfect mode:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${MPD_SERVER_BITPERFECT_MODE_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_BITPERFECT_MODE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_BITPERFECT_MODE_TEMP}${LCYN}' as the bit-perfect mode.\nIs this correct?"
@@ -5621,7 +5631,8 @@ init_mpd_server ()
 	MPD_SERVER_RATE_QUALITY=""
 	while [ "${MPD_SERVER_RATE_QUALITY}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the audio feeder rate quality:" 18 60 16 ${MPD_SERVER_RATE_QUALITY_LIST} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the audio feeder rate quality:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${MPD_SERVER_RATE_QUALITY_LIST} 2> ${DIALOG_OUT_FILE}
 		MPD_SERVER_RATE_QUALITY_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_RATE_QUALITY_TEMP}${LCYN}' as the feeder rate quality.\nIs this correct?"
@@ -6161,7 +6172,8 @@ init_wifi_ap ()
 		WIFI_AP_NET_IFACE=""
 		while [ "${WIFI_AP_NET_IFACE}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select the WiFi interface to use:" 18 60 16 ${WIFI_AP_NET_IFACES} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select the WiFi interface to use:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${WIFI_AP_NET_IFACES} 2> ${DIALOG_OUT_FILE}
 			WIFI_AP_NET_IFACE_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${WIFI_AP_NET_IFACE_TEMP}${LCYN}' as the WiFi interface to use.\nIs this correct?"
@@ -6330,7 +6342,8 @@ init_wifi_ap ()
 	WIFI_AP_COUNTRY_CODE=""
 	while [ "${WIFI_AP_COUNTRY_CODE}" = "" ]
 	do
-		dialog --no-cancel --menu "Select the WiFi regulatory country:" 18 60 16 ${WIFI_AP_COUNTRIES_LIST_MENU} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the WiFi regulatory country:"
+		dialog --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${WIFI_AP_COUNTRIES_LIST_MENU} 2> ${DIALOG_OUT_FILE}
 		WIFI_AP_COUNTRY_CODE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${WIFI_AP_COUNTRY_CODE_TEMP}${LCYN}' as the WiFi regulatory country.\nIs this correct?"
@@ -6369,7 +6382,8 @@ init_wifi_ap ()
 	WIFI_AP_MODE_CHANNEL=""
 	while [ "${WIFI_AP_MODE_CHANNEL}" = "" ]
 	do
-		dialog --no-items --no-cancel --menu "Select the WiFi mode and channel:" 18 60 16 ${WIFI_AP_CHANNELS} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select the WiFi mode and channel:"
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${WIFI_AP_CHANNELS} 2> ${DIALOG_OUT_FILE}
 		WIFI_AP_MODE_CHANNEL_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${WIFI_AP_MODE_CHANNEL_TEMP}${LCYN}' as the WiFi mode and channel.\nIs this correct?"
@@ -6876,7 +6890,8 @@ init_hotdesk ()
 	else
 		while [ "${HOTDESK_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool for hotdesk user home folders:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			DIAlOG_PROMPT="Select pool for hotdesk user home folders:"
+			dialog --no-items --no-cancel --menu "${DIAlOG_PROMPT}" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			HOTDESK_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${HOTDESK_POOL_NAME_TEMP}${LCYN}' to store the hotdesk users home folders.\nIs this correct?"
@@ -6957,7 +6972,8 @@ init_hotdesk ()
 	else
 		while [ "${NIS_SERVER_IP}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address to use for NIS server:" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select IP address to use for NIS server:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${HOST_LAN_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 			NIS_SERVER_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${NIS_SERVER_IP_TEMP}${LCYN}' to use for the NIS server.\nIs this correct?"
@@ -7711,7 +7727,8 @@ init_jails ()
 	else
 		while [ "${JAILS_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool to use for jails filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select pool to use for jails filesystems:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			JAILS_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${JAILS_POOL_NAME_TEMP}${LCYN}' to store the service jails.\nIs this correct?"
@@ -8749,7 +8766,8 @@ create_jail_from_recipe ()
 		else
 			while [ "${SIDES_POOL_NAME}" = "" ]
 			do
-				dialog --no-items --no-cancel --menu "Select pool to use for additional ZFS filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select pool to use for additional ZFS filesystems:"
+				dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 				SIDES_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 				echo -e "\n"
 				question_yes_no "\nYou have selected '${NRML}${SIDES_POOL_NAME_TEMP}${LCYN}' to use for additional filesystems.\nIs this correct?"
@@ -9243,7 +9261,8 @@ init_vms ()
 	else
 		while [ "${VMS_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool to use for VM image filesystems:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select pool to use for VM image filesystems:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			VMS_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${VMS_POOL_NAME_TEMP}${LCYN}' to store the VM image filesystems.\nIs this correct?"
@@ -9858,7 +9877,8 @@ create_vm_image_handler ()
 				ATTACH_IMAGE_FILE=""
 				while [ "${ATTACH_IMAGE_FILE}" = "" ]
 				do
-					dialog --title "Select disk image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+					DIALOG_PROMPT="Select disk image file:"
+					dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 					ATTACH_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
 					if [ "${ATTACH_IMAGE_FILE_TEMP}" != "" ]
 					then
@@ -10098,7 +10118,8 @@ create_vm_image_handler ()
 			IMAGE_INDEX=-1
 			while [ ${IMAGE_INDEX} -lt 0 ]
 			do
-				dialog --menu "Select the disk image to detach:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select the disk image to detach:"
+				dialog --menu "${DIALOG_PROMPT}" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
 				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
 				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
@@ -10234,7 +10255,8 @@ create_vm_image_handler ()
 			INSERT_IMAGE_FILE=""
 			while [ "${INSERT_IMAGE_FILE}" = "" ]
 			do
-				dialog --title "Select ISO image file" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select ISO image file:"
+				dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 				INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
 				if [ "${INSERT_IMAGE_FILE_TEMP}" != "" ]
 				then
@@ -10364,7 +10386,8 @@ create_vm_image_handler ()
 			IMAGE_INDEX=-1
 			while [ ${IMAGE_INDEX} -lt 0 ]
 			do
-				dialog --menu "Select the ISO image to eject:" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				DIALOG_PROMPT="Select the ISO image to eject:"
+				dialog --menu "DIALOG_PROMPT" 12 80 10 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
 				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
 				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
 				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
@@ -10740,7 +10763,8 @@ create_vm_template ()
 		while [ "${OS_INSTALLER_ISO}" = "" ]
 		do
 			# Ask for installer ISO file.
-			dialog --title "Select OS installer ISO" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select OS installer ISO:"
+			dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
 			if [ -e "${OS_INSTALLER_ISO_TEMP}" ]
 			then
@@ -10780,7 +10804,8 @@ create_vm_template ()
 		while [ "${EXISTING_IMAGE_PATH}" = "" ]
 		do
 			# Ask for existing disk image path.
-			dialog --title "Select existing disk image (raw)" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select existing disk image (raw):"
+			dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 20 80 2> ${DIALOG_OUT_FILE}
 			EXISTING_IMAGE_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
 			if [ -e "${EXISTING_IMAGE_PATH_TEMP}" ]
 			then
@@ -10828,7 +10853,8 @@ create_vm_template ()
 	else
 		while [ "${VM_VNC_HOST_IP}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select IP address for VNC access:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
@@ -10871,7 +10897,8 @@ create_vm_template ()
 	VM_VNC_SCREEN_SIZE=""
 	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
 	do
-		dialog --no-items --no-cancel --menu "Select VNC screen size (if unsure, use 1024x768):" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
 		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
@@ -11426,7 +11453,8 @@ create_vm_instance ()
 	else
 		while [ "${VM_VNC_HOST_IP}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select IP address for VNC access:" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select IP address for VNC access:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
 			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
@@ -11469,7 +11497,8 @@ create_vm_instance ()
 	VM_VNC_SCREEN_SIZE=""
 	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
 	do
-		dialog --no-items --no-cancel --menu "Select VNC screen size (if unsure, use 1024x768):" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+		DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
+		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
 		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
 		echo -e "\n"
 		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
@@ -11915,7 +11944,8 @@ init_partimag ()
 	else
 		while [ "${PARTIMAG_POOL_NAME}" = "" ]
 		do
-			dialog --no-items --no-cancel --menu "Select pool for the partimag filesystem:" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
+			DIALOG_PROMPT="Select pool for the partimag filesystem:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 12 60 10 ${POOLS_AVAILABLE} 2> ${DIALOG_OUT_FILE}
 			PARTIMAG_POOL_NAME_TEMP=`cat ${DIALOG_OUT_FILE}`
 			echo -e "\n"
 			question_yes_no "\nYou have selected '${NRML}${PARTIMAG_POOL_NAME_TEMP}${LCYN}' to use for the partimag filesystem.\nIs this correct?"
