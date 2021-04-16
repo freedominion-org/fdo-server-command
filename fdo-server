@@ -5295,7 +5295,15 @@ init_mpd_server ()
 	done
 
 	# Get the desired audio device to be configured and used by musicpd.
-	if [ ${MPD_SERVER_PCM_LIST} -lt 2 ]
+	MPD_SERVER_NUM_PCM_LIST=`echo ${MPD_SERVER_PCM_LIST} | wc -l`
+	if [ ${MPD_SERVER_NUM_PCM_LIST} -lt 1 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No PCM (audio) devices found!\n"
+		undo_init_mpd_server
+		return 1
+	fi
+
+	if [ ${MPD_SERVER_NUM_PCM_LIST} -lt 2 ]
 	then
 		MPD_SERVER_PCM_DESC=${MPD_SERVER_PCM_LIST}
 		echo -e "\n${YELL}Using '${NRML}${MPD_SERVER_PCM_DESC}${YELL}' as the PCM device,${NRML}"
