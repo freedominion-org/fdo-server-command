@@ -5295,24 +5295,31 @@ init_mpd_server ()
 	done
 
 	# Get the desired audio device to be configured and used by musicpd.
-	CURRENT_IFS="${IFS}"
-	IFS="${CARRIAGE_RETURN}"
-	MPD_SERVER_PCM_DESC=""
-	while [ "${MPD_SERVER_PCM_DESC}" = "" ]
-	do
-		DIALOG_PROMPT="Select the PCM (audio) device to use for MPD playback:"
-		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${MPD_SERVER_PCM_LIST} 2> ${DIALOG_OUT_FILE}
-		MPD_SERVER_PCM_DESC_TEMP=`cat ${DIALOG_OUT_FILE}`
-		echo -e "\n"
-		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_DESC_TEMP}${LCYN}' as the PCM device for MPD.\nIs this correct?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			MPD_SERVER_PCM_DESC="${MPD_SERVER_PCM_DESC_TEMP}"
-			break
-		fi
-		sleep 2
-	done
-	IFS="${CURRENT_IFS}"
+	if [ ${MPD_SERVER_PCM_LIST} -lt 2 ]
+	then
+		MPD_SERVER_PCM_DESC=${MPD_SERVER_PCM_LIST}
+		echo -e "\n${YELL}Using '${NRML}${MPD_SERVER_PCM_DESC}${YELL}' as the PCM device,${NRML}"
+		echo -e "${YELL}since it's all that's available.${NRML}\n"
+	else
+		CURRENT_IFS="${IFS}"
+		IFS="${CARRIAGE_RETURN}"
+		MPD_SERVER_PCM_DESC=""
+		while [ "${MPD_SERVER_PCM_DESC}" = "" ]
+		do
+			DIALOG_PROMPT="Select the PCM (audio) device to use for MPD playback:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 18 60 16 ${MPD_SERVER_PCM_LIST} 2> ${DIALOG_OUT_FILE}
+			MPD_SERVER_PCM_DESC_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_DESC_TEMP}${LCYN}' as the PCM device for MPD.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				MPD_SERVER_PCM_DESC="${MPD_SERVER_PCM_DESC_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+		IFS="${CURRENT_IFS}"
+	fi
 
 	# Get the chosen PCM numeric ID and name from its description.
 	MPD_SERVER_PCM_NUM=`echo "${MPD_SERVER_PCM_DESC}" | cut -d: -f1 | sed "s/^pcm\([0-9]*\)/\1/"`
