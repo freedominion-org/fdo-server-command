@@ -4947,7 +4947,7 @@ init_vnc_desktop ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${FDO_LAN_SUBNET_B}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -6137,7 +6137,7 @@ init_wifi_ap ()
 	do
 		if [ "${IFACE}" = "${CONFIG_LAN_NET_IFACE}" ]
 		then
-			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${SERVERS_LAN_SUBNET_C}." | sort`
+			HOST_LAN_IP_ADDRESSES=`ifconfig ${IFACE} | grep "inet .* netmask " | awk '{print $2}' | grep "${FDO_LAN_SUBNET_B}." | sort`
 			if [ "${HOST_LAN_IP_ADDRESSES}" != "" ]
 			then
 				LAN_NET_IFACE="${IFACE}"
@@ -6148,7 +6148,7 @@ init_wifi_ap ()
 	# Exit if the LAN subnet interface was not found.
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${SERVERS_LAN_SUBNET_C}.*${NRML}' subnet!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The LAN interface '${ORNG}${CONFIG_LAN_NET_IFACE}${NRML}' does not provide a valid '${ORNG}${FDO_LAN_SUBNET_B}.*${NRML}' subnet!\n       Aborting.\n"
 		return 1
 	fi
 
