@@ -5355,7 +5355,7 @@ init_mpd_server ()
 				echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}'."
 				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
 				echo -e "       brackets, commas, periods,spaces, underscores and hyphens.\n"
-			elif [ `cat configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH} | egrep "name[ 	]*\"${MPD_SERVER_PCM_NAME_TEMP}\"" | wc -l` -gt 0 ]
+			elif [ `cat ${MPD_SERVER_MPD_CONF_PATH} | grep "name[ 	]*\"${MPD_SERVER_PCM_NAME_TEMP}\"" | wc -l` -gt 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} The name '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}' already exists.\n"
 			else
