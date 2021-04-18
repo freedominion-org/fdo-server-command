@@ -5296,7 +5296,7 @@ init_mpd_server ()
 
 	# Get the desired audio device to be configured and used by musicpd.
 	MPD_SERVER_NUM_PCM_LIST=`echo "${MPD_SERVER_PCM_LIST}" | wc -l`
-	if [ ${MPD_SERVER_NUM_PCM_LIST} -lt 1 ]
+	if [ "${MPD_SERVER_PCM_LIST}" = "" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No PCM (audio) devices found!\n"
 		undo_init_mpd_server
@@ -5355,9 +5355,6 @@ init_mpd_server ()
 				echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}'."
 				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
 				echo -e "       brackets, commas, periods,spaces, underscores and hyphens.\n"
-			elif [ `cat ${MPD_SERVER_MPD_CONF_PATH} | grep "name[ 	]*\"${MPD_SERVER_PCM_NAME_TEMP}\"" | wc -l` -gt 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} The name '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}' already exists.\n"
 			else
 				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PCM_NAME_TEMP}${LCYN}' as the name.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
