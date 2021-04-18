@@ -3047,7 +3047,7 @@ connect_internet ()
 
 	# Get available interfaces and the quantity thereof.
 	NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}" | cut -d: -f1`
-	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
+	NUM_NET_IFACES=`echo "${NET_IFACES}" | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found.       Aborting.\n"
@@ -3578,7 +3578,7 @@ init_host ()
 
 	# Get available interfaces and the quantity thereof.
 	NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}" | cut -d: -f1`
-	NUM_NET_IFACES=`echo ${NET_IFACES} | wc -w`
+	NUM_NET_IFACES=`echo "${NET_IFACES}" | wc -w`
 	if [ ${NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable network interfaces found!\n       Aborting.\n"
@@ -3918,7 +3918,7 @@ init_host ()
 	if [ "${LAN_NET_IFACE}" = "" ]
 	then
 		REMAINING_NET_IFACES=`ifconfig | grep "^[a-z]*[0-9]*: " | grep -Ev "${NET_IFACES_IGNORED}|^${WAN_NET_IFACE}" | cut -d: -f1`
-		NUM_REMAINING_NET_IFACES=`echo ${REMAINING_NET_IFACES} | wc -w`
+		NUM_REMAINING_NET_IFACES=`echo "${REMAINING_NET_IFACES}" | wc -w`
 		if [ ${NUM_REMAINING_NET_IFACES} -lt 2 ]
 		then
 			LAN_NET_IFACE=${REMAINING_NET_IFACES}
@@ -5151,7 +5151,7 @@ init_mpd_server ()
 
 	# Get available interfaces and the quantity thereof.
 	MPD_SERVER_IP_ADDRESSES=`ifconfig | grep "inet .* netmask .* " | grep -v " netmask 0xffffffff" | awk '{print $2}'`
-	MPD_SERVER_NUM_IP_ADDRESSES=`echo ${MPD_SERVER_IP_ADDRESSES} | wc -w`
+	MPD_SERVER_NUM_IP_ADDRESSES=`echo "${MPD_SERVER_IP_ADDRESSES}" | wc -w`
 	if [ ${MPD_SERVER_NUM_IP_ADDRESSES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No usable IP addresses found!\n       Aborting.\n"
@@ -5295,7 +5295,7 @@ init_mpd_server ()
 	done
 
 	# Get the desired audio device to be configured and used by musicpd.
-	MPD_SERVER_NUM_PCM_LIST=`echo ${MPD_SERVER_PCM_LIST} | wc -l`
+	MPD_SERVER_NUM_PCM_LIST=`echo "${MPD_SERVER_PCM_LIST}" | wc -l`
 	if [ ${MPD_SERVER_NUM_PCM_LIST} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No PCM (audio) devices found!\n"
@@ -5708,6 +5708,10 @@ init_mpd_server ()
 	# Compile an audio format string for musicpd.conf; audio_output > format.
 	MPD_SERVER_PCM_FORMAT="${MPD_SERVER_PCM_SAMPLERATE}:${MPD_SERVER_PCM_SAMPLE_BITS}:${MPD_SERVER_PCM_CHANNELS_FLAT}"
 
+	# Prompt for whether to use 'playlists' inside remote 'music' directory instead of locally.
+	question_yes_no "\nWould you like to make the 'playlists' directory inside the 'music' directory?\nThis is useful when using multiple MPD servers or when using network shares."
+	MPD_SERVER_PLAYLIST_IN_MUSIC="${ANSWER}"
+
 	# Install required packages.
 	echo -e "\n${YELL}First we need to install some required packages...${NRML}\n"
 	pause_prompt 8
@@ -5809,6 +5813,11 @@ init_mpd_server ()
 		sed -i "" "s/^\([\t ]*\)[#]*password\([\t ]*\)\".*@/\1password\2\"${MPD_SERVER_PASSWORD}@/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
+	if [ ${MPD_SERVER_PLAYLIST_IN_MUSIC} = "yes" ]
+	then
+		sed -i "" "s|^\([\t ]*\)[#]*playlist_directory\([\t ]*\)\".*\"|\1playlist_directory\2\"/var/mpd/music/playlists\"|" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 	sed -i "" "s/^\([\t ]*\)[#]*name\([\t ]*\)\"OSS Output\"/\1name\2\"${MPD_SERVER_PCM_NAME}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^\([\t ]*[#]*\)format\([\t ]*\)\".*\"/\1format\2\"${MPD_SERVER_PCM_FORMAT}\"/" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
@@ -5875,12 +5884,25 @@ init_mpd_server ()
 	fi
 
 	# Prepare directories and files required for musicpd.
-	mkdir -p /var/mpd/.mpd/playlists > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ ${MPD_SERVER_PLAYLIST_IN_MUSIC} = "yes" ]
+	then
+		mkdir -p /var/mpd/.mpd > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	else
+		mkdir -p /var/mpd/.mpd/playlists > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 	touch /var/mpd/.mpd/log > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	chown -R mpd:mpd /var/mpd/.mpd > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the local MPD directories!\n"
+		undo_init_mpd_server
+		return 2
+	fi
 
 	echo -e "\n\n${YELL}We are now going to start the musicpd service for the first time.${NRML}"
 	echo -e "${YELL}Ignore the exception about the missing database file, it will be created.${NRML}\n"
@@ -5981,6 +6003,14 @@ init_mpd_server ()
 	echo -e "\n\n${LGRN}Congratulations! We have now finished setting up a MPD Server on this host.${NRML}\n"
 	echo -e "${YELL}Add or mount your music/audio collection inside the following directory:${NRML}\n"
 	echo -e "${ORNG}/var/mpd/music${NRML}\n"
+	if [ ${MPD_SERVER_PLAYLIST_IN_MUSIC} = "yes" ]
+	then
+		echo -e "${YELL}You need to create the 'playlists' directory inside the 'music' directory.${NRML}"
+		echo -e "${YELL}If the 'music' directory is not a remote share, the following would work:${NRML}\n"
+		echo -e "${LBLU}mkdir /var/mpd/music/playlists${NRML}"
+		echo -e "${LBLU}chown mpd:mpd /var/mpd/music/playlists${NRML}\n"
+		echo -e "${YELL}Otherwise, just create the 'playlists' directory inside the remote share path.${NRML}\n"
+	fi
 	echo -e "${YELL}To connect to the MPD server from your MPD client of choice,${NRML}"
 	echo -e "${YELL}Use one of the following details.${NRML}\n"
 	echo -e "${ORNG}Server details:${NRML}"
@@ -6169,7 +6199,7 @@ init_wifi_ap ()
 
 	# Get list of available WiFi interfaces and number thereof.
 	WIFI_AP_NET_IFACES=`sysctl -n net.wlan.devices`
-	WIFI_AP_NUM_NET_IFACES=`echo ${WIFI_AP_NET_IFACES} | wc -w`
+	WIFI_AP_NUM_NET_IFACES=`echo "${WIFI_AP_NET_IFACES}" | wc -w`
 	if [ ${WIFI_AP_NUM_NET_IFACES} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No WiFi (WLAN) devices found!\n"
@@ -6893,7 +6923,7 @@ init_hotdesk ()
 	# Get pool name to use for hotdesk users' home folders.
 	HOTDESK_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
-	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+	NUM_POOLS=`echo "${POOLS_AVAILABLE}" | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
@@ -6980,7 +7010,7 @@ init_hotdesk ()
 
 	# Get IP to use for NIS service.
 	NIS_SERVER_IP=""
-	NUM_HOST_LAN_IP=`echo ${HOST_LAN_IP_ADDRESSES} | wc -w`
+	NUM_HOST_LAN_IP=`echo "${HOST_LAN_IP_ADDRESSES}" | wc -w`
 	if [ ${NUM_HOST_LAN_IP} -lt 2 ]
 	then
 		NIS_SERVER_IP=${HOST_LAN_IP_ADDRESSES}
@@ -7730,7 +7760,7 @@ init_jails ()
 	# Get pool name to use for base of jails.
 	JAILS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
-	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+	NUM_POOLS=`echo "${POOLS_AVAILABLE}" | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
@@ -8769,7 +8799,7 @@ create_jail_from_recipe ()
 		# Get pool name to use for additional recipe filesystems.
 		SIDES_POOL_NAME=""
 		POOLS_AVAILABLE=`zpool list -H -o name`
-		NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+		NUM_POOLS=`echo "${POOLS_AVAILABLE}" | wc -w`
 		if [ ${NUM_POOLS} -lt 1 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
@@ -9264,7 +9294,7 @@ init_vms ()
 	# Get pool name to use for base of VM image filesystems.
 	VMS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
-	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+	NUM_POOLS=`echo "${POOLS_AVAILABLE}" | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
@@ -10861,7 +10891,7 @@ create_vm_template ()
 
 	# Get IP to use for VNC.
 	VM_VNC_HOST_IP=""
-	NUM_HOST_IP=`echo ${VM_BRIDGE_IFACE_IP_ADDRESSES} | wc -w`
+	NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
 	if [ ${NUM_HOST_IP} -lt 2 ]
 	then
 		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
@@ -11461,7 +11491,7 @@ create_vm_instance ()
 
 	# Get IP to use for VNC.
 	VM_VNC_HOST_IP=""
-	NUM_HOST_IP=`echo ${VM_BRIDGE_IFACE_IP_ADDRESSES} | wc -w`
+	NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
 	if [ ${NUM_HOST_IP} -lt 2 ]
 	then
 		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
@@ -11947,7 +11977,7 @@ init_partimag ()
 	# Get pool name to use for partimag filesystem.
 	PARTIMAG_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
-	NUM_POOLS=`echo ${POOLS_AVAILABLE} | wc -w`
+	NUM_POOLS=`echo "${POOLS_AVAILABLE}" | wc -w`
 	if [ ${NUM_POOLS} -lt 1 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} No pools found. Unable to proceed.\n       Aborting.\n"
