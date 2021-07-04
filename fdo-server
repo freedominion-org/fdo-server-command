@@ -4329,6 +4329,10 @@ init_host ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/etc/csh.login
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sed -i "" "s|HOST_LOCALE|${LOCALE}|" configs/${HOST_NAME}/usr/local/etc/bashrc
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sed -i "" "s|HOST_CHARSET|${LOCALE_CHARSET}|" configs/${HOST_NAME}/usr/local/etc/bashrc
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/profile
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4337,6 +4341,10 @@ init_host ()
 		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/etc/csh.login
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sed -i "" "s|\(^.*HOST_LOCALE.*\)|#\1|" configs/${HOST_NAME}/usr/local/etc/bashrc
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		sed -i "" "s|\(^.*HOST_CHARSET.*\)|#\1|" configs/${HOST_NAME}/usr/local/etc/bashrc
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
