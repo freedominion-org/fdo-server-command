@@ -1273,6 +1273,229 @@ git_push ()
 	done
 }
 
+# Function to get a key value pair from within a logical category in the specified config file.
+# If the category of key do not already exist, they will be created.
+# Returns: 0 if key was found in correct category and format.
+# Returns: 1 if the config file was not found.
+# Returns: 2 if key was not found.
+# Returns: 3 if the key was found but not in correct format.
+# Returns: 4 if the key was found in the correct format, but not in correct category.
+conf_get ()
+{
+	CONF_GET_FILE="${1}"
+	CONF_GET_TYPE="${2}"
+	CONF_GET_CATEGORY=`echo "${3}" | cut -d. -f2`
+	CONF_GET_CATEGORY_UPPER=`echo "${CONF_GET_CATEGORY}" | tr "[:lower:]" "[:upper:]"`
+	CONF_GET_KEY=`echo "${3}" | cut -d. -f3-`
+	CONF_GET_VALUE=""
+
+	CONF_GET_ERROR_COUNT=0
+
+	# Test if conf file exists.
+	if [ ! -f "${CONF_GET_FILE}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Config file '${ORNG}${CONF_GET_FILE}${NRML}' does not exist!\n"
+		return 1
+	fi
+
+	# If key does not exist, return 2.
+	cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*" > /dev/null 2>&1
+	if [ ${?} -ne 0 ]
+	then
+		return 2
+	fi
+
+	# Test if category already exists.
+	cat "${CONF_GET_FILE}" | grep "^# \[${CONF_GET_CATEGORY_UPPER}\]$" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		CONF_GET_CATEGORY_EXISTS=true
+	else
+		CONF_GET_CATEGORY_EXISTS=false
+	fi
+
+	# Get category chunk.
+	CONF_GET_CATEGORY_CHUNK=`cat "${CONF_GET_FILE}" \
+		| sed -n '/^# \['${CONF_GET_CATEGORY_UPPER}'\]$/,$p' \
+		| sed '/'${CONF_GET_CATEGORY_UPPER}'/!s/^# \(\[[A-Z_-]*\]\)$/# [\1]/g' \
+		| sed '/^# \[\[[A-Z_-]*\]\]$/,$d' \
+		| sed '/^$/d'`
+	CONF_GET_ERROR_COUNT=$(( ${CONF_GET_ERROR_COUNT} + ${?} ))
+
+	# Test if key exists in the correct category.
+	echo "${CONF_GET_CATEGORY_CHUNK}" | grep "^${CONF_GET_KEY}=.*" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		CONF_GET_KEY_EXISTS_IN_CATEGORY=true
+	else
+		CONF_GET_KEY_EXISTS_IN_CATEGORY=false
+	fi
+
+	# Get the keys' value.
+	case "${CONF_GET_TYPE}" in
+		string)
+			CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=\".*\""`
+			if [ ${?} -eq 0 ]
+			then
+				CONF_GET_VALUE=`echo "${CONF_GET_KEY_VALUE_PAIR}" | cut -d= -f2 | cut -d\" -f2`
+			else
+				CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*"`
+				CONF_GET_VALUE=`echo "${CONF_GET_KEY_VALUE_PAIR}" | cut -d= -f2-`
+				echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
+				echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
+				echo -e "         has an unexpected format.\n"
+				return 3
+			fi
+			;;
+		number)
+			CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*"`
+			CONF_GET_VALUE=`echo "${CONF_GET_KEY_VALUE_PAIR}" | cut -d= -f2 | awk '{print $1}'`
+			test_valid_number "${CONF_GET_VALUE}"
+			if [ "${VALID_NUMBER}" = "no" ]
+			then
+				CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*"`
+				CONF_GET_VALUE=`echo "${CONF_GET_KEY_VALUE_PAIR}" | cut -d= -f2-`
+				echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
+				echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
+				echo -e "         has an unexpected format.\n"
+				return 3
+			fi
+			;;
+		*)
+			CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*"`
+			CONF_GET_VALUE=`echo "${CONF_GET_KEY_VALUE_PAIR}" | cut -d= -f2-`
+			echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
+			echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
+			echo -e "         has an unsupported format.\n"
+			return 3
+			;;
+	esac
+
+	# If keys exists, but not within the correct category, return -1.
+	if [ ${CONF_GET_KEY_EXISTS_IN_CATEGORY} = false ]
+	then
+		echo -e "\n${ORNG}WARNING:${NRML} The key '${ORNG}${CONF_GET_KEY}${NRML}'"
+		echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
+		echo -e "         does not exist in the category '${ORNG}${CONF_GET_CATEGORY}${NRML}'.\n"
+		return 4
+	fi
+}
+
+# Function to set a key value pair within a logical category in the specified config file.
+# If the category of key do not already exist, they will be created.
+# Returns: 0 if no errors occurred, 1 for a unmet condition, 2 for unexpected errors.
+conf_set ()
+{
+	CONF_SET_FILE="${1}"
+	CONF_SET_TYPE="${2}"
+	CONF_SET_CATEGORY=`echo "${3}" | cut -d. -f2`
+	CONF_SET_CATEGORY_UPPER=`echo "${CONF_SET_CATEGORY}" | tr "[:lower:]" "[:upper:]"`
+	CONF_SET_KEY=`echo "${3}" | cut -d. -f3-`
+	CONF_SET_VALUE="${4}"
+
+	CONF_SET_ERROR_COUNT=0
+
+	# Test if conf file exists.
+	if [ ! -f "${CONF_SET_FILE}" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Config file '${ORNG}${CONF_SET_FILE}${NRML}' does not exist!\n"
+		return 1
+	fi
+
+	# Test if category already exists.
+	cat "${CONF_SET_FILE}" | grep "^# \[${CONF_SET_CATEGORY_UPPER}\]$" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		CONF_SET_CATEGORY_EXISTS=true
+	else
+		CONF_SET_CATEGORY_EXISTS=false
+	fi
+
+	# Get category chunk.
+	CONF_SET_CATEGORY_CHUNK=`cat "${CONF_SET_FILE}" \
+		| sed -n '/^# \['${CONF_SET_CATEGORY_UPPER}'\]$/,$p' \
+		| sed '/'${CONF_SET_CATEGORY_UPPER}'/!s/^# \(\[[A-Z_-]*\]\)$/# [\1]/g' \
+		| sed '/^# \[\[[A-Z_-]*\]\]$/,$d' \
+		| sed '/^$/d'`
+	CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+
+	# Test if key already exists.
+	cat "${CONF_SET_FILE}" | grep "^${CONF_SET_KEY}=.*" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		CONF_SET_KEY_EXISTS=true
+	else
+		CONF_SET_KEY_EXISTS=false
+	fi
+
+	# Test if key exists in the correct category.
+	echo "${CONF_SET_CATEGORY_CHUNK}" | grep "^${CONF_SET_KEY}=.*" > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		CONF_SET_KEY_EXISTS_IN_CATEGORY=true
+	else
+		CONF_SET_KEY_EXISTS_IN_CATEGORY=false
+	fi
+
+	# If keys exists, but not within the correct category, delete it.
+	if [ ${CONF_SET_KEY_EXISTS} = true ] && [ ${CONF_SET_KEY_EXISTS_IN_CATEGORY} = false ]
+	then
+		sed -i "" "/${CONF_SET_KEY}=.*/d" "${CONF_SET_FILE}"
+		CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+	fi
+
+	# If category does not exist, append it.
+	if [ ${CONF_SET_CATEGORY_EXISTS} = false ]
+	then
+		echo -e "\n# [${CONF_SET_CATEGORY_UPPER}]" >> "${CONF_SET_FILE}"
+		CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+	fi
+
+	# If key exists within the correct category, modify it in place.
+	# Else, prepend it to the category elements.
+	if [ ${CONF_SET_KEY_EXISTS_IN_CATEGORY} = true ]
+	then
+		case "${CONF_SET_TYPE}" in
+			string)
+				sed -i "" "s|${CONF_SET_KEY}=.*|${CONF_SET_KEY}=\"${CONF_SET_VALUE}\"|" "${CONF_SET_FILE}"
+				CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+				;;
+			number)
+				sed -i "" "s|${CONF_SET_KEY}=.*|${CONF_SET_KEY}=${CONF_SET_VALUE}|" "${CONF_SET_FILE}"
+				CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+				;;
+			*)
+				echo -e "\n${LRED}ERROR:${NRML} Invalid element type '${ORNG}${CONF_SET_TYPE}${NRML}'!\n"
+				return 1
+				;;
+		esac
+	else
+		case "${CONF_SET_TYPE}" in
+			string)
+				sed -i "" "s|^# \[${CONF_SET_CATEGORY_UPPER}\]$|# \[${CONF_SET_CATEGORY_UPPER}\]\n${CONF_SET_KEY}=\"${CONF_SET_VALUE}\"|" "${CONF_SET_FILE}"
+				CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+				;;
+			number)
+				sed -i "" "s|^# \[${CONF_SET_CATEGORY_UPPER}\]$|# \[${CONF_SET_CATEGORY_UPPER}\]\n${CONF_SET_KEY}=${CONF_SET_VALUE}|" "${CONF_SET_FILE}"
+				CONF_SET_ERROR_COUNT=$(( ${CONF_SET_ERROR_COUNT} + ${?} ))
+				;;
+			*)
+				echo -e "\n${LRED}ERROR:${NRML} Invalid element type '${ORNG}${CONF_SET_TYPE}${NRML}'!\n"
+				return 1
+				;;
+		esac
+
+	fi
+
+	# If there were any unexpected errors, return an error code of 2.
+	if [ ${CONF_SET_ERROR_COUNT} -gt 0 ]
+	then
+		return 2
+	else
+		return 0
+	fi
+}
+
 ucl_array_length ()
 {
 	UCL_ARRAY_LENGTH_FILE_PATH="${1}"
