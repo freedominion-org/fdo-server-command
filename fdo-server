@@ -53,7 +53,7 @@ FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedom
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py37-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py38-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
 PKG_REPO_CONF_FILE="FDo-pkg.conf"
 PKG_REPO_CERT_FILE="FDo-pkg.cert"
 
@@ -3923,8 +3923,6 @@ init_host ()
 			done
 		fi
 
-		sed -i "" "s/WAN_NET_IFACE/${WAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.wan.nic_id "${WAN_NET_IFACE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
@@ -3964,16 +3962,18 @@ init_host ()
 					fi
 					sleep 4
 				done
-				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"up\"\\${CARRIAGE_RETURN}ifconfig_${WAN_NET_IFACE}_${VLAN_ID}=\"up\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "up"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				sed -i "" "s/^#vlans_${WAN_NET_IFACE}=\"\"/vlans_${WAN_NET_IFACE}=\"${VLAN_ID}\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}_${VLAN_ID}" "up"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.vlans_${WAN_NET_IFACE}" "${VLAN_ID}"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}_${VLAN_ID}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t number .network.interface.wan.vlan_id "${VLAN_ID}"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
-				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"up\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "up"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				sed -i "" "s/PPP_IFACE/${WAN_NET_IFACE}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4025,9 +4025,9 @@ init_host ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			sed -i "" "s/isp_authkey/${PPP_AUTHKEY}/" configs/${HOST_NAME}/etc/ppp/ppp.conf
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			sysrc -f configs/${HOST_NAME}/etc/rc.conf "ppp_enable=YES" > /dev/null 2>&1
+			conf_set configs/${HOST_NAME}/etc/rc.conf string ".firewall-nat-ppp.ppp_enable" "YES"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			sysrc -f configs/${HOST_NAME}/etc/rc.conf "ppp_nat=YES" > /dev/null 2>&1
+			conf_set configs/${HOST_NAME}/etc/rc.conf string ".firewall-nat-ppp.ppp_nat" "YES"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.wan.id "tun${WAN_PPP_TUN_ID}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4042,7 +4042,7 @@ init_host ()
 		else
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.wan.type "ethernet"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -f string .network.interface.wan.id "${WAN_NET_IFACE}"
+			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.wan.id "${WAN_NET_IFACE}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 		# END: configure PPP.
@@ -4133,9 +4133,9 @@ init_host ()
 				sed -i "" "s|^ set ifaddr .*| set ifaddr ${WAN_IFACE_IP} ${WAN_GATEWAY_IP} ${WAN_IFACE_NETMASK} 0.0.0.0|" configs/${HOST_NAME}/etc/ppp/ppp.conf
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			else
-				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "inet ${WAN_IFACE_IP} netmask ${WAN_IFACE_NETMASK}"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				sed -i "" "s/^#defaultrouter=\"\"/defaultrouter=\"${WAN_GATEWAY_IP}\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.defaultrouter" "${WAN_GATEWAY_IP}"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.wan.ipv4_assignment "static"
@@ -4152,13 +4152,13 @@ init_host ()
 			if [ "${USES_PPP}" = "no" ]
 			then
 				# WAN IP interface is pure ethernet and uses DHCP.
-				sed -i "" "s/^#ifconfig_${WAN_NET_IFACE}=\"\"/ifconfig_${WAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "DHCP"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 		fi
 		# END: if IS_WAN_IFACE_DHCP = no.
 
-		sysrc -f configs/${HOST_NAME}/etc/rc.conf "gateway_enable=YES" > /dev/null 2>&1
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.gateway_enable" "YES"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t boolean .network.is_gateway_router true
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4204,7 +4204,9 @@ init_host ()
 
 	if [ "${SERVER_TYPE}" = "remote" ]
 	then
-		sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${LAN_NET_IFACE}" > /dev/null 2>&1
+		# Create a loopback interface for the LAN network. This is the first cloned_interfaces member,
+		# so there's no need to append to the list.
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${LAN_NET_IFACE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.type "loopback"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4212,8 +4214,6 @@ init_host ()
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.type "ethernet"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	sed -i "" "s/LAN_NET_IFACE/${LAN_NET_IFACE}/g" configs/${HOST_NAME}/etc/rc.conf
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.nic_id "${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.id "${LAN_NET_IFACE}"
@@ -4226,7 +4226,7 @@ init_host ()
 	then
 		# ASSUME: this host is a remote or primary_local type server.
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
-		sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${LAN_NET_IFACE}" "inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.ipv4_assignment "static"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4277,7 +4277,7 @@ init_host ()
 				fi
 				sleep 2
 			done
-			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}\"/" configs/${HOST_NAME}/etc/rc.conf
+			conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${LAN_NET_IFACE}" "inet ${LAN_IFACE_IP} netmask ${LAN_IFACE_NETMASK}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.ipv4_assignment "static"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4288,7 +4288,7 @@ init_host ()
 		else
 			## TODO: how to handle LAN_IFACE_IP when we're using DHCP?
 			LAN_IFACE_IP="127.0.0.1"
-			sed -i "" "s/^#ifconfig_${LAN_NET_IFACE}=\"\"/ifconfig_${LAN_NET_IFACE}=\"DHCP\"/" configs/${HOST_NAME}/etc/rc.conf
+			conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${LAN_NET_IFACE}" "DHCP"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.ipv4_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4301,7 +4301,7 @@ init_host ()
 	# END: if WAN_NET_IFACE != NULL.
 
 	# Update hostname.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostname=${HOST_NAME}.${DOMAIN_NAME}" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.hostname" "${HOST_NAME}.${DOMAIN_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/FDO_LAN_IP/${LAN_IFACE_IP}/g" configs/${HOST_NAME}/etc/hosts
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -4329,9 +4329,9 @@ init_host ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		sed -i "" "s|LAN_NET_IFACE|${LAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pf_enable=YES" > /dev/null 2>&1
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".firewall-nat-ppp.pf_enable" "YES"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		sysrc -f configs/${HOST_NAME}/etc/rc.conf "pflog_enable=YES" > /dev/null 2>&1
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".firewall-nat-ppp.pflog_enable" "YES"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t boolean .network.interface.wan.pf_nat_enabled true
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
