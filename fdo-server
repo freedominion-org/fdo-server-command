@@ -5655,10 +5655,9 @@ init_mpd_server ()
 	INIT_MPD_SERVER_SYSCTL_MODIFIED=true
 
 	# If wanted, set system default PCM device to the chosen one.
-	MPD_SERVER_HW_SND_DEFAULT_UNIT="hw.snd.default_unit=${MPD_SERVER_PCM_NUM}"
 	if [ "${MPD_SERVER_USE_DEFAULT_UNIT}" = "yes" ]
 	then
-		sysctl ${MPD_SERVER_HW_SND_DEFAULT_UNIT} > /dev/null 2>&1
+		sysctl "hw.snd.default_unit=${MPD_SERVER_PCM_NUM}" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -5670,13 +5669,11 @@ init_mpd_server ()
 	fi
 
 	# Set the number of PCM virtual channels to 1 so that other vchan sysctls can always be got and set.
-	MPD_SERVER_DEV_PCM_PLAY_VCHANS_1="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=1"
-	MPD_SERVER_DEV_PCM_REC_VCHANS_1="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=1"
-	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANS_1} > /dev/null 2>&1
+	sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=1" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
 	then
-		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANS_1} > /dev/null 2>&1
+		sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=1" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -5711,10 +5708,9 @@ init_mpd_server ()
 		question_yes_no "\nYou have selected '${NRML}${MPD_SERVER_PCM_SAMPLERATE_TEMP}${LCYN}' as the audio output sample rate (Hz).\nIs this correct?"
 		if [ "${ANSWER}" = "yes" ]
 		then
-			MPD_SERVER_DEV_PCM_PLAY_VCHANRATE="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate=${MPD_SERVER_PCM_SAMPLERATE_TEMP}"
 			if [ "${MPD_SERVER_PCM_SAMPLERATE_TEMP}" != "*" ]
 			then
-				sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANRATE} > /dev/null 2>&1
+				sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate=${MPD_SERVER_PCM_SAMPLERATE_TEMP}" > /dev/null 2>&1
 				MPD_SERVER_NEW_DEV_PCM_PLAY_VCHANRATE=`sysctl -n "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate"`
 				if [ "${MPD_SERVER_NEW_DEV_PCM_PLAY_VCHANRATE}" != "${MPD_SERVER_PCM_SAMPLERATE_TEMP}" ]
 				then
@@ -5730,10 +5726,9 @@ init_mpd_server ()
 	done
 
 	# Set the PCM rec virtual channel sample rate to the chosen one. FIXes distortion issue on some USB audio devices.
-	MPD_SERVER_DEV_PCM_REC_VCHANRATE="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanrate=${MPD_SERVER_PCM_SAMPLERATE}"
 	if [ "${MPD_SERVER_PCM_SAMPLERATE}" != "*" ] && [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE}" != "" ]
 	then
-		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANRATE} > /dev/null 2>&1
+		sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanrate=${MPD_SERVER_PCM_SAMPLERATE}" > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -5797,13 +5792,13 @@ init_mpd_server ()
 		MPD_SERVER_NEXT_PCM_PLAY_CHANNELS=${MPD_SERVER_PCM_CHANNELS}
 		MPD_SERVER_NEXT_PCM_REC_CHANNELS=${MPD_SERVER_PCM_CHANNELS}
 	fi
-	MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat=s${MPD_SERVER_NEXT_PCM_PLAY_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_PLAY_CHANNELS}"
-	MPD_SERVER_DEV_PCM_REC_VCHANFORMAT="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat=s${MPD_SERVER_NEXT_PCM_REC_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_REC_CHANNELS}"
-	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT} > /dev/null 2>&1
+	MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT="s${MPD_SERVER_NEXT_PCM_PLAY_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_PLAY_CHANNELS}"
+	MPD_SERVER_DEV_PCM_REC_VCHANFORMAT="s${MPD_SERVER_NEXT_PCM_REC_SAMPLE_BITS}le:${MPD_SERVER_NEXT_PCM_REC_CHANNELS}"
+	sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat=${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT}" != "" ]
 	then
-		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT} > /dev/null 2>&1
+		sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat=${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT}" > /dev/null 2>&1
 	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5839,27 +5834,27 @@ init_mpd_server ()
 	# Set variables that depend on the chosen bit-perfect mode.
 	case "${MPD_SERVER_BITPERFECT_MODE}" in
 		"none")
-			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=0"
-			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=8"
-			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=8"
+			MPD_SERVER_DEV_PCM_BITPERFECT=0
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS=8
+			MPD_SERVER_DEV_PCM_REC_VCHANS=8
 			MPD_SERVER_MIXER_TYPE="software"
 			;;
 		"format/rate")
-			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=1"
-			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=8"
-			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=8"
+			MPD_SERVER_DEV_PCM_BITPERFECT=1
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS=8
+			MPD_SERVER_DEV_PCM_REC_VCHANS=8
 			MPD_SERVER_MIXER_TYPE="hardware"
 			;;
 		"full")
-			MPD_SERVER_DEV_PCM_BITPERFECT="dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=1"
-			MPD_SERVER_DEV_PCM_PLAY_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=0"
-			MPD_SERVER_DEV_PCM_REC_VCHANS="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=0"
+			MPD_SERVER_DEV_PCM_BITPERFECT=1
+			MPD_SERVER_DEV_PCM_PLAY_VCHANS=0
+			MPD_SERVER_DEV_PCM_REC_VCHANS=0
 			MPD_SERVER_MIXER_TYPE="hardware"
 			;;
 	esac
 
 	# Set the PCM bit-perfect mode to the chosen one.
-	sysctl ${MPD_SERVER_DEV_PCM_BITPERFECT} > /dev/null 2>&1
+	sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect=${MPD_SERVER_DEV_PCM_BITPERFECT}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5870,13 +5865,13 @@ init_mpd_server ()
 	fi
 
 	# Set the PCM virtual channel mode to 'passthrough'.
-	MPD_SERVER_DEV_PCM_PLAY_VCHANMODE="dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanmode=passthrough"
-	MPD_SERVER_DEV_PCM_REC_VCHANMODE="dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanmode=passthrough"
-	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE} > /dev/null 2>&1
+	MPD_SERVER_DEV_PCM_PLAY_VCHANMODE="passthrough"
+	MPD_SERVER_DEV_PCM_REC_VCHANMODE="passthrough"
+	sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanmode=${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE}" != "" ]
 	then
-		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANMODE} > /dev/null 2>&1
+		sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanmode=${MPD_SERVER_DEV_PCM_REC_VCHANMODE}" > /dev/null 2>&1
 	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5887,11 +5882,11 @@ init_mpd_server ()
 	fi
 
 	# Set the number of PCM virtual channels based on the choice of bit-perfect mode.
-	sysctl ${MPD_SERVER_DEV_PCM_PLAY_VCHANS} > /dev/null 2>&1
+	sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans=${MPD_SERVER_DEV_PCM_PLAY_VCHANS}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
 	then
-		sysctl ${MPD_SERVER_DEV_PCM_REC_VCHANS} > /dev/null 2>&1
+		sysctl "dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans=${MPD_SERVER_DEV_PCM_REC_VCHANS}" > /dev/null 2>&1
 	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5926,8 +5921,7 @@ init_mpd_server ()
 	IFS="${CURRENT_IFS}"
 
 	# Set system feeder_rate_quality to the chosen one.
-	MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY="hw.snd.feeder_rate_quality=${MPD_SERVER_RATE_QUALITY}"
-	sysctl ${MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY} > /dev/null 2>&1
+	sysctl "hw.snd.feeder_rate_quality=${MPD_SERVER_RATE_QUALITY}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5938,19 +5932,19 @@ init_mpd_server ()
 	fi
 
 	# Prepare remaining sysctl variables.
-	MPD_SERVER_HW_SND_DEFAULT_AUTO="hw.snd.default_auto=0"
-	MPD_SERVER_HW_SND_VERBOSE="hw.snd.verbose=2"
-	MPD_SERVER_HW_SND_VPC_AUTORESET="hw.snd.vpc_autoreset=0"
-	MPD_SERVER_HW_SND_VPC_MIXER_BYPASS="hw.snd.vpc_mixer_bypass=0"
+	MPD_SERVER_HW_SND_DEFAULT_AUTO=0
+	MPD_SERVER_HW_SND_VERBOSE=2
+	MPD_SERVER_HW_SND_VPC_AUTORESET=0
+	MPD_SERVER_HW_SND_VPC_MIXER_BYPASS=0
 
 	# Set remaining sysctl variables.
-	sysctl ${MPD_SERVER_HW_SND_DEFAULT_AUTO} > /dev/null 2>&1
+	sysctl "hw.snd.default_auto=${MPD_SERVER_HW_SND_DEFAULT_AUTO}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysctl ${MPD_SERVER_HW_SND_VERBOSE} > /dev/null 2>&1
+	sysctl "hw.snd.verbose=${MPD_SERVER_HW_SND_VERBOSE}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysctl ${MPD_SERVER_HW_SND_VPC_AUTORESET} > /dev/null 2>&1
+	sysctl "hw.snd.vpc_autoreset=${MPD_SERVER_HW_SND_VPC_AUTORESET}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysctl ${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS} > /dev/null 2>&1
+	sysctl "hw.snd.vpc_mixer_bypass=${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -6003,64 +5997,68 @@ init_mpd_server ()
 	echo -e ""
 
 	# Enable musicpd in rc.conf.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "musicpd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".ports-services.musicpd_enable" "YES"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	# Enable mixer service in rc.conf, so that channel volume levels are restored.
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.mixer_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set USB audio module to load at boot.
-	sed -i "" "s/^[#]*snd_driver_load=.*/snd_driver_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".hardware.snd_driver_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*snd_uaudio_load=.*/snd_uaudio_load=\"YES\"/" configs/${HOST_NAME}/boot/loader.conf
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".hardware.snd_uaudio_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set audio subsystem and PCM configuration in sysctl.conf.
-	sed -i "" "s/^[#]*hw.snd.default_auto=[a-z0-9:.]*/${MPD_SERVER_HW_SND_DEFAULT_AUTO}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.default_auto" "${MPD_SERVER_HW_SND_DEFAULT_AUTO}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_USE_DEFAULT_UNIT}" = "yes" ]
 	then
-		sed -i "" "s/^[#]*hw.snd.default_unit=[a-z0-9:.]*/${MPD_SERVER_HW_SND_DEFAULT_UNIT}/" configs/${HOST_NAME}/etc/sysctl.conf
+		conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.default_unit" "${MPD_SERVER_PCM_NUM}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	sed -i "" "s/^[#]*hw.snd.feeder_rate_quality=[a-z0-9:.]*/${MPD_SERVER_HW_SND_FEEDER_RATE_QUALITY}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.feeder_rate_quality" "${MPD_SERVER_RATE_QUALITY}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*hw.snd.verbose=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VERBOSE}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.verbose" "${MPD_SERVER_HW_SND_VERBOSE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*hw.snd.vpc_autoreset=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VPC_AUTORESET}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.vpc_autoreset" "${MPD_SERVER_HW_SND_VPC_AUTORESET}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*hw.snd.vpc_mixer_bypass=[a-z0-9:.]*/${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.hw.snd.vpc_mixer_bypass" "${MPD_SERVER_HW_SND_VPC_MIXER_BYPASS}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*dev.pcm.0.bitperfect=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_BITPERFECT}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.bitperfect" "${MPD_SERVER_DEV_PCM_BITPERFECT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^[#]*dev.pcm.0.play.vchans=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANS}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchans" "${MPD_SERVER_DEV_PCM_PLAY_VCHANS}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANS}" != "" ]
 	then
-		sed -i "" "s/^[#]*dev.pcm.0.rec.vchans=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANS}/" configs/${HOST_NAME}/etc/sysctl.conf
+		conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchans" "${MPD_SERVER_DEV_PCM_REC_VCHANS}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	if [ "${MPD_SERVER_PCM_SAMPLE_BITS}" != "*" ] || [ "${MPD_SERVER_PCM_CHANNELS}" != "*" ]
 	then
-		sed -i "" "s/^[#]*dev.pcm.0.play.vchanformat=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT}/" configs/${HOST_NAME}/etc/sysctl.conf
+		conf_set configs/${HOST_NAME}/etc/sysctl.conf string ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanformat" "${MPD_SERVER_DEV_PCM_PLAY_VCHANFORMAT}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANFORMAT}" != "" ]
 		then
-			sed -i "" "s/^[#]*dev.pcm.0.rec.vchanformat=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT}/" configs/${HOST_NAME}/etc/sysctl.conf
+			conf_set configs/${HOST_NAME}/etc/sysctl.conf string ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanformat" "${MPD_SERVER_DEV_PCM_REC_VCHANFORMAT}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	fi
-	sed -i "" "s/^[#]*dev.pcm.0.play.vchanmode=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE}/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf string ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanmode" "${MPD_SERVER_DEV_PCM_PLAY_VCHANMODE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANMODE}" != "" ]
 	then
-		sed -i "" "s/^[#]*dev.pcm.0.rec.vchanmode=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANMODE}/" configs/${HOST_NAME}/etc/sysctl.conf
+		conf_set configs/${HOST_NAME}/etc/sysctl.conf string ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanmode" "${MPD_SERVER_DEV_PCM_REC_VCHANMODE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 	if [ "${MPD_SERVER_PCM_SAMPLERATE}" != "*" ]
 	then
-		sed -i "" "s/^[#]*dev.pcm.0.play.vchanrate=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_PLAY_VCHANRATE}/" configs/${HOST_NAME}/etc/sysctl.conf
+		conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.play.vchanrate" "${MPD_SERVER_PCM_SAMPLERATE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		if [ "${MPD_SERVER_PREV_DEV_PCM_REC_VCHANRATE}" != "" ]
 		then
-			sed -i "" "s/^[#]*dev.pcm.0.rec.vchanrate=[a-z0-9:.]*/${MPD_SERVER_DEV_PCM_REC_VCHANRATE}/" configs/${HOST_NAME}/etc/sysctl.conf
+			conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".audio.dev.pcm.${MPD_SERVER_PCM_NUM}.rec.vchanrate" "${MPD_SERVER_PCM_SAMPLERATE}"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	fi
@@ -6094,9 +6092,6 @@ init_mpd_server ()
 		sed -i "" "s|^\([\t ]*\)[#]*device\([\t ]*\)\"/dev/dsp\"|\1device\2\"/dev/dsp${MPD_SERVER_PCM_NUM}.0\"|" configs/${HOST_NAME}${MPD_SERVER_MPD_CONF_PATH}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-
-	# Set volume levels to full in case user does not know they are at 75 by default.
-	mixer -f /dev/mixer${MPD_SERVER_PCM_NUM} vol 100 pcm 100
 
 	# Store subsystem configuration details.
 	${UCL_CMD} set -f configs/${HOST_NAME}${MPD_SERVER_CONF_PATH} -t string .network.mpd_listen_ip_addr "${MPD_SERVER_IP_LISTEN}"
@@ -6191,6 +6186,9 @@ init_mpd_server ()
 	fi
 
 	echo -e "\n"
+
+	# Set volume levels to full in case user does not know they are at 75 by default.
+	mixer -f /dev/mixer${MPD_SERVER_PCM_NUM} vol 100 pcm 100
 
 	# Prompt whether to test the MPD server with a client.
 	question_yes_no "Would you like to test the MPD server with a client before finalising?"
