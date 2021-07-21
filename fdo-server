@@ -1276,10 +1276,10 @@ git_push ()
 # Function to get a key value pair from within a logical category in the specified config file.
 # If the category of key do not already exist, they will be created.
 # Returns: 0 if key was found in correct category and format.
-# Returns: 1 if the config file was not found.
-# Returns: 2 if key was not found.
-# Returns: 3 if the key was found but not in correct format.
-# Returns: 4 if the key was found in the correct format, but not in correct category.
+# Returns: 1 if the key was found in the correct format, but not in correct category.
+# Returns: 2 if the key was found but not in correct format.
+# Returns: 3 if key was not found.
+# Returns: 4 if the config file was not found.
 conf_get ()
 {
 	CONF_GET_FILE="${1}"
@@ -1291,18 +1291,18 @@ conf_get ()
 
 	CONF_GET_ERROR_COUNT=0
 
-	# Test if conf file exists.
+	# If conf file does not exist, return 4.
 	if [ ! -f "${CONF_GET_FILE}" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Config file '${ORNG}${CONF_GET_FILE}${NRML}' does not exist!\n"
-		return 1
+		return 4
 	fi
 
-	# If key does not exist, return 2.
+	# If key does not exist, return 3.
 	cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=.*" > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		return 2
+		return 3
 	fi
 
 	# Test if category already exists.
@@ -1331,7 +1331,7 @@ conf_get ()
 		CONF_GET_KEY_EXISTS_IN_CATEGORY=false
 	fi
 
-	# Get the keys' value.
+	# Get the keys' value. If not in the correct format, return 2.
 	case "${CONF_GET_TYPE}" in
 		string)
 			CONF_GET_KEY_VALUE_PAIR=`cat "${CONF_GET_FILE}" | grep "^${CONF_GET_KEY}=\".*\""`
@@ -1344,7 +1344,7 @@ conf_get ()
 				echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
 				echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
 				echo -e "         has an unexpected format.\n"
-				return 3
+				return 2
 			fi
 			;;
 		number)
@@ -1358,7 +1358,7 @@ conf_get ()
 				echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
 				echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
 				echo -e "         has an unexpected format.\n"
-				return 3
+				return 2
 			fi
 			;;
 		*)
@@ -1367,23 +1367,23 @@ conf_get ()
 			echo -e "\n${ORNG}WARNING:${NRML} The value for key '${ORNG}${CONF_GET_KEY}${NRML}'"
 			echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
 			echo -e "         has an unsupported format.\n"
-			return 3
+			return 2
 			;;
 	esac
 
-	# If keys exists, but not within the correct category, return -1.
+	# If keys exists, but not within the correct category, return 1.
 	if [ ${CONF_GET_KEY_EXISTS_IN_CATEGORY} = false ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The key '${ORNG}${CONF_GET_KEY}${NRML}'"
 		echo -e "         in the config file '${ORNG}${CONF_GET_FILE}${NRML}'"
 		echo -e "         does not exist in the category '${ORNG}${CONF_GET_CATEGORY}${NRML}'.\n"
-		return 4
+		return 1
 	fi
 }
 
 # Function to set a key value pair within a logical category in the specified config file.
-# If the category of key do not already exist, they will be created.
-# Returns: 0 if no errors occurred, 1 for a unmet condition, 2 for unexpected errors.
+# If the category of a key does not already exist, it will be created.
+# Returns: 0 if no errors occurred, 1 for an unmet condition, 2 for unexpected errors.
 conf_set ()
 {
 	CONF_SET_FILE="${1}"
@@ -6509,9 +6509,9 @@ init_wifi_ap ()
 	do
 		ifconfig "wlan${WIFI_AP_WLAN_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		sysrc "ifconfig_wlan${WIFI_AP_WLAN_ID_TEMP}" > /dev/null 2>&1
+		conf_get /etc/rc.conf string ".network.ifconfig_wlan${WIFI_AP_WLAN_ID_TEMP}"
 		RESULT2=${?}
-		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -le 1 ]
 		then
 			ifconfig "wlan${WIFI_AP_WLAN_ID_TEMP}" | grep "parent interface: ${WIFI_AP_NET_IFACE}$" > /dev/null 2>&1
 			if [ ${?} -eq 0 ]
@@ -6801,9 +6801,9 @@ init_wifi_ap ()
 	do
 		ifconfig "bridge${WIFI_AP_BRIDGE_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		sysrc "ifconfig_bridge${WIFI_AP_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		conf_get /etc/rc.conf string ".network.ifconfig_bridge${WIFI_AP_BRIDGE_ID_TEMP}"
 		RESULT2=${?}
-		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -le 1 ]
 		then
 			WIFI_AP_BRIDGE_ID_TEMP=$(( ${WIFI_AP_BRIDGE_ID_TEMP} + 1 ))
 		else
@@ -6875,28 +6875,36 @@ init_wifi_ap ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Enable hostapd and set it to use the ports version in rc.conf.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostapd_enable=YES" > /dev/null 2>&1
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "hostapd_program=/usr/local/sbin/hostapd" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".ports-services.hostapd_enable" "YES"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".ports-services.hostapd_program" "/usr/local/sbin/hostapd"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set network bridge modules to load at boot.
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.if_bridge_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.bridgestp_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set persitent bridge interface configuration in rc.conf.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${WIFI_AP_BRIDGE_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_CLONED_INTERFACES="${WIFI_AP_BRIDGE_IFACE}"
+	else
+		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${WIFI_AP_BRIDGE_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^#ifconfig_WIFI_AP_BRIDGE_IFACE=\"\"/ifconfig_${WIFI_AP_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE} up\"/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.ifconfig_${WIFI_AP_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE} up"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set persitent WiFi interface configuration in rc.conf.
-	sed -i "" "s/^#wlans_WIFI_AP_NET_IFACE=\"\"/wlans_${WIFI_AP_NET_IFACE}=\"${WIFI_AP_WLAN_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.wlans_${WIFI_AP_NET_IFACE}" "${WIFI_AP_WLAN_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^#create_args_wlanWIFI_AP_WLAN_ID=\"\"/create_args_wlan${WIFI_AP_WLAN_ID}=\"wlanmode hostap country ${WIFI_AP_COUNTRY_CODE} txpower ${WIFI_AP_CHANNEL_TXPOWER}\"/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.create_args_wlan${WIFI_AP_WLAN_ID}" "wlanmode hostap country ${WIFI_AP_COUNTRY_CODE} txpower ${WIFI_AP_CHANNEL_TXPOWER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s|^#ifconfig_wlanWIFI_AP_WLAN_ID=\"\"|ifconfig_wlan${WIFI_AP_WLAN_ID}=\"mode ${WIFI_AP_MODE_CHANNEL}\"|" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.ifconfig_wlan${WIFI_AP_WLAN_ID}" "mode ${WIFI_AP_MODE_CHANNEL}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set persitent WiFi HOSTAP configuration in hostapd.conf.
