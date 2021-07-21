@@ -5068,7 +5068,7 @@ init_vnc_desktop ()
 	fi
 
 	# Enable DBUS in rc.conf.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "dbus_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".ports-services.dbus_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Copy local startup & shutdown scripts to repo, or create them if they don't exist.
