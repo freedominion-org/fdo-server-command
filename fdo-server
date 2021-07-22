@@ -7771,11 +7771,11 @@ init_sshfs_daemon ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set FUSE support to load on boot.
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf "fuse_load=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".filesystems.fuse_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set fdo_sshfsd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "fdo_sshfsd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".fdo-services.fdo_sshfsd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
