@@ -7343,43 +7343,43 @@ init_hotdesk ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set mountd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "mountd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.mountd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set nfs_server service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nfs_server_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nfs_server_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set nis_client service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nis_client_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nis_client_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set nis_server service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nis_server_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nis_server_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set nis_yppasswdd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nis_yppasswdd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nis_yppasswdd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpc_lockd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_lockd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpc_lockd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpc_statd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_statd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpc_statd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpcbind service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpcbind_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpcbind_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set NIS domain name in rc.conf.
-	sed -i "" "s/NIS_DOMAIN_NAME/${NIS_DOMAIN_NAME}/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nisdomainname" "${NIS_DOMAIN_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Set NIS host IP address in rc.conf.
-	sed -i "" "s/NIS_SERVER_IP/${NIS_SERVER_IP}/" configs/${HOST_NAME}/etc/rc.conf
+	# Set NIS client flags in rc.conf.
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nis_client_flags" "-s -m -S ${NIS_DOMAIN_NAME},${NIS_SERVER_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add subsystems compat level and init marker to host config file.
