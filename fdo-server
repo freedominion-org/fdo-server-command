@@ -8191,7 +8191,7 @@ init_jails ()
 	# Set some basic configuration for the jail subsystem.
 	${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .storage.jails_pool "${JAILS_POOL_NAME}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/jail_enable=\"NO\"/jail_enable=\"YES\"/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.jail_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s/^#template/template/" configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -8876,7 +8876,14 @@ create_jail ()
 	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		sed -i "" "s|jail_list=\"\(.*\)\"|jail_list=\"\1 ${JAIL_NAME}\"|" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".base-services.jail_list"
+		if [ "${CONF_GET_VALUE}" = "" ]
+		then
+			ALL_JAIL_LIST="${JAIL_NAME}"
+		else
+			ALL_JAIL_LIST="${CONF_GET_VALUE} ${JAIL_NAME}"
+		fi
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.jail_list" "${ALL_JAIL_LIST}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
 		echo -e "\n${ORNG}WARNING:${NRML} The jail name '${ORNG}${JAIL_NAME}${NRML}' already exists in jail_list (/etc/rc.conf)!\n"
