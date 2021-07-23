@@ -9644,6 +9644,7 @@ init_vms ()
 	fi
 
 	# Load required kernel modules.
+	# NOTE: as of 12.2-RELEASE; if_tap is a symbolic link to if_tuntap, which is the new name of the module.
 	kldstat -n if_tap > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -9694,9 +9695,9 @@ init_vms ()
 	do
 		ifconfig "bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		sysrc "ifconfig_bridge${VM_BRIDGE_ID_TEMP}" > /dev/null 2>&1
+		conf_get /etc/rc.conf string ".network.ifconfig_bridge${VM_BRIDGE_ID_TEMP}"
 		RESULT2=${?}
-		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
+		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -le 1 ]
 		then
 			VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
 		else
@@ -9809,7 +9810,7 @@ init_vms ()
 	if [ "${ANSWER}" = "yes" ]
 	then
 		echo -e ""
-		sysrc -f configs/${HOST_NAME}/etc/rc.conf fdo_vms_enable="YES" > /dev/null 2>&1
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".fdo-services.fdo_vms_enable" "YES"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -9819,19 +9820,26 @@ init_vms ()
 	echo -e ""
 
 	# Set persitent bridge interface configuration.
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_tap_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.if_tap_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf if_bridge_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.if_bridge_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf bridgestp_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.bridgestp_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/boot/loader.conf vmm_load="YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.vmm_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_BRIDGE_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_CLONED_INTERFACES="${VM_BRIDGE_IFACE}"
+	else
+		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${VM_BRIDGE_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^#ifconfig_VM_BRIDGE_IFACE=\"\"/ifconfig_${VM_BRIDGE_IFACE}=\"addm ${LAN_NET_IFACE}\"/" configs/${HOST_NAME}/etc/rc.conf
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sed -i "" "s/^#net.link.tap.up_on_open=.*/net.link.tap.up_on_open=1/" configs/${HOST_NAME}/etc/sysctl.conf
+	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".network.net.link.tap.up_on_open" "1"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Store subsystem configuration details.
