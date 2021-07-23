@@ -5496,7 +5496,7 @@ init_mpd_server ()
 	fi
 
 	# Load required kernel modules.
-	kldstat -n snd_driver > /dev/null 2>&1
+	kldstat -m snd_driver > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_MPD_SERVER_DRIVER_LOAD=true
@@ -6772,14 +6772,14 @@ init_wifi_ap ()
 	fi
 
 	# Load required kernel modules.
-	kldstat -n if_bridge > /dev/null 2>&1
+	kldstat -m if_bridge > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_WIFI_AP_BRIDGE_LOAD=true
 		kldload if_bridge 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	kldstat -n bridgestp > /dev/null 2>&1
+	kldstat -m bridgestp > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_WIFI_AP_BRIDGESTP_LOAD=true
@@ -7747,7 +7747,7 @@ init_sshfs_daemon ()
 	fi
 
 	# Load required kernel modules.
-	kldstat | grep fuse.ko > /dev/null 2>&1
+	kldstat -n fuse > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		kldload fuse 2> /dev/null
@@ -9645,28 +9645,28 @@ init_vms ()
 
 	# Load required kernel modules.
 	# NOTE: as of 12.2-RELEASE; if_tap is a symbolic link to if_tuntap, which is the new name of the module.
-	kldstat -n if_tap > /dev/null 2>&1
+	kldstat -m if_tap > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_VMS_TAP_LOAD=true
 		kldload if_tap 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	kldstat -n if_bridge > /dev/null 2>&1
+	kldstat -m if_bridge > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_VMS_BRIDGE_LOAD=true
 		kldload if_bridge 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	kldstat -n bridgestp > /dev/null 2>&1
+	kldstat -m bridgestp > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_VMS_BRIDGESTP_LOAD=true
 		kldload bridgestp 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	kldstat -n vmm > /dev/null 2>&1
+	kldstat -m vmm > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		INIT_VMS_VMM_LOAD=true
