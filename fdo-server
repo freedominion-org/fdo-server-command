@@ -10904,7 +10904,7 @@ create_vm_template ()
 	fi
 
 	# Get the network interface used for the bridge interface.
-	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | awk '{print $2}' | sort`
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | grep -v " netmask 0xffffffff" | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
@@ -11214,7 +11214,8 @@ create_vm_template ()
 	do
 		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		sysrc "cloned_interfaces" | egrep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		conf_get /etc/rc.conf string ".network.cloned_interfaces"
+		echo "${CONF_GET_VALUE}" | grep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
 		then
@@ -11340,9 +11341,23 @@ create_vm_template ()
 	CREATE_VM_TEMPLATE_REPO_MODIFIED=true
 
 	# Add VM network configuration to '/etc/rc.conf'.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_CLONED_INTERFACES="${VM_TAP_IFACE}"
+	else
+		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${VM_TAP_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_VM_BRIDGE_INTERFACES="addm ${VM_TAP_IFACE}"
+	else
+		ALL_VM_BRIDGE_INTERFACES="${CONF_GET_VALUE} addm ${VM_TAP_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}" "${ALL_VM_BRIDGE_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
@@ -11694,7 +11709,7 @@ create_vm_instance ()
 	fi
 
 	# Get the network interface used for the bridge interface.
-	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | awk '{print $2}' | sort`
+	VM_BRIDGE_IFACE_IP_ADDRESSES=`ifconfig ${VM_BRIDGE_NET_IFACE} | grep "inet .* netmask " | grep -v " netmask 0xffffffff" | awk '{print $2}' | sort`
 
 	# Exit if the bridge network interface has no IP addresses.
 	if [ "${VM_BRIDGE_IFACE_IP_ADDRESSES}" = "" ]
@@ -11814,7 +11829,8 @@ create_vm_instance ()
 	do
 		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		sysrc "cloned_interfaces" | egrep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
+		conf_get /etc/rc.conf string ".network.cloned_interfaces"
+		echo "${CONF_GET_VALUE}" | grep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
 		then
@@ -11945,15 +11961,29 @@ create_vm_instance ()
 	CREATE_VM_INSTANCE_REPO_MODIFIED=true
 
 	# Add VM network configuration to '/etc/rc.conf'.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf cloned_interfaces+="${VM_TAP_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_CLONED_INTERFACES="${VM_TAP_IFACE}"
+	else
+		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${VM_TAP_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf ifconfig_${VM_BRIDGE_IFACE}+="addm ${VM_TAP_IFACE}" > /dev/null 2>&1
+	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}"
+	if [ "${CONF_GET_VALUE}" = "" ]
+	then
+		ALL_VM_BRIDGE_INTERFACES="addm ${VM_TAP_IFACE}"
+	else
+		ALL_VM_BRIDGE_INTERFACES="${CONF_GET_VALUE} addm ${VM_TAP_IFACE}"
+	fi
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}" "${ALL_VM_BRIDGE_INTERFACES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Get template VM configuration from 'vms.conf'.
-	VM_NIC_DRIVER=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.nic_driver`
+	VM_NIC_DRIVER=`${UCL_CMD} get -q -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.nic_driver`
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	VM_BOOT_LOADER=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.boot_loader`
+	VM_BOOT_LOADER=`${UCL_CMD} get -q -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.boot_loader`
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add VM configuration to 'vms.conf'.
