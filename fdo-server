@@ -12405,23 +12405,23 @@ init_partimag ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set mountd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "mountd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.mountd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set nfs_server service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "nfs_server_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.nfs_server_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpc_lockd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_lockd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpc_lockd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpc_statd service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpc_statd_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpc_statd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set rpcbind service to start on boot.
-	sysrc -f configs/${HOST_NAME}/etc/rc.conf "rpcbind_enable=YES" > /dev/null 2>&1
+	conf_set configs/${HOST_NAME}/etc/rc.conf string ".base-services.rpcbind_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
