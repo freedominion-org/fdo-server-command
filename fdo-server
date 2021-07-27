@@ -760,8 +760,10 @@ get_class_c_subnet ()
 get_enabled_nat_services ()
 {
 
-	IS_PF_NAT_ENABLED=`sysrc pf_enable | awk '{print $2}'`
-	IS_PPP_NAT_ENABLED=`sysrc ppp_nat | awk '{print $2}'`
+	conf_get /etc/rc.conf string ".firewall-nat-ppp.pf_enable"
+	IS_PF_NAT_ENABLED="${CONF_GET_VALUE}"
+	conf_get /etc/rc.conf string ".firewall-nat-ppp.ppp_nat"
+	IS_PPP_NAT_ENABLED="${CONF_GET_VALUE}"
 
 }
 
