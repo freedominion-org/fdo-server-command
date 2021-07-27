@@ -3523,7 +3523,8 @@ connect_internet ()
 
 	# Backup rc.conf and disable WAN interface.
 	backup_file_yet /etc/rc.conf connect-internet
-	sysrc ifconfig_${WAN_NET_IFACE}="" > /dev/null 2>&1
+	conf_set /etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" ""
+	conf_set /etc/rc.conf string ".network.defaultrouter" ""
 
 	# Bring up WAN interface.
 	echo -e "\n${YELL}Setup WAN interface and routing...${NRML}\n"
