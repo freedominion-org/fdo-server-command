@@ -3897,12 +3897,12 @@ init_host ()
 			fi
 			;;
 		auxiliary_local)
-			WAN_NET_IFACE="NULL"
+			WAN_NET_IFACE="null"
 			;;
 	esac
 
 	# Configure WAN interface (if required).
-	if [ "${WAN_NET_IFACE}" != "NULL" ]
+	if [ "${WAN_NET_IFACE}" != "null" ]
 	then
 		if [ ${NUM_NET_IFACES} -lt 2 ]
 		then
@@ -4225,7 +4225,7 @@ init_host ()
 	LAN_SUBNET_C="${SERVERS_LAN_SUBNET_C}"
 	LAN_IFACE_NETMASK="${FDO_LAN_SUBNET_MASK}"
 
-	if [ "${WAN_NET_IFACE}" != "NULL" ]
+	if [ "${WAN_NET_IFACE}" != "null" ]
 	then
 		# ASSUME: this host is a remote or primary_local type server.
 		LAN_IFACE_IP="${FDO_LAN_GATEWAY_IP}"
@@ -4301,7 +4301,7 @@ init_host ()
 		${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t boolean .network.is_gateway_router false
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	# END: if WAN_NET_IFACE != NULL.
+	# END: if WAN_NET_IFACE != null.
 
 	# Update hostname.
 	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.hostname" "${HOST_NAME}.${DOMAIN_NAME}"
@@ -4326,7 +4326,7 @@ init_host ()
 
 
 	# Configure firewall / NAT router.
-	if [ "${WAN_NET_IFACE}" != "NULL" ] && [ "${USES_PPP}" = "no" ]
+	if [ "${WAN_NET_IFACE}" != "null" ] && [ "${USES_PPP}" = "no" ]
 	then
 		sed -i "" "s|WAN_NET_IFACE|${WAN_NET_IFACE}|g" configs/${HOST_NAME}/etc/pf.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
