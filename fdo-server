@@ -6808,8 +6808,16 @@ init_wifi_ap ()
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -le 1 ]
 		then
-			WIFI_AP_BRIDGE_ID_TEMP=$(( ${WIFI_AP_BRIDGE_ID_TEMP} + 1 ))
+			echo "${CONF_GET_VALUE}" | grep -w "addm ${LAN_NET_IFACE}" > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				WIFI_AP_CREATE_LAN_IFACE_BRIDGE=false
+				WIFI_AP_BRIDGE_ID=${WIFI_AP_BRIDGE_ID_TEMP}
+			else
+				WIFI_AP_BRIDGE_ID_TEMP=$(( ${WIFI_AP_BRIDGE_ID_TEMP} + 1 ))
+			fi
 		else
+			WIFI_AP_CREATE_LAN_IFACE_BRIDGE=true
 			WIFI_AP_BRIDGE_ID=${WIFI_AP_BRIDGE_ID_TEMP}
 		fi
 	done
@@ -6817,17 +6825,24 @@ init_wifi_ap ()
 	WIFI_AP_BRIDGE_IFACE="bridge${WIFI_AP_BRIDGE_ID}"
 
 	# Setup network bridge interface.
-	INIT_WIFI_AP_BRIDGE_CREATE=true
-	ifconfig "${WIFI_AP_BRIDGE_IFACE}" create > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	INIT_WIFI_AP_BRIDGE_ADDM=true
-	ifconfig "${WIFI_AP_BRIDGE_IFACE}" addm "${LAN_NET_IFACE}" > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ ${WIFI_AP_CREATE_LAN_IFACE_BRIDGE} = true ]
+	then
+		INIT_WIFI_AP_BRIDGE_CREATE=true
+		ifconfig "${WIFI_AP_BRIDGE_IFACE}" create > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		INIT_WIFI_AP_BRIDGE_ADDM=true
+		ifconfig "${WIFI_AP_BRIDGE_IFACE}" addm "${LAN_NET_IFACE}" > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 	ifconfig "${WIFI_AP_BRIDGE_IFACE}" addm "${WIFI_AP_WLAN_IFACE}" > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	INIT_WIFI_AP_BRIDGE_UP=true
-	ifconfig "${WIFI_AP_BRIDGE_IFACE}" up > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	WIFI_AP_TEST_BRIDGE_UP=`ifconfig -u "${WIFI_AP_BRIDGE_IFACE}"`
+	if [ "${WIFI_AP_TEST_BRIDGE_UP}" = "" ]
+	then
+		INIT_WIFI_AP_BRIDGE_UP=true
+		ifconfig "${WIFI_AP_BRIDGE_IFACE}" up > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
@@ -6861,22 +6876,6 @@ init_wifi_ap ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
-	# Copy local startup & shutdown scripts to repo, or create them if they don't exist.
-	if [ -e /etc/rc.local ]
-	then
-		backup_file /etc/rc.local init-wifi-ap
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		cp /etc/rc.local configs/${HOST_NAME}/etc/rc.local
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		touch configs/${HOST_NAME}/etc/rc.local
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
-
-	# Add bridge creation command to rc.local, to ensure the bridge gets created on boot.
-	echo -e "\n# Force create bridge on boot.\nifconfig ${WIFI_AP_BRIDGE_IFACE} create" >>  configs/${HOST_NAME}/etc/rc.local
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 	# Enable hostapd and set it to use the ports version in rc.conf.
 	conf_set configs/${HOST_NAME}/etc/rc.conf string ".ports-services.hostapd_enable" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -6890,17 +6889,25 @@ init_wifi_ap ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set persitent bridge interface configuration in rc.conf.
-	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
-	if [ "${CONF_GET_VALUE}" = "" ]
+	if [ ${WIFI_AP_CREATE_LAN_IFACE_BRIDGE} = true ]
 	then
-		ALL_CLONED_INTERFACES="${WIFI_AP_BRIDGE_IFACE}"
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+		if [ "${CONF_GET_VALUE}" = "" ]
+		then
+			ALL_CLONED_INTERFACES="${WIFI_AP_BRIDGE_IFACE}"
+		else
+			ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${WIFI_AP_BRIDGE_IFACE}"
+		fi
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WIFI_AP_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	else
-		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${WIFI_AP_BRIDGE_IFACE}"
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WIFI_AP_BRIDGE_IFACE}"
+		ALL_LAN_IFACE_BRIDGE_INTERFACES="${CONF_GET_VALUE} addm ${WIFI_AP_WLAN_IFACE}"
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WIFI_AP_BRIDGE_IFACE}" "${ALL_LAN_IFACE_BRIDGE_INTERFACES}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.ifconfig_${WIFI_AP_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE} addm ${WIFI_AP_WLAN_IFACE} up"
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set persitent WiFi interface configuration in rc.conf.
 	conf_set configs/${HOST_NAME}/etc/rc.conf string ".wifi.wlans_${WIFI_AP_NET_IFACE}" "${WIFI_AP_WLAN_IFACE}"
@@ -9702,8 +9709,16 @@ init_vms ()
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -le 1 ]
 		then
-			VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
+			echo "${CONF_GET_VALUE}" | grep -w "addm ${LAN_NET_IFACE}" > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				VM_CREATE_LAN_IFACE_BRIDGE=false
+				VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
+			else
+				VM_BRIDGE_ID_TEMP=$(( ${VM_BRIDGE_ID_TEMP} + 1 ))
+			fi
 		else
+			VM_CREATE_LAN_IFACE_BRIDGE=true
 			VM_BRIDGE_ID=${VM_BRIDGE_ID_TEMP}
 		fi
 	done
@@ -9711,15 +9726,22 @@ init_vms ()
 	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
 
 	# Setup initial bridge interface.
-	INIT_VMS_BRIDGE_CREATE=true
-	ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	INIT_VMS_BRIDGE_ADDM=true
-	ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	INIT_VMS_BRIDGE_UP=true
-	ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ ${VM_CREATE_LAN_IFACE_BRIDGE} = true ]
+	then
+		INIT_VMS_BRIDGE_CREATE=true
+		ifconfig ${VM_BRIDGE_IFACE} create > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		INIT_VMS_BRIDGE_ADDM=true
+		ifconfig ${VM_BRIDGE_IFACE} addm ${LAN_NET_IFACE} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+	VM_TEST_BRIDGE_UP=`ifconfig -u "${VM_BRIDGE_IFACE}"`
+	if [ "${VM_TEST_BRIDGE_UP}" = "" ]
+	then
+		INIT_VMS_BRIDGE_UP=true
+		ifconfig ${VM_BRIDGE_IFACE} up > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
@@ -9831,17 +9853,22 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	conf_set configs/${HOST_NAME}/boot/loader.conf string ".network.vmm_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
-	if [ "${CONF_GET_VALUE}" = "" ]
+
+	# Set persitent bridge interface configuration in rc.conf.
+	if [ ${VM_CREATE_LAN_IFACE_BRIDGE} = true ]
 	then
-		ALL_CLONED_INTERFACES="${VM_BRIDGE_IFACE}"
-	else
-		ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${VM_BRIDGE_IFACE}"
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
+		if [ "${CONF_GET_VALUE}" = "" ]
+		then
+			ALL_CLONED_INTERFACES="${VM_BRIDGE_IFACE}"
+		else
+			ALL_CLONED_INTERFACES="${CONF_GET_VALUE} ${VM_BRIDGE_IFACE}"
+		fi
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE}"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces" "${ALL_CLONED_INTERFACES}"
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${VM_BRIDGE_IFACE}" "addm ${LAN_NET_IFACE}"
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	conf_set configs/${HOST_NAME}/etc/sysctl.conf number ".network.net.link.tap.up_on_open" "1"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
