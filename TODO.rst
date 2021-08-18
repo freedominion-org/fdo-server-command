@@ -5,7 +5,6 @@ fdo-server TODO list:
 TODO
 ----
 
-- Consider hotdesk subsystem storing users in UCL config file, possibly along with their hashed passwords.
 - ``create-vm-template``: add support for bhyve-grub and bhyveload.
 
 DONE
@@ -91,3 +90,4 @@ DONE
 - Convert all 'continue' prompts to 'proceed'.
 - Make all dialog prompts use a DIALOG_PROMPT variable.
 - Make all uses of ifconfig parsing more robust (e.g. grep -v " netmask 0xffffffff" and use spaces in greps).
+- Make hotdesk subsystem store users in UCL config file, possibly along with their hashed passwords.
