@@ -4546,6 +4546,8 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/etc/csh.login
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	sed -i "" "s|HOST_TIMEZONE|${TZ}|" configs/${HOST_NAME}/usr/local/etc/bashrc
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set correct time/date from ntp.org.
 	echo -e "\n${YELL}Setting correct time and date from ntp.org...${NRML}\n"
@@ -4873,7 +4875,7 @@ patch_host ()
 	fi
 
 	# If a remote repo is in use, push changes to the remote.
-	if [ "${REPO_URI}" != "local" ]
+	if [ "${REPO_URI}" != "local" ] && [ "${IS_INTERACTIVE}" = "yes" ]
 	then
 		echo -e "\n${YELL}Pushing changes to the '${NRML}${REPO_NAME}${YELL}' remote repo...${NRML}\n"
 		git_push origin master
@@ -8038,6 +8040,20 @@ init_jails ()
 		return 1
 	fi
 
+	# Patch the host, so the host and template jail will be up-to-date.
+	echo -e "\n${YELL}Patching the host first...${NRML}\n"
+	patch_host --non-interactive
+	if [ ${?} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
+		undo_init_jails
+		return 2
+	fi
+
+	# Update git commit reference so we can roll back
+	# post-patched changes later.
+	COMMIT_BEFORE_INIT_JAILS=`git log --format=format:%H -1`
+
 	# Get pool name to use for base of jails.
 	JAILS_POOL_NAME=""
 	POOLS_AVAILABLE=`zpool list -H -o name`
@@ -8104,14 +8120,6 @@ init_jails ()
 		return 2
 	fi
 
-	patch_host --non-interactive
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Updating of host to latest patch level failed.\n"
-		undo_init_jails
-		return 2
-	fi
-
 	# Get FreeBSD version strings.
 	get_freebsd_version
 
@@ -8153,14 +8161,12 @@ init_jails ()
 		zfs mount ${JAILS_POOL_NAME}/jails
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	zfs mount | egrep "^${JAILS_POOL_NAME}/jails/template "
 	if [ ${?} -ne 0 ]
 	then
 		zfs mount ${JAILS_POOL_NAME}/jails/template
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install base system tarballs into the template jail directory.
 	echo -e "\n${YELL}Extracting FreeBSD base system tarballs into template jail...${NRML}\n"
