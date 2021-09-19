@@ -5,7 +5,9 @@ fdo-server BUGS list:
 BUGS
 ----
 
-*Currently there are no known bugs.*
+*Currently there are known bugs.*
+
+- ``fdo-dns_cache-add-hostname``: hostname validation test won't allow simple hostnames (with no tld), e.g. "blah".
 
 
 FIXED
