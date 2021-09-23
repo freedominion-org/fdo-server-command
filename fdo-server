@@ -52,10 +52,12 @@ LOGIN_SHELL=${LOGIN_SHELL:-"/usr/local/bin/bash"}
 FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
-ESSENTIAL_PACKAGES="apcupsd axel bash bash-completion bsdadminscripts2 cpdup curl dmidecode git p7zip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} py38-speedtest-cli rsync stress tmux tree uclcmd unrar unzip zfs-stats-lite zip nmap vim-console"
-PKG_REPO_CONF_FILE="FDo-pkg.conf"
-PKG_REPO_CERT_FILE="FDo-pkg.cert"
+ESSENTIAL_PACKAGES="sysutils/apcupsd ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode devel/git security/nmap archivers/p7zip net/py-speedtest-cli net/rsync"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils/tree devel/uclcmd archivers/unrar archivers/unzip"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} editors/vim sysutils/zfs-stats-lite archivers/zip"
+PKG_REPO_CONF_FILE="fdo-pkg.conf"
+PKG_REPO_CERT_FILE="fdo-pkg.cert"
 
 LATEST_HOST_SYS_COMPAT=1
 LATEST_HOTDESK_SUBSYS_COMPAT=1
@@ -68,7 +70,9 @@ LATEST_VMS_SUBSYS_COMPAT=1
 LATEST_PARTIMAG_SUBSYS_COMPAT=1
 
 
-ESSENTIAL_JAIL_PACKAGES="axel bash bash-completion bsdadminscripts2 cpdup curl portmaster rsync tree unrar unzip zip vim-console"
+ESSENTIAL_JAIL_PACKAGES="ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
+ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} ports-mgmt/portmaster net/rsync sysutils/tree devel/uclcmd archivers/unrar"
+ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} archivers/unzip archivers/zip editors/vim"
 JAILS_CONF_PATH=${JAILS_CONF_PATH:-"${FDO_CONFIG_ROOT}/jails.conf"}
 
 
@@ -82,11 +86,11 @@ PARTIMAG_ROOT_MP=${PARTIMAG_ROOT_MP:-"/usr/home/partimag"}
 PARTIMAG_CONF_PATH=${PARTIMAG_CONF_PATH:-"${FDO_CONFIG_ROOT}/partimag.conf"}
 
 
-SSHFS_DAEMON_PACKAGES="fusefs-sshfs"
+SSHFS_DAEMON_PACKAGES="sysutils/fusefs-sshfs"
 SSHFS_DAEMON_CONF_PATH=${SSHFS_DAEMON_CONF_PATH:-"${FDO_CONFIG_ROOT}/sshfs-daemon.conf"}
 
 
-VM_SUBSYSTEM_PACKAGES="bhyve-firmware"
+VM_SUBSYSTEM_PACKAGES="sysutils/bhyve-firmware"
 VMS_CONF_PATH=${VMS_CONF_PATH:-"${FDO_CONFIG_ROOT}/vms.conf"}
 VMS_ROOT_FS="fdo-vms"
 VMS_ROOT_PATH="/${VMS_ROOT_FS}"
@@ -113,14 +117,14 @@ FDO_VMS_STOP_PATH="/usr/local/sbin/fdo-vms-stop"
 ISO_FILE_PATTERN="ISO 9660|DOS/MBR boot sector|UDF filesystem data"
 
 
-VNC_DESKTOP_PACKAGES="xorg icewm clearlooks-themes roxterm xfe tigervnc-server firefox"
+VNC_DESKTOP_PACKAGES="x11/xorg x11-wm/icewm x11-themes/clearlooks-themes x11/roxterm x11-fm/xfe net/tigervnc-server www/firefox"
 VNC_SCREEN_SIZES="800x600 1024x768 1280x768 1280x800 1280x1024 1366x768 1440x900 1600x900 1600x1200 1680x1050 1920x1080 1920x1200"
 VNC_DESKTOP_CONF_PATH=${VNC_DESKTOP_CONF_PATH:-"${FDO_CONFIG_ROOT}/vnc-desktop.conf"}
 
-WIFI_AP_PACKAGES="hostapd"
+WIFI_AP_PACKAGES="net/hostapd"
 WIFI_AP_CONF_PATH=${WIFI_AP_CONF_PATH:-"${FDO_CONFIG_ROOT}/wifi-ap.conf"}
 
-MPD_SERVER_PACKAGES="musicpd"
+MPD_SERVER_PACKAGES="audio/musicpd"
 MPD_SERVER_CONF_PATH=${MPD_SERVER_CONF_PATH:-"${FDO_CONFIG_ROOT}/mpd-server.conf"}
 MPD_SERVER_MPD_CONF_PATH="/usr/local/etc/musicpd.conf"
 MPD_SERVER_SAMPLERATE_OPTIONS="32000 32kHz 40000 40kHz 441000 44.1kHz(CD) 48000 48kHz 88200 88.2kHz 96000 96kHz"
@@ -9179,7 +9183,7 @@ create_jail_from_recipe ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set the correct jail ABI in the jails' pkg repo config file.
-	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/FDo-pkg.conf
+	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/${PKG_REPO_CONF_FILE}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install initial config templates to the new jail.
