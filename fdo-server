@@ -9199,6 +9199,21 @@ create_jail_from_recipe ()
 
 	question_yes "\nShall we proceed to cook the recipe?"
 
+	echo -e "\n\n${YELL}Updating currently installed packages for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+
+	# Update currently installed packages.
+	ASSUME_ALWAYS_YES=yes pkg -j ${JAIL_NAME} update -f
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	ASSUME_ALWAYS_YES=yes pkg -j ${JAIL_NAME} upgrade -fy
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst upgrading the jail packages!\n"
+		revert_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
 	echo -e "\n\n${YELL}Cooking '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
 
 	# Cook the sourced recipe.
