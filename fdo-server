@@ -9413,11 +9413,11 @@ create_jail_from_recipe ()
 		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
 		then
 			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
-			echo -e "         '${ORNG}/usr/local/etc/ssl/certs${NRML}'. They can be copied or symlinked to the     "
-			echo -e "         correct file name either manually or by using the '${LBLU}fdo-cert-manager${NRML}'   "
-			echo -e "         utility. To see a list of the required certificate files, use the      "
-			echo -e "         following command:                                                     "
-			echo -e "         ${LBLU}cat /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list${NRML}\n"
+			echo -e "        '${ORNG}/usr/local/etc/ssl/certs${NRML}'. They can be copied or symlinked to the     "
+			echo -e "        correct file name either manually or by using the '${LBLU}fdo-cert-manager${NRML}'   "
+			echo -e "        utility. To see a list of the required certificate files, use the      "
+			echo -e "        following command:                                                     "
+			echo -e "        ${LBLU}cat /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list${NRML}\n"
 		fi
 
 		echo -e "\n${LGRN}Congratulations! We have now finished creating the jail '${NRML}${JAIL_NAME}${LGRN}'.${NRML}\n"
