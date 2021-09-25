@@ -9344,6 +9344,16 @@ create_jail_from_recipe ()
 		then
 			# ASSUME: the jail restart and jail services restart are not errors critical to jail recipe creation.
 			echo -e "\n${ORNG}WARNING:${NRML} Something went wrong whilst restarting the jail or it's services!\n"
+
+			question_yes_no "Would you like to continue despite the warning above?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				# Reset error counter.
+				ERROR_COUNT=0
+			else
+				revert_create_jail ${JAIL_NAME}
+				return 3
+			fi
 		fi
 
 	elif [ "${RECIPE_SUCCESS}" = "no" ]
