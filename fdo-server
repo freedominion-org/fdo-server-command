@@ -58,6 +58,7 @@ ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} editors/vim sysutils/zfs-stats-lite archivers/zip"
 PKG_REPO_CONF_FILE="fdo-pkg.conf"
 PKG_REPO_CERT_FILE="fdo-pkg.cert"
+FDO_CERTS_DIR=${FDO_CERTS_DIR:-"/usr/local/etc/ssl/fdo-certs"}
 
 LATEST_HOST_SYS_COMPAT=1
 LATEST_HOTDESK_SUBSYS_COMPAT=1
@@ -4639,7 +4640,7 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create ssl certs directory.
-	mkdir -p /usr/local/etc/ssl/certs
+	mkdir -p ${FDO_CERTS_DIR}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# If not using DHCP, symlink resolv.conf.static to resolv.conf.
@@ -7911,7 +7912,7 @@ undo_init_jails ()
 		JAIL_ID=`cat ${JAIL_ID_FILE}`
 		jail -r ${JAIL_ID} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
+		umount -f /jls/${JAIL_TO_REVERT}${FDO_CERTS_DIR} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8255,7 +8256,7 @@ init_jails ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create nullfs mountpoint for hosts ssl certs.
-	mkdir -p /jls/template/usr/local/etc/ssl/certs
+	mkdir -p /jls/template${FDO_CERTS_DIR}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Copy certain host specific config files to the template jail.
@@ -8612,7 +8613,7 @@ revert_create_jail ()
 		JAIL_ID=`cat ${JAIL_ID_FILE}`
 		jail -r ${JAIL_ID} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		umount -f /jls/${JAIL_TO_REVERT}/usr/local/etc/ssl/certs > /dev/null 2>&1
+		umount -f /jls/${JAIL_TO_REVERT}${FDO_CERTS_DIR} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -9413,7 +9414,7 @@ create_jail_from_recipe ()
 		if [ -f /jls/${JAIL_NAME}/usr/local/etc/ssl/jail-certs.list ]
 		then
 			echo -e "\n${ORNG}NOTICE:${NRML} This jail requires some SSL certificates to be placed in the directory  "
-			echo -e "        '${ORNG}/usr/local/etc/ssl/certs${NRML}'. They can be copied or symlinked to the     "
+			echo -e "        '${ORNG}${FDO_CERTS_DIR}${NRML}'. They can be copied or symlinked to the     "
 			echo -e "        correct file name either manually or by using the '${LBLU}fdo-cert-manager${NRML}'   "
 			echo -e "        utility. To see a list of the required certificate files, use the      "
 			echo -e "        following command:                                                     "
