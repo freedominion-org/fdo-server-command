@@ -59,6 +59,9 @@ ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} editors/vim sysutils/zfs-stats-lite ar
 PKG_REPO_CONF_FILE="fdo-pkg.conf"
 PKG_REPO_CERT_FILE="fdo-pkg.cert"
 FDO_CERTS_DIR=${FDO_CERTS_DIR:-"/usr/local/etc/ssl/fdo-certs"}
+PF_CONF_PATH=${PF_CONF_PATH:-"/etc/pf.conf"}
+PPP_CONF_PATH=${PPP_CONF_PATH:-"/etc/ppp/ppp.conf"}
+NAMED_CONF_PATH="/usr/local/etc/namedb/named.conf"
 
 LATEST_HOST_SYS_COMPAT=1
 LATEST_HOTDESK_SUBSYS_COMPAT=1
@@ -252,8 +255,8 @@ usage ()
 	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-jail jail_name jail_hostname${NRML}"
 	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-jail foo foobar.example.net${NRML}"
 	echo -e ""
-	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-jail-from-recipe jail_name jail_hostname recipe_name${NRML}"
-	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-jail-from-recipe dns_cache dns-cache dns_cache${NRML}"
+	echo -e "${YELL}Usage:   ${LGRN}${SCRIPT_NAME} create-recipe-jail jail_name jail_hostname recipe_name${NRML}"
+	echo -e "${NRML}Example: ${LBLU}${SCRIPT_NAME} create-recipe-jail dns_cache dns-cache dns_cache${NRML}"
 	echo -e ""
 	echo -e ""
 	echo -e "${LCYN}    ---- VM MANAGEMENT ----${NRML}"
@@ -1802,6 +1805,12 @@ undo_backup_file_tree ()
 	return ${ERROR_COUNT}
 }
 
+# Recursively sync a source file tree to a destination directory.
+# The syntax for source and destination paths is the same as rsync,
+# except that destination directory specified must already exist,
+# and will not be created.
+# Permissions and ownership are preserved by default.
+# Ownership can be overriden by arguments 3 (user) and 4 (group).
 install_file_tree ()
 {
 
@@ -1811,10 +1820,83 @@ install_file_tree ()
 	CHOWN_GROUP="${4}"
 	ERROR_COUNT=0
 
-	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort`
+	SOURCE_FILES_ROOT_NO_TRAILING_SLASH=`echo "${SOURCE_FILES_ROOT}" | sed "s|/$||"`
+
+	# If no trailing slash on SOURCE_FILES_ROOT then:
+	# if leaf node is a dir, create the leaf dir inside the DEST_FILES_ROOT,
+	# if leaf node is a file, create the leaf file inside the DEST_FILES_ROOT.
+	# Then set SRC permissions and either SRC or specified ownership to the DEST.
+	if [ "${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}" = "${SOURCE_FILES_ROOT}" ]
+	then
+		SOURCE_FILES_ROOT_LEAF=`basename "${SOURCE_FILES_ROOT}"`
+		DEST_FILE_PATH="${DEST_FILES_ROOT}${SOURCE_FILES_ROOT_LEAF}"
+		if [ -d "${SOURCE_FILES_ROOT}" ]
+		then
+			mkdir "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+			DEST_FILES_ROOT="${DEST_FILE_PATH}/"
+		else
+			diff -q "${SOURCE_FILES_ROOT}" "${DEST_FILE_PATH}" > /dev/null 2>&1
+			if [ ${?} -ne 0 ]
+			then
+				cp "${SOURCE_FILES_ROOT}" "${DEST_FILE_PATH}"
+				if [ ${?} -ne 0 ]
+				then
+					ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+				fi
+			fi
+		fi
+
+		SOURCE_FILE_UID=`stat -f "%u" "${SOURCE_FILES_ROOT}"`
+		SOURCE_FILE_GID=`stat -f "%g" "${SOURCE_FILES_ROOT}"`
+		SOURCE_FILE_PERMS=`stat -f "%OLp" "${SOURCE_FILES_ROOT}"`
+
+		chmod ${SOURCE_FILE_PERMS} "${DEST_FILE_PATH}"
+		if [ ${?} -ne 0 ]
+		then
+			ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+		fi
+
+		if [ "${CHOWN_USER}" = "" ]
+		then
+			chown ${SOURCE_FILE_UID} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		else
+			chown ${CHOWN_USER} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		fi
+
+		if [ "${CHOWN_GROUP}" = "" ]
+		then
+			chown ${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		else
+			chown :${CHOWN_GROUP} "${DEST_FILE_PATH}"
+			if [ ${?} -ne 0 ]
+			then
+				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
+			fi
+		fi
+	fi
+
+	# Recursively sync the SRC tree from below the SOURCE_FILES_ROOT dir into the DEST_FILES_ROOT dir.
+	# Then set SRC permissions and either SRC or specified ownership to the DEST.
+	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}" -print | tail -n +2 | sort`
 	do
 
-		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT}/||"`
+		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}/||"`
 		DEST_FILE_PATH="${DEST_FILES_ROOT}${RELATIVE_DEST_FILE_PATH}"
 		SOURCE_FILE_UID=`stat -f "%u" "${SOURCE_FILE_PATH}"`
 		SOURCE_FILE_GID=`stat -f "%g" "${SOURCE_FILE_PATH}"`
@@ -1891,14 +1973,16 @@ undo_install_file_tree ()
 	CHANGE_AGENT="${3}"
 	ERROR_COUNT=0
 
+	SOURCE_FILES_ROOT_NO_TRAILING_SLASH=`echo "${SOURCE_FILES_ROOT}" | sed "s|/$||"`
+
 	# Find all files that exists in source root path, and then:
 	# (i) if a backup exists that differs from the destination, restore it,
 	# (ii) if a backup exists that is the same as the destination, remove the backup,
 	# (iii) if a destination file exists without a backup, remove the destination.
-	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort`
+	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}" -print | tail -n +2 | sort`
 	do
 
-		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT}/||"`
+		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}/||"`
 		DEST_FILE_PATH="${DEST_FILES_ROOT}${RELATIVE_DEST_FILE_PATH}"
 
 		if [ -f "${DEST_FILE_PATH}" ] && [ -f "${DEST_FILE_PATH}.backup.${CHANGE_AGENT}" ]
@@ -1926,7 +2010,7 @@ undo_install_file_tree ()
 	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT}" -print | tail -n +2 | sort -r`
 	do
 
-		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT}/||"`
+		RELATIVE_DEST_FILE_PATH=`echo ${SOURCE_FILE_PATH} | sed "s|${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}/||"`
 		DEST_FILE_PATH="${DEST_FILES_ROOT}${RELATIVE_DEST_FILE_PATH}"
 
 		if [ -d "${DEST_FILE_PATH}" ] && [ "`ls -A ${DEST_FILE_PATH} 2> /dev/null`" = "" ]
@@ -1936,6 +2020,20 @@ undo_install_file_tree ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	done
+
+	# If no trailing slash on SOURCE_FILES_ROOT then:
+	# ASSUME that the SOURCE leaf node was created inside the DEST dir, and so safely remove it.
+	if [ "${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}" = "${SOURCE_FILES_ROOT}" ]
+	then
+		SOURCE_FILES_ROOT_LEAF=`basename "${SOURCE_FILES_ROOT}"`
+		DEST_FILE_PATH="${DEST_FILES_ROOT}${SOURCE_FILES_ROOT_LEAF}"
+		if [ -d "${DEST_FILE_PATH}" ] && [ "`ls -A ${DEST_FILE_PATH} 2> /dev/null`" = "" ]
+		then
+			# ASSUME that if the destination is an empty directory, it's been installed from source, so remove it.
+			rmdir "${DEST_FILE_PATH}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	fi
 
 	return ${ERROR_COUNT}
 }
@@ -2429,7 +2527,7 @@ install_scripts ()
 
 	INSTALL_PATH=${1}
 
-	install_file_tree scripts ${INSTALL_PATH}
+	install_file_tree scripts/ ${INSTALL_PATH}
 
 	if [ ${?} -ne 0 ]
 	then
@@ -2649,7 +2747,7 @@ install_configs_everywhere ()
 	question_yes_no "Are you sure you want to install all host configs from the repo to this host?"
 	if [ "${ANSWER}" = "yes" ]
 	then
-		install_configs configs/${HOST_NAME} /
+		install_configs configs/${HOST_NAME}/ /
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the this host!\n"
@@ -2663,7 +2761,7 @@ install_configs_everywhere ()
 		question_yes_no "Are you sure you want to install all jail configs from the repo to the\n'${NRML}${JAIL_NAME}${LCYN}' jail?"
 		if [ "${ANSWER}" = "yes" ]
 		then
-			install_configs configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+			install_configs configs/${JAIL_NAME}@${HOST_NAME}/ /jls/${JAIL_NAME}/
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Something went wrong installing repo configs to the '${ORNG}${JAIL_NAME}${NRML}' jail!\n"
@@ -3242,6 +3340,315 @@ merge_local_repo_to_remote ()
 	echo -e "\n\n${LGRN}Congratulations! Successfully merged this hosts local repo to the remote repo.${NRML}\n"
 
 	return 0
+}
+
+# Internally called function to add a pf port forward rule to a hosts' repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the pf service.
+pf_add_port_forward_rule ()
+{
+	PF_ADD_RULE_RULE_NAME="${1}"
+	PF_ADD_RULE_LOCAL_IP="${2}"
+	PF_ADD_RULE_TCP_PORTS="${3}"
+	PF_ADD_RULE_UDP_PORTS="${4}"
+	PF_REPO_CONF_PATH="configs/${HOST_NAME}${PF_CONF_PATH}"
+	PF_ADD_RULE_ERROR_COUNT=0
+
+	# Prepare macro and rule definitions as variables.
+	PF_ADD_RULE_IP_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_ip = \"${PF_ADD_RULE_LOCAL_IP}\""
+	if [ "${TCP_PORTS}" = "none" ]
+	then
+		PF_ADD_RULE_TCP_PORTS_MACRO_DEF=""
+	else
+		PF_ADD_RULE_TCP_PORTS_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_tcp_ports = \"{ ${PF_ADD_RULE_TCP_PORTS} }\""
+		PF_ADD_RULE_TCP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto tcp from any to any port \$${PF_ADD_RULE_RULE_NAME}_tcp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
+	fi
+	if [ "${PF_ADD_RULE_UDP_PORTS}" = "none" ]
+	then
+		PF_ADD_RULE_UDP_PORTS_MACRO_DEF=""
+	else
+		PF_ADD_RULE_UDP_PORTS_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_udp_ports = \"{ ${PF_ADD_RULE_UDP_PORTS} }\""
+		PF_ADD_RULE_UDP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto udp from any to any port \$${PF_ADD_RULE_RULE_NAME}_udp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
+	fi
+
+	# Add new port foward rule macros to pf config file.
+	sed -i "" "s|\(^[#]* PORT FORWARD RULES MACROS [#]*\)|\1\\${CARRIAGE_RETURN}${PF_ADD_RULE_IP_MACRO_DEF}${PF_ADD_RULE_TCP_PORTS_MACRO_DEF}${PF_ADD_RULE_UDP_PORTS_MACRO_DEF}|" ${PF_REPO_CONF_PATH}
+	PF_ADD_RULE_ERROR_COUNT=$(( ${PF_ADD_RULE_ERROR_COUNT} + ${?} ))
+
+	# Add new TCP port foward rules to pf config file.
+	if [ "${PF_ADD_RULE_TCP_PORTS}" != "none" ]
+	then
+		sed -i "" "s|\(^[#]* PORT FORWARD TCP RULES [#]*\)|\1\\${CARRIAGE_RETURN}${PF_ADD_RULE_TCP_RULES_DEF}|" ${PF_REPO_CONF_PATH}
+		PF_ADD_RULE_ERROR_COUNT=$(( ${PF_ADD_RULE_ERROR_COUNT} + ${?} ))
+	fi
+
+	# Add new UDP port foward rules to pf config file.
+	if [ "${PF_ADD_RULE_UDP_PORTS}" != "none" ]
+	then
+		sed -i "" "s|\(^[#]* PORT FORWARD UDP RULES [#]*\)|\1\\${CARRIAGE_RETURN}${UDP_RULES_DEF}|" ${PF_REPO_CONF_PATH}
+		PF_ADD_RULE_ERROR_COUNT=$(( ${PF_ADD_RULE_ERROR_COUNT} + ${?} ))
+	fi
+
+	# Add changes to the local repo staging.
+	git add ${PF_REPO_CONF_PATH}
+
+	if [ ${PF_ADD_RULE_ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred adding the new pf port forward rule!\n"
+		return 2
+	fi
+}
+
+# Internally called function to remove a pf port forward rule from a hosts' repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the pf service.
+pf_remove_port_forward_rule ()
+{
+	PF_REMOVE_RULE_RULE_NAME="${1}"
+	PF_REPO_CONF_PATH="configs/${HOST_NAME}${PF_CONF_PATH}"
+	PF_REMOVE_RULE_ERROR_COUNT=0
+
+	# Remove all lines mentioning the specified rule_name.
+	sed -i "" "/${RULE_NAME}_ip/d" ${PF_REPO_CONF_PATH}
+	PF_REMOVE_RULE_ERROR_COUNT=$(( ${PF_REMOVE_RULE_ERROR_COUNT} + ${?} ))
+	sed -i "" "/${RULE_NAME}_tcp_ports/d" ${PF_REPO_CONF_PATH}
+	PF_REMOVE_RULE_ERROR_COUNT=$(( ${PF_REMOVE_RULE_ERROR_COUNT} + ${?} ))
+	sed -i "" "/${RULE_NAME}_udp_ports/d" ${PF_REPO_CONF_PATH}
+	PF_REMOVE_RULE_ERROR_COUNT=$(( ${PF_REMOVE_RULE_ERROR_COUNT} + ${?} ))
+
+	# Add changes to the local repo staging.
+	git add ${PF_REPO_CONF_PATH}
+
+	if [ ${PF_REMOVE_RULE_ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred removing the existing pf port forward rule!\n"
+		return 2
+	fi
+}
+
+# Internally called function to add a ppp port forward rule to a hosts' repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the ppp service.
+ppp_add_port_forward_rule ()
+{
+	PPP_ADD_RULE_RULE_NAME="${1}"
+	PPP_ADD_RULE_LOCAL_IP="${2}"
+	PPP_ADD_RULE_TCP_PORTS="${3}"
+	PPP_ADD_RULE_UDP_PORTS="${4}"
+	PPP_REPO_CONF_PATH="configs/${HOST_NAME}${PPP_CONF_PATH}"
+	PPP_ADD_RULE_ERROR_COUNT=0
+
+	# Set IFS (internal field seperator) to comma, same as port seperator.
+	EXISTING_IFS=${IFS}
+	IFS=","
+
+	# Add new TCP port forward rules to ppp config file.
+	for PPP_ADD_RULE_TCP_PORT_VALUE in ${PPP_ADD_RULE_TCP_PORTS}
+	do
+		if [ "${PPP_ADD_RULE_TCP_PORT_VALUE}" != "none" ]
+		then
+			PPP_ADD_RULE_PORT_VALUE=`echo ${PPP_ADD_RULE_TCP_PORT_VALUE} | sed "s|:|-|"`
+			sed -i "" "s|\(^ ## NAT port forward rules .*\)|\1\\${CARRIAGE_RETURN} nat port tcp ${PPP_ADD_RULE_LOCAL_IP}:${PPP_ADD_RULE_PORT_VALUE} ${PPP_ADD_RULE_PORT_VALUE}                # Port Forwarding (TCP); rule_name=${PPP_ADD_RULE_RULE_NAME}|" ${PPP_REPO_CONF_PATH}
+			PPP_ADD_RULE_ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	done
+
+	# Add new UDP port forward rules to ppp config file.
+	for PPP_ADD_RULE_UDP_PORT_VALUE in ${PPP_ADD_RULE_UDP_PORTS}
+	do
+		if [ "${PPP_ADD_RULE_UDP_PORT_VALUE}" != "none" ]
+		then
+			PPP_ADD_RULE_PORT_VALUE=`echo ${PPP_ADD_RULE_UDP_PORT_VALUE} | sed "s|:|-|"`
+			sed -i "" "s|\(^ ## NAT port forward rules .*\)|\1\\${CARRIAGE_RETURN} nat port udp ${PPP_ADD_RULE_LOCAL_IP}:${PPP_ADD_RULE_PORT_VALUE} ${PPP_ADD_RULE_PORT_VALUE}                # Port Forwarding (UDP); rule_name=${PPP_ADD_RULE_RULE_NAME}|" ${PPP_REPO_CONF_PATH}
+			PPP_ADD_RULE_ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+	done
+
+	# Set IFS back to what it was before.
+	IFS=${EXISTING_IFS}
+
+	# Add changes to the local repo staging.
+	git add ${PPP_REPO_CONF_PATH}
+
+	if [ ${PPP_ADD_RULE_ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred adding the new ppp port forward rule!\n"
+		return 2
+	fi
+}
+
+# Internally called function to remove a ppp port forward rule from a hosts' repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the ppp service.
+ppp_remove_port_forward_rule ()
+{
+	PPP_REMOVE_RULE_RULE_NAME="${1}"
+	PPP_REPO_CONF_PATH="configs/${HOST_NAME}${PPP_CONF_PATH}"
+	PPP_REMOVE_RULE_ERROR_COUNT=0
+
+	# Remove all lines mentioning the specified rule_name.
+	sed -i "" "/^ nat port tcp .*rule_name=${PPP_REMOVE_RULE_RULE_NAME}.*/d" ${PPP_REPO_CONF_PATH}
+	PPP_REMOVE_RULE_ERROR_COUNT=$(( ${PPP_REMOVE_RULE_ERROR_COUNT} + ${?} ))
+	sed -i "" "/^ nat port udp .*rule_name=${PPP_REMOVE_RULE_RULE_NAME}.*/d" ${PPP_REPO_CONF_PATH}
+	PPP_REMOVE_RULE_ERROR_COUNT=$(( ${PPP_REMOVE_RULE_ERROR_COUNT} + ${?} ))
+
+	# Add changes to the local repo staging.
+	git add ${PPP_REPO_CONF_PATH}
+
+	if [ ${PPP_REMOVE_RULE_ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred removing the existing ppp port forward rule!\n"
+		return 2
+	fi
+}
+
+# Internally called function to add a hostname to a dns_cache jail repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the named service.
+# Global variable DNS_CACHE_JAIL_NAME can be used in parent calling function.
+dns_cache_add_hostname ()
+{
+	DNS_CACHE_ADD_HOSTNAME="${1}"
+	DNS_CACHE_ADD_IP_ADDRESS="${2}"
+	DNS_CACHE_SERVER_FOUND="no"
+	DNS_CACHE_ERROR_COUNT=0
+
+	# Iterate through all jails...
+	for DNS_CACHE_JAIL_NAME in `ls -1 /jls | cut -d/ -f1 | egrep -v "template"`
+	do
+		NAMED_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${NAMED_CONF_PATH}"
+		ZONE_CONF_PATH="/usr/local/etc/namedb/master/${DNS_CACHE_ADD_HOSTNAME}.db"
+		ZONE_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${ZONE_CONF_PATH}"
+
+		# ...and if a bind server exists...
+		if [ -f "${NAMED_REPO_CONF_PATH}" ]
+		then
+			# ...determine if it's a caching server
+			cat "${NAMED_REPO_CONF_PATH}" | egrep "^( )*forwarders {" > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+
+				DNS_CACHE_SERVER_FOUND=yes
+
+				# Now that we've found a caching server, let's see if the record already exists:
+				cat "${NAMED_REPO_CONF_PATH}" | egrep "^zone \"${DNS_CACHE_ADD_HOSTNAME}\"" > /dev/null 2>&1
+				if [ ${?} -eq 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The record for hostname '${ORNG}${DNS_CACHE_ADD_HOSTNAME}${NRML}' already exists!"
+					return 1
+				fi
+
+				# Since it does not already exist, let's add a zone for our new hostname record:
+
+				# - Add zone entry in named.conf
+				echo "zone \"${DNS_CACHE_ADD_HOSTNAME}\" { type master; file \"${ZONE_CONF_PATH}\"; };" >> "${NAMED_REPO_CONF_PATH}"
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				# - Create the master zone file
+				DATE=`date "+%Y%m%d"`
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "" > ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "\$TTL 3h" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "@ SOA @ nobody.localhost. ${DATE}01 1d 12h 1w 3h ;" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "                        ; Serial, Refresh, Retry, Expire, Neg. cache TTL" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "        IN      NS      ${DNS_CACHE_ADD_HOSTNAME}." >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				echo "${DNS_CACHE_ADD_HOSTNAME}.        A       ${DNS_CACHE_ADD_IP_ADDRESS}" >> ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				# Add changes to the local repo staging.
+				git add ${NAMED_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				git add ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				if [ ${DNS_CACHE_ERROR_COUNT} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred adding the new dns_cache hostname override!\n"
+					return 2
+				fi
+
+				break
+			fi
+		fi
+	done
+
+	if [ "${DNS_CACHE_SERVER_FOUND}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No caching dns server found!"
+		return 1
+	fi
+}
+
+# Internally called function to remove a hostname from a dns_cache jail repo configs.
+# Does not handle any undo functionality, or touch the system, or reload the named service.
+# Global variable DNS_CACHE_JAIL_NAME can be used in parent calling function.
+dns_cache_remove_hostname ()
+{
+	DNS_CACHE_REMOVE_HOSTNAME="${1}"
+	DNS_CACHE_SERVER_FOUND="no"
+	DNS_CACHE_ERROR_COUNT=0
+
+	# Iterate through all jails...
+	for DNS_CACHE_JAIL_NAME in `ls -1 /jls | cut -d/ -f1 | egrep -v "template"`
+	do
+		NAMED_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${NAMED_CONF_PATH}"
+		ZONE_CONF_PATH="/usr/local/etc/namedb/master/${DNS_CACHE_ADD_HOSTNAME}.db"
+		ZONE_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${ZONE_CONF_PATH}"
+
+		# ...and if a bind server exists...
+		if [ -f "${NAMED_REPO_CONF_PATH}" ]
+		then
+			# ...determine if it's a caching server
+			cat "${NAMED_REPO_CONF_PATH}" | egrep "^( )*forwarders {" > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+
+				DNS_CACHE_SERVER_FOUND=yes
+
+				# Now that we've found a caching server, let's see if the record exists:
+				cat "${NAMED_REPO_CONF_PATH}" | egrep "^zone \"${DNS_CACHE_REMOVE_HOSTNAME}\"" > /dev/null 2>&1
+				if [ ${?} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The record for hostname '${ORNG}${DNS_CACHE_REMOVE_HOSTNAME}${NRML}' does not exist!"
+					return 1
+				fi
+
+				# Hostname record exists, so now let's remove the zone for the hostname record:
+
+				# - Remove zone entry from named.conf
+				sed -i "" "/^zone \"${DNS_CACHE_REMOVE_HOSTNAME}\"/d" "${NAMED_REPO_CONF_PATH}"
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				# - Remove the master zone file
+				rm /jls/${DNS_CACHE_JAIL_NAME}${ZONE_CONF_PATH} > /dev/null 2>&1
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				# Add changes to the local repo staging.
+				git add ${NAMED_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+				git rm ${ZONE_REPO_CONF_PATH}
+				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
+
+				if [ ${DNS_CACHE_ERROR_COUNT} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} An unexpected error occurred removing the dns_cache hostname override!\n"
+					return 2
+				fi
+
+				break
+			fi
+		fi
+	done
+
+	if [ "${DNS_CACHE_SERVER_FOUND}" = "no" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} No caching dns server found!"
+		return 1
+	fi
 }
 
 undo_connect_internet ()
@@ -3840,7 +4247,7 @@ init_host ()
 	# Copy init-host template configs to the repo.
 	mkdir configs/${HOST_NAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	install_file_tree config-templates/init-host/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-host/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -4435,7 +4842,7 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -4642,7 +5049,7 @@ init_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install final init-host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create ssl certs directory.
@@ -4861,7 +5268,7 @@ patch_host ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -5069,7 +5476,7 @@ init_vnc_desktop ()
 	INIT_VNC_DESKTOP_REPO_MODIFIED=true
 
 	# Copy init-vnc-desktop template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-vnc-desktop/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/ ${ARBITRARY_USERNAME} ${ARBITRARY_USERNAME}
+	install_file_tree config-templates/init-vnc-desktop/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/ ${ARBITRARY_USERNAME} ${ARBITRARY_USERNAME}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -5145,7 +5552,7 @@ init_vnc_desktop ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host repo configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Change ownership of the ARBITRARY_USERNAME home folder.
@@ -6008,7 +6415,7 @@ init_mpd_server ()
 	INIT_MPD_SERVER_REPO_MODIFIED=true
 
 	# Copy init-mpd-server template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-mpd-server/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-mpd-server/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -6149,7 +6556,7 @@ init_mpd_server ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host repo configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -6885,7 +7292,7 @@ init_wifi_ap ()
 	INIT_WIFI_AP_REPO_MODIFIED=true
 
 	# Copy init-wifi-ap template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-wifi-ap/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-wifi-ap/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -6976,7 +7383,7 @@ init_wifi_ap ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host repo configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -7353,7 +7760,7 @@ init_hotdesk ()
 	INIT_HOTDESK_REPO_MODIFIED=true
 
 	# Copy init-hotdesk template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-hotdesk/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-hotdesk/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -7457,7 +7864,7 @@ init_hotdesk ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host repo configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -7790,7 +8197,7 @@ init_sshfs_daemon ()
 	INIT_SSHFS_DAEMON_REPO_MODIFIED=true
 
 	# Copy init-sshfs-daemon template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-sshfs-daemon/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-sshfs-daemon/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set FUSE support to load on boot.
@@ -7829,7 +8236,7 @@ init_sshfs_daemon ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -7910,15 +8317,15 @@ undo_init_jails ()
 	sleep 4
 
 	# Check if the jail did not stop or appears to be still running.
-	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
+	jls | tail -n +2 | awk '{print $3}' | grep -E "^template$" > /dev/null 2>&1
 	if [ ${?} -eq 0 ]
 	then
 		# Remove the jail and unmount nullfs mounted certificates directory.
-		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
+		JAIL_ID_FILE=`ls -1 /var/run/jail_template.id | head -1`
 		JAIL_ID=`cat ${JAIL_ID_FILE}`
 		jail -r ${JAIL_ID} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		umount -f /jls/${JAIL_TO_REVERT}${FDO_CERTS_DIR} > /dev/null 2>&1
+		umount -f /jls/template${FDO_CERTS_DIR} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8206,7 +8613,7 @@ init_jails ()
 	JAIL_CONFIG_FILES_ROOT="config-templates/jail_template/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}"
 
 	# Copy init-jails template configs to this hosts' repo profile.
-	install_file_tree ${HOST_CONFIG_FILES_ROOT} configs/${HOST_NAME}/
+	install_file_tree ${HOST_CONFIG_FILES_ROOT}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Pre-configure jail.conf with network configuration.
@@ -8227,9 +8634,9 @@ init_jails ()
 	for IP_ADDRESS in ${HOST_LAN_IP_ADDRESSES}
 	do
 		# Add port forwarding rules to pf and ppp config.
-		IS_REPO_CONF="yes" PF_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+		pf_add_port_forward_rule host_sshd ${IP_ADDRESS} 22 none
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		IS_REPO_CONF="yes" PPP_CONF_PATH="/${REPO_NAME}/configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule host_sshd ${IP_ADDRESS} 22 none --non-interactive
+		ppp_add_port_forward_rule host_sshd ${IP_ADDRESS} 22 none
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		# Set this hosts sshd to only run on the primary LAN IP.
@@ -8254,11 +8661,11 @@ init_jails ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install jail_template configs to the template jail.
-	install_file_tree ${JAIL_CONFIG_FILES_ROOT} /jls/template/
+	install_file_tree ${JAIL_CONFIG_FILES_ROOT}/ /jls/template/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Create nullfs mountpoint for hosts ssl certs.
@@ -8406,7 +8813,7 @@ init_jails ()
 	done
 
 	# Install updated host configs to the system (after disabling template jail).
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Take snapshot of the template for use in create-jail*.
@@ -8460,6 +8867,41 @@ init_jails ()
 	return 0
 }
 
+reload_jail_service ()
+{
+	# ${1} is jail name.
+	# ${2} is service name.
+	# ${3} may be --allow-restart.
+
+	get_jail_id_from_name "${1}"
+
+	echo -e "\n${YELL}Reloading the service '${NRML}${2}${YELL}' in the jail '${NRML}${1}${YELL}'...${NRML}\n"
+
+	jexec "${JAIL_ID}" service "${2}" reload > /dev/null 2>&1
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "${YELL}INFO:${NRML} Successfully reloaded service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		return 0
+	elif [ "${3}" = "--allow-restart" ]
+	then
+		echo -e "${ORNG}WARNING:${NRML} Failed to reload service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n         Restarting instead...\n"
+		jexec "${JAIL_ID}" service "${2}" restart > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			echo -e "${YELL}INFO:${NRML} Successfully restarted service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+			return 0
+		else
+			echo -e "${ORNG}WARNING:${NRML} Failed to restart service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+			return 2
+		fi
+	else
+		echo -e "${ORNG}WARNING:${NRML} Failed to reload service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		return 2
+	fi
+
+
+}
+
 start_jail_service ()
 {
 	# ${1} is jail name.
@@ -8471,21 +8913,26 @@ start_jail_service ()
 	echo -e "\n${YELL}Starting the service '${NRML}${2}${YELL}' in the jail '${NRML}${1}${YELL}'...${NRML}\n"
 
 	jexec ${JAIL_ID} service "${2}" start > /dev/null 2>&1
-
-	if [ ${?} -ne 0 ] && [ "${3}" = "--allow-restart" ]
+	if [ ${?} -eq 0 ]
 	then
-		jexec ${JAIL_ID} service "${2}" restart > /dev/null 2>&1
-	fi
-
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
-		return 2
-	else
 		echo -e "${YELL}INFO:${NRML} Successfully started service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
 		return 0
+	elif [ "${3}" = "--allow-restart" ]
+	then
+		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n         Restarting instead...\n"
+		jexec ${JAIL_ID} service "${2}" restart > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			echo -e "${YELL}INFO:${NRML} Successfully restarted service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+			return 0
+		else
+			echo -e "${ORNG}WARNING:${NRML} Failed to restart service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+			return 2
+		fi
+	else
+		echo -e "${ORNG}WARNING:${NRML} Failed to start service '${ORNG}${2}${NRML}' in jail '${ORNG}${1}${NRML}'!\n"
+		return 2
 	fi
-
 }
 
 find_jails_from_recipe_name ()
@@ -8512,13 +8959,9 @@ find_jails_from_recipe_name ()
 	return 0
 }
 
-# WARNING: Only for use by developers on a 'local' only repo.
-# Only to be used on last created jail directly afterwards.
-# It does a hard reset of the git repo.
-revert_create_jail ()
+destroy_jail ()
 {
-	JAIL_TO_REVERT=${1}
-	ERROR_COUNT=0
+	JAIL_TO_DESTROY="${1}"
 
 	# Sanity tests.
 	JAILS_POOL_NAME=`${UCL_CMD} get -f ${HOST_CONF_PATH} -q .storage.jails_pool`
@@ -8528,10 +8971,10 @@ revert_create_jail ()
 		return 2
 	fi
 
-	zfs list -H ${JAILS_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
+	zfs list -H ${JAILS_POOL_NAME}/jails/${JAIL_TO_DESTROY} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_REVERT}${NRML}' does not seem to exist!\n       Aborting.\n"
+		echo -e "\n${LRED}ERROR:${NRML} The jail '${ORNG}${JAIL_TO_DESTROY}${NRML}' does not seem to exist!\n       Aborting.\n"
 		return 1
 	fi
 
@@ -8547,7 +8990,7 @@ revert_create_jail ()
 	# Get jail IP address if not already known.
 	if [ "${JAIL_IP}" = "" ]
 	then
-		ucl_jail_index configs/${HOST_NAME}${JAILS_CONF_PATH} ${JAIL_TO_REVERT}
+		ucl_jail_index configs/${HOST_NAME}${JAILS_CONF_PATH} ${JAIL_TO_DESTROY}
 		if [ ${?} -ne 0 ]
 		then
 			ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
@@ -8561,9 +9004,9 @@ revert_create_jail ()
 	fi
 
 	# Get jail recipe name, if not already known.
-	if [ "${JAIL_RECIPE_NAME}" = "" ] && [ -f "configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH}" ]
+	if [ "${JAIL_RECIPE_NAME}" = "" ] && [ -f "configs/${JAIL_TO_DESTROY}@${HOST_NAME}${RECIPE_CONF_PATH}" ]
 	then
-		JAIL_RECIPE_NAME=`${UCL_CMD} get -f configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.jail_recipe`
+		JAIL_RECIPE_NAME=`${UCL_CMD} get -f configs/${JAIL_TO_DESTROY}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.jail_recipe`
 		if [ ${?} -ne 0 ] || [ "${AFFECTED_JAIL_RECIPES}" = "null" ]
 		then
 			JAIL_RECIPE_NAME=""
@@ -8571,9 +9014,9 @@ revert_create_jail ()
 	fi
 
 	# Get list of affected jails (by recipe name).
-	if [ -f "configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH}" ]
+	if [ -f "configs/${JAIL_TO_DESTROY}@${HOST_NAME}${RECIPE_CONF_PATH}" ]
 	then
-		AFFECTED_JAIL_RECIPES=`${UCL_CMD} get -f configs/${JAIL_TO_REVERT}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.affected_recipe_jails`
+		AFFECTED_JAIL_RECIPES=`${UCL_CMD} get -f configs/${JAIL_TO_DESTROY}@${HOST_NAME}${RECIPE_CONF_PATH} -q .general.affected_recipe_jails`
 		if [ ${?} -ne 0 ] || [ "${AFFECTED_JAIL_RECIPES}" = "null" ]
 		then
 			AFFECTED_JAIL_RECIPES=""
@@ -8582,86 +9025,144 @@ revert_create_jail ()
 		AFFECTED_JAIL_RECIPES=""
 	fi
 
-	# Source jail recipe if it exists, and run 'revert_cook_recipe' function if it exists.
-	if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
+}
+
+undo_create_jail ()
+{
+	JAIL_TO_UNDO="${1}"
+	ERROR_COUNT=0
+
+	if [ ${CREATE_RECIPE_JAIL_COOKED} = true ]
 	then
-		. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
-		is_function "revert_cook_recipe"
-		if [ ${?} -eq 0 ]
+		# Source jail recipe if it exists, and run 'undo_cook_recipe' function if it exists.
+		if [ -f "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}" ]
 		then
-			echo -e "\n${YELL}Reverting extraneous recipe steps for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
-			revert_cook_recipe
+			. "jail-recipes/${JAIL_RECIPE_NAME}/${JAIL_RECIPE_NAME}"
+			is_function "undo_cook_recipe"
+			if [ ${?} -eq 0 ]
+			then
+				echo -e "\n${YELL}Undoing extraneous recipe steps for '${NRML}${JAIL_TO_UNDO}${YELL}'...${NRML}\n"
+				undo_cook_recipe
+			fi
 		fi
 	fi
 
-	echo -e "\n${YELL}Reverting create jail for '${NRML}${JAIL_TO_REVERT}${YELL}'...${NRML}\n"
-
-	service jail status | egrep "^ ${JAIL_TO_REVERT} " > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
+	if [ ${CREATE_JAIL_JAIL_STARTED} = true ]
 	then
-		# Stop the jail.
-		echo -e "\n${YELL}Stopping the jail '${JAIL_TO_REVERT}'...${NRML}\n"
-		service jail onestop ${JAIL_TO_REVERT} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		echo -e "\n${YELL}The jail '${NRML}${JAIL_TO_REVERT}${YELL}' appears to be stopped.${NRML}\n"
-	fi
-
-	# Wait for I/O to settle.
-	sleep 8
-
-	# Check if the jail did not stop or appears to be still running.
-	jls | tail -n +2 | awk '{print $3}' | egrep "${JAIL_TO_REVERT}" > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		# Remove the jail and unmount nullfs mounted certificates directory.
-		JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_REVERT}.id | head -1`
-		JAIL_ID=`cat ${JAIL_ID_FILE}`
-		jail -r ${JAIL_ID} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		umount -f /jls/${JAIL_TO_REVERT}${FDO_CERTS_DIR} > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
-
-	echo -e "\n"
-
-	# Destroy additional jail recipe filesystems in reverse order.
-	REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
-	for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
-	do
-		SIDES_FILESYSTEM=`echo ${REV_SIDES_FILESYSTEM} | rev`
-		zfs list -H ${SIDES_FILESYSTEM} > /dev/null 2>&1
+		echo -e "\n${YELL}Stopping the jail '${NRML}${JAIL_TO_UNDO}${YELL}'...${NRML}\n"
+		service jail status | egrep "^ ${JAIL_TO_UNDO} " > /dev/null 2>&1
 		if [ ${?} -eq 0 ]
 		then
-			zfs destroy -f ${SIDES_FILESYSTEM} > /dev/null 2>&1
+			# Stop the jail.
+			service jail onestop ${JAIL_TO_UNDO} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		else
+			echo -e "\n${YELL}The jail '${NRML}${JAIL_TO_UNDO}${YELL}' appears to be stopped.${NRML}\n"
+		fi
+
+		# Wait for I/O to settle.
+		sleep 8
+
+		# Check if the jail did not stop or appears to be still running.
+		jls | tail -n +2 | awk '{print $3}' | grep -E "^${JAIL_TO_UNDO}$" > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			# Remove the jail and unmount nullfs mounted certificates directory.
+			JAIL_ID_FILE=`ls -1 /var/run/jail_${JAIL_TO_UNDO}.id | head -1`
+			JAIL_ID=`cat ${JAIL_ID_FILE}`
+			jail -r ${JAIL_ID} > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			umount -f /jls/${JAIL_TO_UNDO}${FDO_CERTS_DIR} > /dev/null 2>&1
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
-	done
+	fi
 
-	# Destroy the jail filesystem.
-	zfs destroy -rf ${JAILS_POOL_NAME}/jails/${JAIL_TO_REVERT} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	# Delete jail config directory from local repo.
-	rm -rf configs/${JAIL_TO_REVERT}@${HOST_NAME} > /dev/null 2>&1
-
-	# Roll back local repo to last good commit (!!!DANGEROUS!!!).
-	if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
+	if [ ${CREATE_RECIPE_JAIL_SIDES_FS_CREATED} = true ]
 	then
-		git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git clean -f -d
+		# Destroy additional jail recipe filesystems in reverse order.
+		REV_SIDES_FILESYSTEMS=`echo ${SIDES_FILESYSTEMS} | rev`
+		for REV_SIDES_FILESYSTEM in ${REV_SIDES_FILESYSTEMS}
+		do
+			SIDES_FILESYSTEM=`echo ${REV_SIDES_FILESYSTEM} | rev`
+			zfs list -H ${SIDES_FILESYSTEM} > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				zfs destroy -f ${SIDES_FILESYSTEM} > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		done
+	fi
+
+	if [ ${CREATE_JAIL_FS_CREATED} = true ]
+	then
+		# Destroy the jail filesystem.
+		zfs destroy -rf ${JAILS_POOL_NAME}/jails/${JAIL_TO_UNDO} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	# Undo host system modifications.
-	# Install back old host configs.
-	install_file_tree configs/${HOST_NAME} /
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ ${CREATE_JAIL_REPO_MODIFIED} = true ] || [ ${CREATE_RECIPE_JAIL_REPO_MODIFIED} = true ]
+	then
+		# Delete jail config directory from local repo.
+		rm -rf configs/${JAIL_TO_UNDO}@${HOST_NAME} > /dev/null 2>&1
 
-	# Remove untracked config files from host.
-	rm /etc/fstab.${JAIL_TO_REVERT} > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		# Roll back local repo to last good commit (!!!DANGEROUS!!!).
+		if [ "${COMMIT_BEFORE_CREATE_JAIL}" != "" ]
+		then
+			git reset --hard ${COMMIT_BEFORE_CREATE_JAIL}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			git clean -f -d
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			echo -e ""
+		fi
+	fi
+
+	if [ ${CREATE_JAIL_SYSTEM_MODIFIED} = true ] || [ ${CREATE_RECIPE_JAIL_SYSTEM_MODIFIED} = true ]
+	then
+		# Undo host system modifications by installing back prior host configs.
+		install_file_tree configs/${HOST_NAME}/ /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		# Remove untracked config files from host.
+		rm /etc/fstab.${JAIL_TO_UNDO} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ ${CREATE_RECIPE_JAIL_NAT_RELOAD} = true ]
+	then
+		if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+		then
+			# TODO: resolve why ppp can't reconnect on service restart.
+			#service ppp restart > /dev/null 2>&1
+			service ppp stop > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sleep 4
+			service ppp start > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			sleep 4
+			service ppp start > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the ppp service!\n"
+			else
+				echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
+			fi
+
+		elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+		then
+			service pf reload > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the pf service!\n"
+			else
+				echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+			fi
+		else
+			echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
+		fi
+	fi
 
 	# Install back affected jail configs.
 	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
@@ -8672,22 +9173,39 @@ revert_create_jail ()
 		do
 			# Use install_config to reinstate configs for jail found to be affected.
 			echo -e "${YELL}${AFFECTED_JAIL}...${NRML}"
-			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME} /jls/${AFFECTED_JAIL}/
+			install_configs configs/${AFFECTED_JAIL}@${HOST_NAME}/ /jls/${AFFECTED_JAIL}/
 			if [ ${?} -ne 0 ]
 			then
 				echo -e "\n${ORNG}WARNING:${NRML} Something went wrong reverting repo configs to the '${ORNG}${AFFECTED_JAIL}${NRML}' jail!\n"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
 			fi
+			case ${AFFECTED_JAIL_RECIPE} in
+				dns_cache)
+					for RECIPE_DNS_HOSTNAME in ${RECIPE_DNS_HOSTNAMES}
+					do
+						rm /jls/${DNS_CACHE_JAIL_NAME}/usr/local/etc/namedb/master/${RECIPE_DNS_HOSTNAME}.db
+						ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					done
+					reload_jail_service ${DNS_CACHE_JAIL_NAME} named --allow-restart
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					;;
+				http_gateway)
+					rm /jls/${HTTP_GATEWAY_JAIL_NAME}/usr/local/etc/nginx/sites/${JAIL_TO_UNDO}.conf
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					reload_jail_service ${HTTP_GATEWAY_JAIL_NAME} nginx --allow-restart
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					;;
+			esac
 		done
 	done
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error reverting the jail creation!\n"
+		echo -e "\n${LRED}ERROR:${NRML} There was at least one unexpected error undoing the jail creation!\n"
 		return 2
 	fi
 
-	echo -e "\n${YELL}Finished reverting jail creation!${NRML}\n"
+	echo -e "\n${YELL}Finished undoing jail creation!${NRML}\n"
 	return 0
 }
 
@@ -8703,7 +9221,20 @@ create_jail ()
 		IS_INTERACTIVE="yes"
 	fi
 
-	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+	# NOTE: we must initialise all the create_jail undo function variables here because undo_create_jail is shared
+	# between create_jail and create_recipe_jail. But create_jail can be called on it's own, and undo_create_jail
+	# expects these variables to be initialised.
+	CREATE_JAIL_FS_CREATED=false
+	CREATE_JAIL_REPO_MODIFIED=false
+	CREATE_JAIL_SYSTEM_MODIFIED=false
+	CREATE_JAIL_JAIL_STARTED=false
+	CREATE_RECIPE_JAIL_SIDES_FS_CREATED=false
+	CREATE_RECIPE_JAIL_REPO_MODIFIED=false
+	CREATE_RECIPE_JAIL_SYSTEM_MODIFIED=false
+	CREATE_RECIPE_JAIL_COOKED=false
+	CREATE_RECIPE_JAIL_NAT_RELOAD=false
+
+	trap 'undo_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
 
 	ERROR_COUNT=0
 
@@ -8824,13 +9355,15 @@ create_jail ()
 		JAIL_IP="${JAILS_LAN_SUBNET_C}.${FIRST_AVAILABLE_IP}"
 	fi
 
+	CREATE_JAIL_FS_CREATED=true
+
 	# Create new jail filesystem by zfs send/recv from the template jail snapshot.
 	echo -e "\n${YELL}Creating the new jail filesystem from the template jail...${NRML}\n"
 	zfs send -e ${JAILS_POOL_NAME}/jails/template@${TEMPLATE_SNAPSHOT} | zfs recv ${JAILS_POOL_NAME}/jails/${JAIL_NAME}
 	if [ ${?} -ne 0 ]
 	then
 		echo -e "${LRED}ERROR:${NRML} Failed to zfs send the jail template snapshot to the new jail filesystem!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
@@ -8839,6 +9372,8 @@ create_jail ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} -t string .general.git_commit_before_create_jail "${COMMIT_BEFORE_CREATE_JAIL}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	CREATE_JAIL_REPO_MODIFIED=true
 
 	# Install template jails' configs to new jails' config repo directory.
 	# NOTE: this has the side effect of giving the new jail the latest template configs regardless of snapshot state.
@@ -8873,11 +9408,11 @@ create_jail ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in copying template configs to the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
-	# Create entry in /etc/jail.conf.
+	# Create entry in repo the copy of '/etc/jail.conf'.
 	echo "" >> configs/${HOST_NAME}/etc/jail.conf
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo "${JAIL_NAME} {" >> configs/${HOST_NAME}/etc/jail.conf
@@ -8899,7 +9434,7 @@ create_jail ()
 	sed -i "" "s|/jls/template/|/jls/${JAIL_NAME}/|" configs/${HOST_NAME}/etc/fstab.${JAIL_NAME} > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Add jail to jail_list in '/etc/rc.conf'.
+	# Add jail to jail_list in repo the copy of '/etc/rc.conf'.
 	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
@@ -8919,7 +9454,7 @@ create_jail ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
@@ -8944,22 +9479,24 @@ create_jail ()
 	${UCL_CMD} set -f configs/${HOST_NAME}${JAILS_CONF_PATH} -t string .jails.${JAILS_ARRAY_INDEX}.ip4.addr "${JAIL_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	CREATE_JAIL_SYSTEM_MODIFIED=true
+
 	# Install latest scripts to the jail.
 	install_scripts /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install initial config templates to the new jail.
-	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+	install_file_tree configs/${JAIL_NAME}@${HOST_NAME}/ /jls/${JAIL_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong in configuring the host configs for the new jail!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
@@ -8979,7 +9516,7 @@ create_jail ()
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-			revert_create_jail ${JAIL_NAME}
+			undo_create_jail ${JAIL_NAME}
 			return 2
 		fi
 
@@ -9002,9 +9539,13 @@ create_jail ()
 		question_yes_no "Would you like to start the jail '${NRML}${JAIL_NAME}${LCYN}' now?"
 		if [ "${ANSWER}" = "yes" ]
 		then
+			CREATE_JAIL_JAIL_STARTED=true
+
 			service jail start ${JAIL_NAME}
 		fi
 	else
+		CREATE_JAIL_JAIL_STARTED=true
+
 		service jail start ${JAIL_NAME}
 	fi
 
@@ -9053,15 +9594,16 @@ edit_recipe_configs ()
 	return 0
 }
 
-create_jail_from_recipe ()
+create_recipe_jail ()
 {
 
 	JAIL_NAME="${1}"
 	JAIL_HOST_NAME="${2}"
 	JAIL_RECIPE_NAME="${3}"
 	SIDES_POOL_NAME="fdo-jail-recipe-sides-pool-name"
+	AFFECTED_JAIL_RECIPES=""
 
-	trap 'revert_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
+	trap 'undo_create_jail ${JAIL_NAME}; exit 3' HUP INT QUIT KILL TERM
 
 	ERROR_COUNT=0
 
@@ -9134,7 +9676,6 @@ create_jail_from_recipe ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [1]\n"
-		revert_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
@@ -9146,7 +9687,7 @@ create_jail_from_recipe ()
 	if [ ${RETURN_CODE} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Creation of blank jail failed!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return ${RETURN_CODE}
 	fi
 
@@ -9163,11 +9704,13 @@ create_jail_from_recipe ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the jail recipe! [2]\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
-	echo -e "\n\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
+	echo -e "\n${YELL}Creating any additional jail recipe filesystems...${NRML}\n"
+
+	CREATE_RECIPE_JAIL_SIDES_FS_CREATED=true
 
 	# Create additional jail recipe filesystems.
 	COUNT_SIDES_FILESYSTEMS=0
@@ -9180,33 +9723,33 @@ create_jail_from_recipe ()
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Failed to create filesystem for the following additional filesystem:"
 			echo -e "       ${ORNG}${SIDES_FILESYSTEM}${NRML}\n"
-			revert_create_jail ${JAIL_NAME}
+			undo_create_jail ${JAIL_NAME}
 			return 2
 		fi
 	done
 
+	CREATE_RECIPE_JAIL_REPO_MODIFIED=true
+
 	# Install recipe config templates to new jails' config repo directory.
-	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates configs/${JAIL_NAME}@${HOST_NAME}/
+	install_file_tree jail-recipes/${JAIL_RECIPE_NAME}/config-templates/ configs/${JAIL_NAME}@${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set the correct jail ABI in the jails' pkg repo config file.
 	sed -i "" "s|FDO_JAIL_ABI|${FREEBSD_MAJOR_VERSION}_${FREEBSD_MINOR_VERSION}${FREEBSD_ARCH}|" configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg/repos/${PKG_REPO_CONF_FILE}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# Install initial config templates to the new jail.
-	install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+	# Install pkg repo related config templates to the new jail, so that we can install recipe packages.
+	install_file_tree configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/pkg /jls/${JAIL_NAME}/usr/local/etc/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing the jail recipe configs!\n"
-		revert_create_jail ${JAIL_NAME}
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst initialising the jail recipe configs!\n"
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
-	question_yes "\nShall we proceed to cook the recipe?"
-
-	echo -e "\n\n${YELL}Updating currently installed packages for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+	echo -e "\n${YELL}Updating currently installed packages for jail '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
 
 	# Update currently installed packages.
 	ASSUME_ALWAYS_YES=yes pkg -j ${JAIL_NAME} update -f
@@ -9217,59 +9760,34 @@ create_jail_from_recipe ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst upgrading the jail packages!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 2
 	fi
 
+	echo -e "\n${YELL}Installing the '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe packages into the jail '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+
+	# Install jail recipe packages from the recipe repo.
+	ASSUME_ALWAYS_YES=yes pkg -j ${JAIL_NAME} install -Rfy ${RECIPE_PACKAGES}
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Installing of recipe packages failed.\n"
+		undo_create_jail ${JAIL_NAME}
+		return 2
+	fi
+
+	question_yes "\nShall we proceed to cook the recipe?"
+
 	echo -e "\n\n${YELL}Cooking '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+
+	CREATE_RECIPE_JAIL_COOKED=true
 
 	# Cook the sourced recipe.
 	cook_recipe
 
-	# Add any port forwarding rules.
-	if [ ${RECIPE_TCP_PORTS} ] && [ ${RECIPE_UDP_PORTS} ]
-	then
-		IS_REPO_CONF="yes" PF_CONF_PATH="configs/${HOST_NAME}/etc/pf.conf" fdo-pf-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to pf!\n"
-			RECIPE_SUCCESS="no"
-		fi
-		IS_REPO_CONF="yes" PPP_CONF_PATH="configs/${HOST_NAME}/etc/ppp/ppp.conf" fdo-ppp-add-port-forward-rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS} --non-interactive
-		if [ ${?} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} failed to add port forwarding rules to ppp nat!\n"
-			RECIPE_SUCCESS="no"
-		fi
-	fi
-
 	if [ "${RECIPE_SUCCESS}" = "yes" ] || [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
-		# Get seasoning suggestion message from recipe.conf.
-		SEASONING_SUGGESTION_MSG=`${UCL_CMD} get -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -q .seasoning_suggestion.message`
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-		if [ "${SEASONING_SUGGESTION_MSG}" != "" ] && [ "${SEASONING_SUGGESTION_MSG}" != "null" ]
-		then
-			# Echo the seasoning suggestion message to the terminal, expanding any variables.
-			eval echo -e "\"\n${YELL}Seasoning suggestion:${NRML}\n${SEASONING_SUGGESTION_MSG}\n\""
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-			# Set the seasoning suggestion message in recipe.conf after expanding any variables.
-			EXPANDED_SEASONING_SUGGESTION_MSG=`eval echo -e "\"${SEASONING_SUGGESTION_MSG}\""`
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .seasoning_suggestion.message "${EXPANDED_SEASONING_SUGGESTION_MSG}"
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-
-		if [ ${ERROR_COUNT} -ne 0 ]
-		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst compiling or showing seasonal suggestions!\n"
-			revert_create_jail ${JAIL_NAME}
-			return 2
-		fi
-
-		pause_prompt 18
 
 		# Interactively edit the configs touched by the recipe.
 		RECIPE_CONFIG_FILES=`find configs/${JAIL_NAME}@${HOST_NAME} -print`
@@ -9294,40 +9812,213 @@ create_jail_from_recipe ()
 			UCL_ARRAY_LENGTH=$(( ${UCL_ARRAY_LENGTH} + 1 ))
 		done
 
-		# Install any new or modfied configs.
-		install_file_tree configs/${HOST_NAME} /
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
+			undo_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		# Add port forwarding rules to the NAT router/firewall (if specified by RECIPE_REQUIRES_PORT_FORWARD=yes).
+		if [ "${RECIPE_REQUIRES_PORT_FORWARD}" = "yes" ]
+		then
+
+			pf_add_port_forward_rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			ppp_add_port_forward_rule "jail_${JAIL_NAME}" ${JAIL_IP} ${RECIPE_TCP_PORTS} ${RECIPE_UDP_PORTS}
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .undo.port-forward-rule "jail_${JAIL_NAME}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst adding port forward rules!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+		fi
+
+		# Add dns cache overrides in the dns_cache recipe jail to help on the LAN (if specified by RECIPE_REQUIRES_DNS_HOSTNAME=yes).
+		if [ "${RECIPE_REQUIRES_DNS_HOSTNAME}" = "yes" ]
+		then
+			for RECIPE_DNS_HOSTNAME in ${RECIPE_DNS_HOSTNAMES}
+			do
+				dns_cache_add_hostname ${RECIPE_DNS_HOSTNAME} ${JAIL_IP}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			done
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .undo.dns_cache-hostnames "${RECIPE_DNS_HOSTNAMES}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst adding dns cache hostname overrides!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+
+			AFFECTED_JAIL_RECIPES="${AFFECTED_JAIL_RECIPES} dns_cache"
+
+			# Install dns_cache jail configs.
+			install_file_tree configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}/ /jls/${DNS_CACHE_JAIL_NAME}/
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			# Reload the dns_cache recipe jail named (bind9) service.
+			reload_jail_service ${DNS_CACHE_JAIL_NAME} named --allow-restart
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst activating the dns cache hostname overrides!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+		fi
+
+		#  Add a site file in the http_gateway recipe jail (if specified by RECIPE_REQUIRES_HTTP_GATEWAY=yes).
+		if [ "${RECIPE_REQUIRES_HTTP_GATEWAY}" = "yes" ]
+		then
+			# Find the http_gateway jail.
+			# ASSUME there is only one http_gateway jail on this host and take the first one in the found list.
+			find_jails_from_recipe_name "http_gateway"
+			NUM_FOUND_JAILS=`echo ${FOUND_RECIPE_JAILS} | wc -w`
+			if [ ${NUM_FOUND_JAILS} -lt 1 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} It appears there is no http_gateway recipe jail on this host!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 1
+			fi
+			if [ ${NUM_FOUND_JAILS} -lt 2 ]
+			then
+				HTTP_GATEWAY_JAIL_NAME=${FOUND_RECIPE_JAILS}
+			else
+				echo -e "\n${ORNG}WARNING:${NRML} More than one '${JAIL_RECIPE_NAME}' recipe jail was found!\         Using the first found recipe jail config.\n"
+				HTTP_GATEWAY_JAIL_NAME=`echo ${FOUND_RECIPE_JAILS} | cut -d" " -f1`
+			fi
+
+			HTTP_GATEWAY_SITE_CONF="/jls/${HTTP_GATEWAY_JAIL_NAME}/usr/local/etc/nginx/sites/${JAIL_NAME}.conf"
+			cp configs/${JAIL_NAME}@${HOST_NAME}/usr/local/etc/http_gateway-site.conf configs/${HTTP_GATEWAY_JAIL_NAME}@${HOST_NAME}/usr/local/etc/nginx/sites/${JAIL_NAME}.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t array .undo.external_configs_added "[ \"${HTTP_GATEWAY_SITE_CONF}\"; ]"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			git add configs/${HTTP_GATEWAY_JAIL_NAME}@${HOST_NAME}/usr/local/etc/nginx/sites/${JAIL_NAME}.conf
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst adding the http_gateway site file!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+
+			AFFECTED_JAIL_RECIPES="${AFFECTED_JAIL_RECIPES} http_gateway"
+
+			# Install http_gateway jail configs.
+			install_file_tree configs/${HTTP_GATEWAY_JAIL_NAME}@${HOST_NAME}/ /jls/${HTTP_GATEWAY_JAIL_NAME}/
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			# Reload the http_gateway recipe jail nginx service.
+			reload_jail_service ${HTTP_GATEWAY_JAIL_NAME} nginx --allow-restart
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst activating the http_gateway site!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+		fi
+
+		# Add list of affected recipe jails to recipe.conf, so that undo can be done at a later point in time.
+		${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .undo.affected_recipe_jails "${AFFECTED_JAIL_RECIPES}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		install_file_tree configs/${JAIL_NAME}@${HOST_NAME} /jls/${JAIL_NAME}/
+
+		# Get seasoning suggestion message from recipe.conf.
+		SEASONING_SUGGESTION_MSG=`${UCL_CMD} get -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -q .seasoning_suggestion.message`
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ "${SEASONING_SUGGESTION_MSG}" != "" ] && [ "${SEASONING_SUGGESTION_MSG}" != "null" ]
+		then
+			# Set the seasoning suggestion message in recipe.conf after expanding any variables.
+			EXPANDED_SEASONING_SUGGESTION_MSG=`eval echo -e "\"${SEASONING_SUGGESTION_MSG}\""`
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .seasoning_suggestion.message "${EXPANDED_SEASONING_SUGGESTION_MSG}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		else
+			EXPANDED_SEASONING_SUGGESTION_MSG="\nNo seasoning required, bon appétit."
+		fi
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the recipe jail configuration!\n"
+			undo_create_jail ${JAIL_NAME}
+			return 2
+		fi
+
+		CREATE_RECIPE_JAIL_SYSTEM_MODIFIED=true
+
+		# Install any new or modified configs.
+		install_file_tree configs/${HOST_NAME}/ /
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		install_file_tree configs/${JAIL_NAME}@${HOST_NAME}/ /jls/${JAIL_NAME}/
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			echo -e "\n${LRED}ERROR:${NRML} Something went wrong during post-cooking configuration!\n"
-			revert_create_jail ${JAIL_NAME}
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst installing host and recipe jail\n       configuration to the system!\n"
+			undo_create_jail ${JAIL_NAME}
 			return 2
 		fi
 
-		# Restart pf if required.
-		if [ "${RECIPE_REQUIRES_NAT_RELOAD}" = "yes" ]
+		# Add port forwarding rules to the NAT router/firewall (if specified by RECIPE_REQUIRES_PORT_FORWARD=yes).
+		if [ "${RECIPE_REQUIRES_PORT_FORWARD}" = "yes" ]
 		then
-			echo -e "\n"
-			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now?"
+			# Restart pf/ppp if user authorises.
+			echo -e ""
+			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now? [RECOMMENDED]"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				echo -e ""
+
+				CREATE_RECIPE_JAIL_NAT_RELOAD=true
+
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
 					# TODO: resolve why ppp can't reconnect on service restart.
 					#service ppp restart > /dev/null 2>&1
 					service ppp stop > /dev/null 2>&1
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					sleep 4
 					service ppp start > /dev/null 2>&1
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					sleep 4
 					service ppp start > /dev/null 2>&1
-				fi
-				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+					if [ ${ERROR_COUNT} -ne 0 ]
+					then
+						echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the ppp service!\n"
+					else
+						echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
+					fi
+
+				elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
 				then
 					service pf reload > /dev/null 2>&1
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					if [ ${ERROR_COUNT} -ne 0 ]
+					then
+						echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the pf service!\n"
+					else
+						echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+					fi
+				else
+					echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
+				fi
+
+				if [ ${ERROR_COUNT} -ne 0 ]
+				then
+					undo_create_jail ${JAIL_NAME}
+					return 2
 				fi
 			fi
 		fi
@@ -9335,6 +10026,7 @@ create_jail_from_recipe ()
 		# Restart jail if required.
 		if [ "${RECIPE_REQUIRES_JAIL_RESTART}" = "yes" ]
 		then
+			echo -e "\n${YELL}Restarting the '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe jail '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
 			service jail restart ${JAIL_NAME}
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
@@ -9358,33 +10050,49 @@ create_jail_from_recipe ()
 				# Reset error counter.
 				ERROR_COUNT=0
 			else
-				revert_create_jail ${JAIL_NAME}
+				undo_create_jail ${JAIL_NAME}
 				return 3
 			fi
 		fi
 
+		# Echo the seasoning suggestion message to the terminal, expanding any variables.
+		echo -e "\n${LGRN}Seasoning suggestion:${NRML}\n${EXPANDED_SEASONING_SUGGESTION_MSG}\n"
+
+		pause_prompt 16
+
 	elif [ "${RECIPE_SUCCESS}" = "no" ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Jail recipe failed!\n"
-		revert_create_jail ${JAIL_NAME}
+		undo_create_jail ${JAIL_NAME}
 		return 1
 	else
 		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
-		echo -e "         Consider reverting the jail creation by running the command:${NRML}"
-		echo -e "${LBLU}         ${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
+		echo -e "         Consider undoing the jail creation by running the command:${NRML}"
+		echo -e "${LBLU}         ${SCRIPT_NAME} undo-create-jail ${JAIL_NAME}${NRML}\n"
 	fi
 
 	if [ "${RECIPE_SUCCESS}" = "devel" ]
 	then
-		echo -e "\n${LGRN}After tasting your new recipe, you may run the command:${NRML}"
-		echo -e "${LBLU}${SCRIPT_NAME} revert-create-jail ${JAIL_NAME}${NRML}\n"
+		echo -e "\n${LGRN}You may now taste your new recipe before deciding to commit or undo...${NRML}"
 
-		question_yes_no "Would you like to commit the changes to the config repo?"
-		if [ "${ANSWER}" = "yes" ]
+		# Prompt for whether to finalise and commit changes, or undo jail creation / changes.
+		COMMIT_OR_UNDO=""
+		while [ "${COMMIT_OR_UNDO}" = "" ]
+		do
+			echo -e "\n${LCYN}Would you like to commit the changes to the config repo and system or undo them?${NRML}"
+			readee -p "${LCYN}(commit|undo): ${NRML}" COMMIT_OR_UNDO_TEMP
+			# Check input validation.
+			if [ "${COMMIT_OR_UNDO_TEMP}" = "commit" ] || [ "${COMMIT_OR_UNDO_TEMP}" = "undo" ]
+			then
+				COMMIT_OR_UNDO="${COMMIT_OR_UNDO_TEMP}"
+			fi
+		done
+
+		if [ "${COMMIT_OR_UNDO}" = "commit" ]
 		then
 			RECIPE_SUCCESS="yes"
 		else
-			echo -e ""
+			undo_create_jail ${JAIL_NAME}
 		fi
 	fi
 
@@ -9395,13 +10103,13 @@ create_jail_from_recipe ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		git add configs/${JAIL_NAME}@${HOST_NAME}
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		git commit -m "Updating host after 'create-jail-from-recipe ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
+		git commit -m "Updating host after 'create-recipe-jail ${JAIL_NAME} ${JAIL_HOST_NAME} ${JAIL_RECIPE_NAME}'; ${HOST_NAME}."
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 		if [ ${ERROR_COUNT} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst commiting changes to the configs repo!\n"
-			revert_create_jail ${JAIL_NAME}
+			undo_create_jail ${JAIL_NAME}
 			return 2
 		fi
 
@@ -9882,7 +10590,7 @@ init_vms ()
 	fi
 
 	# Copy init-vms template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-vms/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-vms/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -9952,7 +10660,7 @@ init_vms ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -10009,7 +10717,7 @@ undo_create_vm_template ()
 	if [ ${CREATE_VM_TEMPLATE_MODIFIED} = true ]
 	then
 		# Stop the template VM.
-		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 		# Undo temporary network configuration.
 		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
@@ -10062,7 +10770,7 @@ undo_create_vm_instance ()
 	if [ ${CREATE_VM_INSTANCE_MODIFIED} = true ]
 	then
 		# Stop the instance VM.
-		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 		# Undo temporary network configuration.
 		ifconfig ${VM_BRIDGE_IFACE} deletem ${VM_TAP_IFACE} > /dev/null 2>&1
@@ -10169,7 +10877,7 @@ create_vm_image_handler ()
 		if [ "${ANSWER}" = "start" ]
 		then
 			# Start the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 		fi
 
 
@@ -10179,7 +10887,7 @@ create_vm_image_handler ()
 			question_yes "Proceed?"
 
 			# Stop the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 		fi
 
 
@@ -10189,13 +10897,13 @@ create_vm_image_handler ()
 			question_yes "Proceed?"
 
 			# Stop the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 			# Pause for 4 seconds, to allow I/O to settle.
 			sleep 4
 
 			# Start the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 		fi
 
 
@@ -10477,7 +11185,7 @@ create_vm_image_handler ()
 				question_yes "Proceed?"
 
 				# Stop the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
@@ -10487,7 +11195,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 				fi
 			fi
 		fi
@@ -10564,7 +11272,7 @@ create_vm_image_handler ()
 				question_yes "Proceed?"
 
 				# Stop the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 				# Allow archiving of the detached disk image.
 				question_yes_no "\nWould you like to keep a copy of the detached disk image?"
@@ -10633,7 +11341,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 				fi
 
 			fi
@@ -10745,7 +11453,7 @@ create_vm_image_handler ()
 				question_yes "Proceed?"
 
 				# Stop the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 				# Pause for 4 seconds, to allow I/O to settle.
 				sleep 4
@@ -10755,7 +11463,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 				fi
 			fi
 		fi
@@ -10831,7 +11539,7 @@ create_vm_image_handler ()
 				question_yes "Proceed?"
 
 				# Stop the VM.
-				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 				# Remove the disk image in the vms.conf file.
 				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
@@ -10845,7 +11553,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 				fi
 
 			fi
@@ -11519,7 +12227,7 @@ create_vm_template ()
 
 	# Start template VM for the first time.
 	echo -e "\n${YELL}Starting template VM '${NRML}${VM_NAME}${YELL}' for the first time...${NRML}\n"
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 
 	# Inform user that next step is to login via VNC to the template and perform the installation / configuration.
 	echo -e "\n${YELL}The template VM should now be running.${NRML}"
@@ -11557,7 +12265,7 @@ create_vm_template ()
 	question_yes "Proceed?"
 
 	# Stop the template VM.
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 	# Snapshot the template VM for use by 'create-vm-instance'.
 	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
@@ -11575,7 +12283,7 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -11978,7 +12686,7 @@ create_vm_instance ()
 	fi
 
 	# Make sure the template VM is shutdown first.
-	VM_TEMPLATE_RUN_STATE=`fdo-vms-list --concise --type=template | egrep "${VM_TEMPLATE_NAME}" | awk '{print $2}'`
+	VM_TEMPLATE_RUN_STATE=`${FDO_VMS_LIST_PATH} --concise --type=template | egrep "${VM_TEMPLATE_NAME}" | awk '{print $2}'`
 	if [ "${VM_TEMPLATE_RUN_STATE}" != "stopped" ]
 	then
 		# Prompt to shutdown template VM gracefully.
@@ -11986,7 +12694,7 @@ create_vm_instance ()
 		question_yes "Proceed?"
 
 		# Stop the template VM.
-		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_TEMPLATE_NAME}" --force
+		VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_TEMPLATE_NAME}" --force
 	fi
 
 	CREATE_VM_INSTANCE_MODIFIED=true
@@ -12131,7 +12839,7 @@ create_vm_instance ()
 
 	# Start instance VM for the first time.
 	echo -e "\n${YELL}Starting instance VM '${ORNG}${VM_NAME}${NRML}' for the first time...${NRML}\n"
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-start "${VM_NAME}" --wait
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
 
 	# Inform user that next step is to login via VNC to the instance VM and perform configuration.
 	echo -e "\n${YELL}The instance VM should now be running and ready to boot.${NRML}"
@@ -12158,7 +12866,7 @@ create_vm_instance ()
 	question_yes "Proceed?"
 
 	# Stop the instance VM.
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" fdo-vms-stop "${VM_NAME}" --force
+	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 	# Ask whether to disable VNC for production use.
 	question_yes_no "Would you like to disable VNC on this VM for production use?"
@@ -12184,7 +12892,7 @@ create_vm_instance ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -12464,7 +13172,7 @@ init_partimag ()
 	INIT_PARTIMAG_REPO_MODIFIED=true
 
 	# Copy init-partimag template configs to this hosts' repo profile.
-	install_file_tree config-templates/init-partimag/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE} configs/${HOST_NAME}/
+	install_file_tree config-templates/init-partimag/FreeBSD-${FREEBSD_VERSION}-${FREEBSD_CADENCE}/ configs/${HOST_NAME}/
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	echo -e ""
 
@@ -12535,7 +13243,7 @@ init_partimag ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Install host configs to the system.
-	install_file_tree configs/${HOST_NAME} /
+	install_file_tree configs/${HOST_NAME}/ /
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -12857,19 +13565,19 @@ case "${SUB_CMD}" in
 		exit ${?}
 		;;
 
-	create-jail-from-recipe)
+	create-recipe-jail)
 		# Create a jail from a jail recipe.
 		test_num_mandatory_sub_args 3
 		update_local_repo
-		create_jail_from_recipe "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
+		create_recipe_jail "${SUB_ARG1}" "${SUB_ARG2}" "${SUB_ARG3}"
 		exit ${?}
 		;;
 
-	revert-create-jail)
-		# Revert back to before last jail creation (developers).
+	destroy-jail)
+		# Destroy a previously created jail.
 		test_num_mandatory_sub_args 1
 		update_local_repo --no-update
-		revert_create_jail "${SUB_ARG1}"
+		destroy_jail "${SUB_ARG1}"
 		exit ${?}
 		;;
 
