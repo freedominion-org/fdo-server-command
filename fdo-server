@@ -53,9 +53,9 @@ FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedom
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 ESSENTIAL_PACKAGES="sysutils/apcupsd ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode devel/git security/nmap archivers/p7zip net/py-speedtest-cli net/rsync"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode git security/nmap archivers/p7zip net/py-speedtest-cli net/rsync"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils/tree devel/uclcmd archivers/unrar archivers/unzip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} editors/vim sysutils/zfs-stats-lite archivers/zip"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} vim sysutils/zfs-stats-lite archivers/zip"
 PKG_REPO_CONF_FILE="fdo-pkg.conf"
 PKG_REPO_CERT_FILE="fdo-pkg.cert"
 FDO_CERTS_DIR=${FDO_CERTS_DIR:-"/usr/local/etc/ssl/fdo-certs"}
@@ -76,7 +76,7 @@ LATEST_PARTIMAG_SUBSYS_COMPAT=1
 
 ESSENTIAL_JAIL_PACKAGES="ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
 ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} ports-mgmt/portmaster net/rsync sysutils/tree devel/uclcmd archivers/unrar"
-ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} archivers/unzip archivers/zip editors/vim"
+ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} archivers/unzip archivers/zip vim"
 JAILS_CONF_PATH=${JAILS_CONF_PATH:-"${FDO_CONFIG_ROOT}/jails.conf"}
 
 
@@ -8071,7 +8071,7 @@ undo_init_sshfs_daemon ()
 	# Unload FUSE module, if it was loaded.
 	if [ ${INIT_SSHFS_DAEMON_FUSE_LOAD} = true ]
 	then
-		kldunload fuse 2> /dev/null
+		kldunload fusefs 2> /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -8177,10 +8177,10 @@ init_sshfs_daemon ()
 	fi
 
 	# Load required kernel modules.
-	kldstat -n fuse > /dev/null 2>&1
+	kldstat -n fusefs > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
-		kldload fuse 2> /dev/null
+		kldload fusefs 2> /dev/null
 		if [ ${?} -ne 0 ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} A problem was encountered whilst loading required kernel modules.\n"
@@ -8201,7 +8201,7 @@ init_sshfs_daemon ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set FUSE support to load on boot.
-	conf_set configs/${HOST_NAME}/boot/loader.conf string ".filesystems.fuse_load" "YES"
+	conf_set configs/${HOST_NAME}/boot/loader.conf string ".filesystems.fusefs_load" "YES"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Set fdo_sshfsd service to start on boot.
