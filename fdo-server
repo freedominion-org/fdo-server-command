@@ -45,6 +45,7 @@ DEBUG=${DEBUG:-false}
 DIALOG_OUT_FILE="/tmp/${SCRIPT_NAME}.dialog.answer"
 REPO_NAME=${REPO_NAME:-"fdo-server"}
 UCL_CMD="/usr/local/bin/uclcmd"
+GRUB_BHYVE_CMD="/usr/local/sbin/grub-bhyve"
 FDO_CONFIG_ROOT=${FDO_CONFIG_ROOT:-"/usr/local/etc/fdo"}
 HOST_CONF_PATH=${HOST_CONF_PATH:-"${FDO_CONFIG_ROOT}/host.conf"}
 RECIPE_CONF_PATH=${RECIPE_CONF_PATH:-"${FDO_CONFIG_ROOT}/recipe.conf"}
@@ -52,6 +53,7 @@ LOGIN_SHELL=${LOGIN_SHELL:-"/usr/local/bin/bash"}
 FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedominion-org/fdo-server.git"}
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
+FREEBSD_RELEASE_DOWNLOAD_ROOT="http://freedominion.org/freebsd-releases"
 ESSENTIAL_PACKAGES="sysutils/apcupsd ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode git security/nmap archivers/p7zip net/py-speedtest-cli net/rsync"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils/tree devel/uclcmd archivers/unrar archivers/unzip"
@@ -94,7 +96,7 @@ SSHFS_DAEMON_PACKAGES="sysutils/fusefs-sshfs"
 SSHFS_DAEMON_CONF_PATH=${SSHFS_DAEMON_CONF_PATH:-"${FDO_CONFIG_ROOT}/sshfs-daemon.conf"}
 
 
-VM_SUBSYSTEM_PACKAGES="sysutils/bhyve-firmware"
+VM_SUBSYSTEM_PACKAGES="sysutils/bhyve-firmware sysutils/grub2-bhyve"
 VMS_CONF_PATH=${VMS_CONF_PATH:-"${FDO_CONFIG_ROOT}/vms.conf"}
 VMS_ROOT_FS="fdo-vms"
 VMS_ROOT_PATH="/${VMS_ROOT_FS}"
@@ -103,15 +105,17 @@ VM_TEMPLATES_DIRNAME="templates"
 VM_INSTANCES_DIRNAME="instances"
 VM_RESOURCES_PATH="${VMS_ROOT_PATH}/${VM_RESOURCES_DIRNAME}"
 VM_NAME_MIN=3
-VM_NAME_MAX=30
+VM_NAME_MAX=24
 VM_MIN_CORES=1
 VM_MAX_CORES=16
 VM_MIN_MEM_SIZE_MB=128
 VM_MAX_MEM_SIZE_MB=65536
 VM_MIN_IMAGE_SIZE_GB=1
 VM_MAX_IMAGE_SIZE_GB=16384
-VM_DEFAULT_DISK_DRIVER="virtio-blk"
-VM_DEFAULT_SECTOR_SIZE=4096
+VM_MIN_GRUB_TIMEOUT=1
+VM_MAX_GRUB_TIMEOUT=60
+VM_DEFAULT_DISK_DRIVER="ahci-hd"
+VM_DEFAULT_SECTOR_SIZE=512
 VM_DEFAULT_VNC_PORT_NUM_START=6000
 VM_DEFAULT_NIC_DRIVER="e1000"
 VM_DEFAULT_BOOT_LOADER="UEFI"
@@ -1822,6 +1826,16 @@ install_file_tree ()
 
 	SOURCE_FILES_ROOT_NO_TRAILING_SLASH=`echo "${SOURCE_FILES_ROOT}" | sed "s|/$||"`
 
+	if [ ${DEBUG} = true ]
+	then
+		echo -e "\n\nDEBUG install_file_tree (1):"
+		echo -e "PWD:"
+		pwd
+		echo -e "SOURCE_FILES_ROOT = <${SOURCE_FILES_ROOT}>"
+		echo -e "SOURCE_FILES_ROOT_NO_TRAILING_SLASH = <${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}>"
+		echo -e "\n"
+	fi
+
 	# If no trailing slash on SOURCE_FILES_ROOT then:
 	# if leaf node is a dir, create the leaf dir inside the DEST_FILES_ROOT,
 	# if leaf node is a file, create the leaf file inside the DEST_FILES_ROOT.
@@ -1877,7 +1891,7 @@ install_file_tree ()
 
 		if [ "${CHOWN_GROUP}" = "" ]
 		then
-			chown ${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
+			chown :${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
 			if [ ${?} -ne 0 ]
 			then
 				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
@@ -1891,6 +1905,9 @@ install_file_tree ()
 		fi
 	fi
 
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
+
 	# Recursively sync the SRC tree from below the SOURCE_FILES_ROOT dir into the DEST_FILES_ROOT dir.
 	# Then set SRC permissions and either SRC or specified ownership to the DEST.
 	for SOURCE_FILE_PATH in `find "${SOURCE_FILES_ROOT_NO_TRAILING_SLASH}" -print | tail -n +2 | sort`
@@ -1901,6 +1918,17 @@ install_file_tree ()
 		SOURCE_FILE_UID=`stat -f "%u" "${SOURCE_FILE_PATH}"`
 		SOURCE_FILE_GID=`stat -f "%g" "${SOURCE_FILE_PATH}"`
 		SOURCE_FILE_PERMS=`stat -f "%OLp" "${SOURCE_FILE_PATH}"`
+
+		if [ ${DEBUG} = true ]
+		then
+			echo -e "\n\nDEBUG install_file_tree (2):"
+			echo -e "RELATIVE_DEST_FILE_PATH = <${RELATIVE_DEST_FILE_PATH}>"
+			echo -e "SOURCE_FILE_UID = <${SOURCE_FILE_UID}>"
+			echo -e "SOURCE_FILE_UID = <${SOURCE_FILE_UID}>"
+			echo -e "SOURCE_FILE_GID = <${SOURCE_FILE_GID}>"
+			echo -e "SOURCE_FILE_PERMS = <${SOURCE_FILE_PERMS}>"
+			echo -e "\n"
+		fi
 
 		if [ -d "${SOURCE_FILE_PATH}" ]
 		then
@@ -1947,7 +1975,7 @@ install_file_tree ()
 
 		if [ "${CHOWN_GROUP}" = "" ]
 		then
-			chown ${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
+			chown :${SOURCE_FILE_GID} "${DEST_FILE_PATH}"
 			if [ ${?} -ne 0 ]
 			then
 				ERROR_COUNT=$(( ${ERROR_COUNT} + 1 ))
@@ -1960,6 +1988,8 @@ install_file_tree ()
 			fi
 		fi
 	done
+
+	IFS="${CURRENT_IFS}"
 
 	return ${ERROR_COUNT}
 }
@@ -1974,6 +2004,9 @@ undo_install_file_tree ()
 	ERROR_COUNT=0
 
 	SOURCE_FILES_ROOT_NO_TRAILING_SLASH=`echo "${SOURCE_FILES_ROOT}" | sed "s|/$||"`
+
+	CURRENT_IFS="${IFS}"
+	IFS="${CARRIAGE_RETURN}"
 
 	# Find all files that exists in source root path, and then:
 	# (i) if a backup exists that differs from the destination, restore it,
@@ -2034,6 +2067,8 @@ undo_install_file_tree ()
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 		fi
 	fi
+
+	IFS="${CURRENT_IFS}"
 
 	return ${ERROR_COUNT}
 }
@@ -2661,8 +2696,8 @@ update_script ()
 		return 1
 	fi
 
-	echo -e ""
-	readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
+	echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}"
+	readee CHANGE_MESSAGE
 	cp -p scripts${SCRIPT_PATH} /tmp/${SCRIPT_NAME}_update-script.tmp > /dev/null 2>&1
 	cp -p ${SCRIPT_PATH} scripts${SCRIPT_PATH} > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
@@ -3036,8 +3071,8 @@ update_config ()
 
 	if [ ! -n "${CHANGE_MESSAGE}" ]
 	then
-		echo -e ""
-		readee -p "${LCYN}Enter a short explanation of the changes made: ${NRML}" CHANGE_MESSAGE
+		echo -e "\n${LCYN}Enter a short explanation of the changes made: ${NRML}"
+		readee CHANGE_MESSAGE
 	fi
 
 	cp -p "${CONFIG_REPO_ROOT}${CONFIG_RELATIVE_PATH}" "/tmp/${SCRIPT_NAME}_update-config.tmp" > /dev/null 2>&1
@@ -5220,7 +5255,7 @@ patch_host ()
 		fi
 	fi
 
-	cat /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | tail -1 | grep "^No updates needed" > /dev/null
+	cat /tmp/fdo-freebsd-update-output.host.fetch.${NOW} | tail -5 | grep "^No updates needed" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LGRN}This host does not need patches installed, it's already fully patched.${NRML}\n"
@@ -5232,9 +5267,15 @@ patch_host ()
 	PAGER=cat freebsd-update install > /tmp/fdo-freebsd-update-output.host.install.${NOW}
 	if [ ${?} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} The '${LBLU}freebsd-update install${NRML}' operation failed!"
-		echo -e "       Check FDo documentation for help.\n       Aborting.\n"
-		return 2
+		tail -5 /tmp/fdo-freebsd-update-output.host.install.${NOW} | egrep "No updates are available to install" > /dev/null
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} The '${LBLU}freebsd-update install${NRML}' operation failed!"
+			echo -e "       Check FDo documentation for help.\n       Aborting.\n"
+			return 2
+		else
+			echo -e "\n${YELL}INFO:${NRML} No updates to install, system is already at latest patch level!\n"
+		fi
 	fi
 
 	# Get new FreeBSD version strings.
@@ -6039,13 +6080,13 @@ init_mpd_server ()
 			readee -p "${LCYN}Enter custom audio output name: ${NRML}" MPD_SERVER_PCM_NAME_TEMP
 
 			# Check that the name only contains letters, numbers, brackets, commas, periods, spaces, underscores and hyphens between 3 and 50 characters.
-			IS_SYNTAX_OK=`echo "${MPD_SERVER_PCM_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\-\(\)][a-zA-Z0-9\,\.\_\-\(\) ]+[a-zA-Z0-9\_\-\(\)]//" | wc -L`
+			IS_SYNTAX_OK=`echo "${MPD_SERVER_PCM_NAME_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\-][a-zA-Z0-9\,\.\_\(\)\ \-]+[a-zA-Z0-9\_\(\)\-]//" | wc -L`
 			IS_LENGTH_OK=`echo "${MPD_SERVER_PCM_NAME_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
 			if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${MPD_SERVER_PCM_NAME_TEMP}" = "" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}'."
 				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
-				echo -e "       brackets, commas, periods,spaces, underscores and hyphens.\n"
+				echo -e "       brackets, commas, periods, spaces, underscores and hyphens.\n"
 			else
 				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PCM_NAME_TEMP}${LCYN}' as the name.\nIs this correct?"
 				if [ "${ANSWER}" = "yes" ]
@@ -7014,7 +7055,7 @@ init_wifi_ap ()
 		readee -p "${LCYN}Enter the SSID for the WiFi AP: ${NRML}" WIFI_AP_SSID_TEMP
 
 		# Check that the SSID only contains letters, numbers, spaces, periods, underscores and hyphens between 3 and 30 characters.
-		IS_SYNTAX_OK=`echo "${WIFI_AP_SSID_TEMP}" | sed -r "s/^[a-zA-Z0-9][a-zA-Z0-9\.\_\-\ ]+[a-zA-Z0-9]//" | wc -L`
+		IS_SYNTAX_OK=`echo "${WIFI_AP_SSID_TEMP}" | sed -r "s/^[a-zA-Z0-9][a-zA-Z0-9\.\_\ \-]+[a-zA-Z0-9]//" | wc -L`
 		IS_LENGTH_OK=`echo "${WIFI_AP_SSID_TEMP}" | sed -r "s/^(.{3,30})//" | wc -L`
 		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${WIFI_AP_SSID_TEMP}" = "" ]
 		then
@@ -7736,8 +7777,8 @@ init_hotdesk ()
 	NIS_DOMAIN_NAME=""
 	while [ "${NIS_DOMAIN_NAME}" = "" ]
 	do
-		echo -e ""
-		readee -p "${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}" NIS_DOMAIN_NAME_TEMP
+		echo -e "\n${LCYN}Enter NIS domain name (need not be the same as the host): ${NRML}"
+		readee NIS_DOMAIN_NAME_TEMP
 		# Check that the nisdomainname is a valid domain name.
 		test_valid_fqhn "${NIS_DOMAIN_NAME_TEMP}"
 		if [ "${VALID_FQHN}" = "yes" ]
@@ -8543,11 +8584,11 @@ init_jails ()
 
 	# Download relevant base system tarballs.
 	echo -e "\n${YELL}Downloading FreeBSD base system tarballs...${NRML}\n"
-	fetch -o /tmp/jail-base.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
+	fetch -o /tmp/jail-base.txz ${FREEBSD_RELEASE_DOWNLOAD_ROOT}/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/base.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-lib32.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
+	fetch -o /tmp/jail-lib32.txz ${FREEBSD_RELEASE_DOWNLOAD_ROOT}/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/lib32.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fetch -o /tmp/jail-src.txz http://ftp.freebsd.org/pub/FreeBSD/releases/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
+	fetch -o /tmp/jail-src.txz ${FREEBSD_RELEASE_DOWNLOAD_ROOT}/${FREEBSD_ARCH}/${FREEBSD_VERSION}-${FREEBSD_CADENCE}/src.txz
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
@@ -8740,12 +8781,17 @@ init_jails ()
 	if [ ${?} -ne 0 ]
 	then
 		# ASSUME that if this grep returns non-zero, the reason for the previous non-zero return code is a 'freebsd-update fetch' failure.
-		tail -4 /tmp/fdo-freebsd-update.output.template-jail.fetch.${NOW} | egrep "WARNING: FreeBSD .* HAS PASSED ITS END-OF-LIFE" > /dev/null
+		tail -5 /tmp/fdo-freebsd-update.output.template-jail.fetch.${NOW} | egrep "WARNING: FreeBSD .* HAS PASSED ITS END-OF-LIFE" > /dev/null
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
 	PAGER=cat freebsd-update -b /jls/template install > /tmp/fdo-freebsd-update.output.template-jail.install.${NOW}
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	if [ ${?} -ne 0 ]
+	then
+		# ASSUME that if this grep returns non-zero, the reason for the previous non-zero return code is a 'freebsd-update install' failure.
+		tail -5 /tmp/fdo-freebsd-update.output.template-jail.install.${NOW} | egrep "No updates are available to install" > /dev/null
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
 
 	service jail restart template
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -10816,37 +10862,602 @@ undo_create_vm_instance ()
 	return 0
 }
 
+get_vm_grub_config ()
+{
+	VM_GRUB_GET_METHOD=""
+	VM_GRUB_ROOT_DEVICE=""
+	VM_GRUB_DIRECTORY=""
+	VM_GRUB_CONF_FILENAME=""
+	VM_GRUB_DISK=`echo "${1}" | cut -d")" -f1 | cut -d"(" -f2`
+	VM_GRUB_CONFIG_ACCEPTED=false
+	VM_GET_GRUB_LOADED=false
+
+	# Loop, getting grub config until it's accepted.
+	while [ ${VM_GRUB_CONFIG_ACCEPTED} = false ]
+	do
+		# Populate relevant device list and default device depending on grub disk type.
+		case "${VM_GRUB_DISK}" in
+			hd0)
+				VM_GRUB_DEVICES_LIST="hd0,1 hd0,2 hd0,3 hd0,4 hd0,5 custom"
+				VM_GRUB_DEVICE_DEFAULT="hd0,1"
+				;;
+			cd0)
+				VM_GRUB_DEVICES_LIST="cd0 cd0,1 cd0,2 custom"
+				VM_GRUB_DEVICE_DEFAULT="cd0"
+				;;
+			*)
+				VM_GRUB_DEVICES_LIST="custom"
+				VM_GRUB_DEVICE_DEFAULT=""
+				;;
+		esac
+
+		# Get the grub config selection method.
+		VM_GRUB_GET_METHODS="auto manual expert"
+		while [ "${VM_GRUB_GET_METHOD}" = "" ]
+		do
+			DIALOG_PROMPT="Select the method to get the grub config:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_GRUB_GET_METHODS} 2> ${DIALOG_OUT_FILE}
+			VM_GRUB_GET_METHOD_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_GRUB_GET_METHOD_TEMP}${LCYN}'.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_GRUB_GET_METHOD="${VM_GRUB_GET_METHOD_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		if [ "${VM_GRUB_GET_METHOD}" = "auto" ]
+		then
+			# In auto method, just set the grub root device as the default for the image type.
+			VM_GRUB_ROOT_DEVICE="${VM_GRUB_DEVICE_DEFAULT}"
+		fi
+
+		# Get the grub root device from a list based on the image type.
+		while [ "${VM_GRUB_ROOT_DEVICE}" = "" ]
+		do
+			DIALOG_PROMPT="Select the grub root device to use for booting:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_GRUB_DEVICES_LIST} 2> ${DIALOG_OUT_FILE}
+			VM_GRUB_ROOT_DEVICE_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_GRUB_ROOT_DEVICE_TEMP}${LCYN}'.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_GRUB_ROOT_DEVICE="${VM_GRUB_ROOT_DEVICE_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		if [ "${VM_GRUB_ROOT_DEVICE}" = "custom" ]
+		then
+			# Get valid custom grub root device.
+			VM_GRUB_ROOT_DEVICE=""
+			while [ "${VM_GRUB_ROOT_DEVICE}" = "" ]
+			do
+				echo -e ""
+				readee -p "${LCYN}Enter custom grub root device: ${NRML}" VM_GRUB_ROOT_DEVICE_TEMP
+
+				# Check that the entry only contains letters, numbers, brackets, commas, periods, spaces, underscores,
+			    # hyphens and forward slashes between 3 and 50 characters.
+				IS_SYNTAX_OK=`echo "${VM_GRUB_ROOT_DEVICE_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\/\-][a-zA-Z0-9\,\.\_\(\)\/\ \-]+[a-zA-Z0-9\_\(\)\/\-]//" | wc -L`
+				IS_LENGTH_OK=`echo "${VM_GRUB_ROOT_DEVICE_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+				if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_GRUB_ROOT_DEVICE_TEMP}" = "" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The grub root device can not be '${ORNG}${VM_GRUB_ROOT_DEVICE_TEMP}${NRML}'."
+					echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+					echo -e "       brackets, commas, periods, spaces, underscores, hyphens"
+				    echo -e "       and forward slashes.\n"
+				else
+					question_yes_no "\nYou have entered '${NRML}${VM_GRUB_ROOT_DEVICE_TEMP}${LCYN}'.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_ROOT_DEVICE=${VM_GRUB_ROOT_DEVICE_TEMP}
+						break
+					fi
+				fi
+				sleep 2
+			done
+		fi
+
+		# Get the grub directory from a list based on the image type.
+		VM_GRUB_DIR_LIST="/boot/grub /grub custom"
+		while [ "${VM_GRUB_DIRECTORY}" = "" ] && [ "${VM_GRUB_GET_METHOD}" = "manual" ]
+		do
+			DIALOG_PROMPT="Select the directory of the grub config file:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_GRUB_DIR_LIST} 2> ${DIALOG_OUT_FILE}
+			VM_GRUB_DIRECTORY_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_GRUB_DIRECTORY_TEMP}${LCYN}'.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_GRUB_DIRECTORY="${VM_GRUB_DIRECTORY_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		if [ "${VM_GRUB_DIRECTORY}" = "custom" ]
+		then
+			# Get valid custom grub directory.
+			VM_GRUB_DIRECTORY=""
+			while [ "${VM_GRUB_DIRECTORY}" = "" ]
+			do
+				echo -e ""
+				readee -p "${LCYN}Enter custom grub directory: ${NRML}" VM_GRUB_DIRECTORY_TEMP
+
+				# Check that the entry only contains letters, numbers, brackets, commas, periods, spaces, underscores,
+			    # hyphens and forward slashes between 3 and 50 characters.
+				IS_SYNTAX_OK=`echo "${VM_GRUB_DIRECTORY_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\/\-][a-zA-Z0-9\,\.\_\(\)\/\ \-]+[a-zA-Z0-9\_\(\)\/\-]//" | wc -L`
+				IS_LENGTH_OK=`echo "${VM_GRUB_DIRECTORY_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+				if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_GRUB_DIRECTORY_TEMP}" = "" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The grub directory can not be '${ORNG}${VM_GRUB_DIRECTORY_TEMP}${NRML}'."
+					echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+					echo -e "       brackets, commas, periods, spaces, underscores, hyphens"
+				    echo -e "       and forward slashes.\n"
+				else
+					question_yes_no "\nYou have entered '${NRML}${VM_GRUB_DIRECTORY_TEMP}${LCYN}'.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_DIRECTORY="${VM_GRUB_DIRECTORY_TEMP}"
+						break
+					fi
+				fi
+				sleep 2
+			done
+		fi
+
+		# Get the grub config filename from a list based on the image type.
+		VM_GRUB_CONF_LIST="grub.cfg grub.conf custom"
+		while [ "${VM_GRUB_CONF_FILENAME}" = "" ] && [ "${VM_GRUB_GET_METHOD}" = "manual" ]
+		do
+			DIALOG_PROMPT="Select the filename of the grub config:"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_GRUB_CONF_LIST} 2> ${DIALOG_OUT_FILE}
+			VM_GRUB_CONF_FILENAME_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_GRUB_CONF_FILENAME_TEMP}${LCYN}'.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_GRUB_CONF_FILENAME="${VM_GRUB_CONF_FILENAME_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		if [ "${VM_GRUB_CONF_FILENAME}" = "custom" ]
+		then
+			# Get valid custom grub config filename.
+			VM_GRUB_CONF_FILENAME=""
+			while [ "${VM_GRUB_CONF_FILENAME}" = "" ]
+			do
+				echo -e ""
+				readee -p "${LCYN}Enter custom grub config filename: ${NRML}" VM_GRUB_CONF_FILENAME_TEMP
+
+				# Check that the entry only contains letters, numbers, brackets, commas, periods, spaces, underscores,
+			    # and hyphens between 3 and 50 characters.
+				IS_SYNTAX_OK=`echo "${VM_GRUB_CONF_FILENAME_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\-][a-zA-Z0-9\,\.\_\(\)\ \-]+[a-zA-Z0-9\_\(\)\-]//" | wc -L`
+				IS_LENGTH_OK=`echo "${VM_GRUB_CONF_FILENAME_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+				if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_GRUB_CONF_FILENAME_TEMP}" = "" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The grub config filename can not be '${ORNG}${VM_GRUB_CONF_FILENAME_TEMP}${NRML}'."
+					echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+					echo -e "       brackets, commas, periods, spaces, underscores and hyphens.\n"
+				else
+					question_yes_no "\nYou have entered '${NRML}${VM_GRUB_CONF_FILENAME_TEMP}${LCYN}'.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_CONF_FILENAME="${VM_GRUB_CONF_FILENAME_TEMP}"
+						break
+					fi
+				fi
+				sleep 2
+			done
+		fi
+
+		if [ "${VM_GRUB_GET_METHOD}" = "expert" ]
+		then
+			# In expert method, prompt the user for the grub line0 and line1.
+			VM_GRUB_LINE0=""
+			while [ "${VM_GRUB_LINE0}" = "" ]
+			do
+				echo -e "\n${LCYN}Enter expert grub line 0 (e.g. kernel): ${NRML}"
+				readee VM_GRUB_LINE0_TEMP
+
+				# Check that the entry only contains letters, numbers, brackets, commas, periods, spaces, underscores,
+			    # hyphens, equals and forward slashes between 1 and 200 characters.
+				IS_SYNTAX_OK=`echo "${VM_GRUB_LINE0_TEMP}" | sed -r "s/^[a-zA-Z0-9\,\.\_\(\)\/\ \=\-]+//" | wc -L`
+				IS_LENGTH_OK=`echo "${VM_GRUB_LINE0_TEMP}" | sed -r "s/^(.{1,200})//" | wc -L`
+				if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_GRUB_LINE0_TEMP}" = "" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The expert grub line can not be"
+					echo -e "       ${ORNG}${VM_GRUB_LINE0_TEMP}${NRML}'."
+					echo -e "       It must be between 1 and 200 characters and only contain letters, numbers"
+					echo -e "       brackets, commas, periods, spaces, underscores, hyphens, equals"
+				    echo -e "       and forward slashes.\n"
+				else
+					question_yes_no "\nYou have entered:\n'${NRML}${VM_GRUB_LINE0_TEMP}${LCYN}'.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_LINE0="${VM_GRUB_LINE0_TEMP}"
+						break
+					fi
+				fi
+				sleep 2
+			done
+
+			VM_GRUB_LINE1=""
+			while [ "${VM_GRUB_LINE1}" = "" ]
+			do
+				echo -e "\n${LCYN}Enter expert grub line 1 (e.g. initrd), enter '.' for none: ${NRML}"
+				readee VM_GRUB_LINE1_TEMP
+
+				# Check that the entry only contains letters, numbers, brackets, commas, periods, spaces, underscores,
+			    # hyphens, equals and forward slashes between 1 and 200 characters.
+				IS_SYNTAX_OK=`echo "${VM_GRUB_LINE1_TEMP}" | sed -r "s/^[a-zA-Z0-9\,\.\_\(\)\/\ \=\-]+//" | wc -L`
+				IS_LENGTH_OK=`echo "${VM_GRUB_LINE1_TEMP}" | sed -r "s/^(.{1,200})//" | wc -L`
+				if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_GRUB_LINE1_TEMP}" = "" ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} The expert grub line can not be"
+					echo -e "       ${ORNG}${VM_GRUB_LINE1_TEMP}${NRML}'."
+					echo -e "       It must be between 1 and 200 characters and only contain letters, numbers"
+					echo -e "       brackets, commas, periods, spaces, underscores, hyphens, equals"
+				    echo -e "       and forward slashes.\n"
+				else
+					question_yes_no "\nYou have entered:\n'${NRML}${VM_GRUB_LINE1_TEMP}${LCYN}'.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_LINE1="${VM_GRUB_LINE1_TEMP}"
+						break
+					fi
+				fi
+				sleep 2
+			done
+
+			# Get grub timeout (seconds).
+			VM_GRUB_TIMEOUT=0
+			while [ ${VM_GRUB_TIMEOUT} -eq 0 ]
+			do
+				echo -e ""
+				readee -p "${LCYN}Enter the grub timeout (seconds) for this image: ${NRML}" VM_GRUB_TIMEOUT_TEMP
+				# Check that the VM core count contains only valid numbers.
+				test_valid_integer "${VM_GRUB_TIMEOUT_TEMP}" ${VM_MIN_GRUB_TIMEOUT} ${VM_MAX_GRUB_TIMEOUT}
+				if [ "${VALID_INTEGER}" = "yes" ]
+				then
+					question_yes_no "\nYou have entered '${NRML}${VM_GRUB_TIMEOUT_TEMP}${LCYN}' as the grub timeout for this image.\nIs this correct?"
+					if [ "${ANSWER}" = "yes" ]
+					then
+						VM_GRUB_TIMEOUT=${VM_GRUB_TIMEOUT_TEMP}
+					fi
+				else
+					echo -e "\n${LRED}ERROR:${NRML} The grub timeout can not be '${ORNG}${VM_GRUB_TIMEOUT_TEMP}${NRML}'."
+					echo -e "       It must contain only numbers of value between ${VM_MIN_GRUB_TIMEOUT} and ${VM_MAX_GRUB_TIMEOUT}.\n"
+				fi
+			done
+
+			# Build an expert grub.cfg file in the VM image directory.
+			VM_EXPERT_GRUB_TEXT="timeout=${VM_GRUB_TIMEOUT}"
+			VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}menuentry '${VM_NAME} (expert)' {"
+			VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}    root=(${VM_GRUB_ROOT_DEVICE})"
+			VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}    ${VM_GRUB_LINE0}"
+			if [ "${VM_GRUB_LINE1}" != "." ]
+			then
+				VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}    ${VM_GRUB_LINE1}"
+			fi
+			VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}}"
+			VM_EXPERT_GRUB_TEXT="${VM_EXPERT_GRUB_TEXT}${CARRIAGE_RETURN}boot"
+
+			echo "${VM_EXPERT_GRUB_TEXT}" > ${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}.grub.cfg
+		fi
+
+		question_yes_no "\nWould you like to test if the selected grub configuration works?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+
+			VM_BOOTLOADER_COMMAND="${GRUB_BHYVE_CMD} -m ${VM_FS_MOUNTPOINT}/device.map"
+
+			if [ "${VM_GRUB_GET_METHOD}" = "expert" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -r \"host\""
+			elif [ "${VM_GRUB_ROOT_DEVICE}" != "" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -r \"${VM_GRUB_ROOT_DEVICE}\""
+			fi
+
+			if [ "${VM_GRUB_GET_METHOD}" = "expert" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -d \"${VM_FS_MOUNTPOINT}\""
+			elif [ "${VM_GRUB_DIRECTORY}" != "" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -d \"${VM_GRUB_DIRECTORY}\""
+			fi
+
+			if [ "${VM_GRUB_GET_METHOD}" = "expert" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -g \"${VM_IMAGE_FILENAME}.grub.cfg\""
+			elif [ "${VM_GRUB_CONF_FILENAME}" != "" ]
+			then
+				VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -g \"${VM_GRUB_CONF_FILENAME}\""
+			fi
+
+			VM_BOOTLOADER_COMMAND="${VM_BOOTLOADER_COMMAND} -M ${VM_MEM_SIZE_MB} fdo-vm-${VM_NAME}"
+
+			if [ "${DEBUG}" = "true" ]
+			then
+				echo -e "\nDEBUG info:\n"
+				echo -e "VM_BOOTLOADER_COMMAND:\n${VM_BOOTLOADER_COMMAND}"
+				echo -e "\n"
+				question_yes "Proceed?"
+			fi
+
+			echo -e "\n\n${YELL}INFO:${NRML} We will now test the grub boot loader. If the boot loader fails with"
+			echo -e "      the chosen grub configuration, you will arrive at the '${ORNG}grub>${NRML}' shell prompt."
+			echo -e "      Use the '${LBLU}ls${NRML}' command to see what the correct device may be.\n"
+			echo -e "      To exit the grub shell; type '${LBLU}halt${NRML}' followed by 'Enter' key.\n\n"
+			question_yes "Proceed?"
+			sh -c "${VM_BOOTLOADER_COMMAND}"
+			VM_GET_GRUB_LOADED=true
+		fi
+
+		question_yes_no "\nDo you accept the chosen grub configuration? Enter 'no' to try another choice."
+		if [ "${ANSWER}" = "yes" ]
+		then
+			VM_GRUB_CONFIG_ACCEPTED=true
+		else
+			VM_GET_GRUB_LOADED=false
+			VM_GRUB_GET_METHOD=""
+			VM_GRUB_DIRECTORY=""
+			VM_GRUB_CONF_FILENAME=""
+			VM_GRUB_ROOT_DEVICE=""
+		fi
+
+	done
+}
+
+create_vm_boot ()
+{
+	REPO_VMS_CONF_PATH="configs/${HOST_NAME}${VMS_CONF_PATH}"
+	VM_BOOT_START_CMD_OPTIONS="${VM_START_CMD_OPTIONS}"
+
+	# If using either bhyveload or grub, allow user to choose the boot device and set grub config.
+	if [ "${VM_BOOT_LOADER}" = "bhyveload" ] || [ "${VM_BOOT_LOADER}" = "grub" ]
+	then
+
+		# Get template VM image parameters.
+		VM_IMAGE_0_TYPE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.type`
+		VM_IMAGE_0_FILENAME=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.filename`
+		VM_IMAGE_0_SECTORSIZE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.sector_size`
+		VM_IMAGE_0_BOOTABLE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.bootable`
+		VM_IMAGE_0_GRUB_ROOT_DEVICE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.grub_root_device`
+		VM_IMAGE_1_TYPE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+		VM_IMAGE_1_FILENAME=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+		VM_IMAGE_1_SECTORSIZE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sector_size`
+		VM_IMAGE_1_BOOTABLE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.bootable`
+		VM_IMAGE_1_GRUB_ROOT_DEVICE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.grub_root_device`
+		VM_IMAGE_2_TYPE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+		VM_IMAGE_2_FILENAME=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+		VM_IMAGE_2_SECTORSIZE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sector_size`
+		VM_IMAGE_2_BOOTABLE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.bootable`
+		VM_IMAGE_2_GRUB_ROOT_DEVICE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.grub_root_device`
+		VM_IMAGE_3_TYPE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+		VM_IMAGE_3_FILENAME=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.filename`
+		VM_IMAGE_3_SECTORSIZE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.sector_size`
+		VM_IMAGE_3_BOOTABLE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.bootable`
+		VM_IMAGE_3_GRUB_ROOT_DEVICE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.grub_root_device`
+		VM_IMAGE_4_TYPE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
+		VM_IMAGE_4_FILENAME=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.filename`
+		VM_IMAGE_4_SECTORSIZE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.sector_size`
+		VM_IMAGE_4_BOOTABLE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.bootable`
+		VM_IMAGE_4_GRUB_ROOT_DEVICE=`${UCL_CMD} get -f ${REPO_VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.grub_root_device`
+		VM_IMAGE_5_TYPE="null"
+
+		# Get a list of bootable images.
+		VM_NUM_BOOTABLE_IMAGES=0
+		VM_BOOT_IMAGE=""
+		VM_BOOTABLE_IMAGE=""
+		VM_BOOTABLE_IMAGES_LIST=""
+		VM_IMAGE_INDEX=0
+		VM_IMAGE_TYPE=""
+		while [ "${VM_IMAGE_TYPE}" != "null" ]
+		do
+			VAR_VM_IMAGE_TYPE="VM_IMAGE_${VM_IMAGE_INDEX}_TYPE"
+			eval VM_IMAGE_TYPE="\$${VAR_VM_IMAGE_TYPE}"
+			VAR_VM_IMAGE_FILENAME="VM_IMAGE_${VM_IMAGE_INDEX}_FILENAME"
+			eval VM_IMAGE_FILENAME="\$${VAR_VM_IMAGE_FILENAME}"
+			VAR_VM_IMAGE_BOOTABLE="VM_IMAGE_${VM_IMAGE_INDEX}_BOOTABLE"
+			eval VM_IMAGE_BOOTABLE="\$${VAR_VM_IMAGE_BOOTABLE}"
+
+			if [ "${VM_IMAGE_TYPE}" != "null" ] && [ ${VM_IMAGE_BOOTABLE} = true ]
+			then
+				VM_BOOTABLE_IMAGE="${VM_IMAGE_INDEX}"
+				VM_BOOTABLE_IMAGES_LIST="${VM_BOOTABLE_IMAGES_LIST} ${VM_BOOTABLE_IMAGE} ${VM_IMAGE_FILENAME}"
+				VM_NUM_BOOTABLE_IMAGES=$(( ${VM_NUM_BOOTABLE_IMAGES} + 1 ))
+			fi
+
+			VM_IMAGE_INDEX=$(( ${VM_IMAGE_INDEX} + 1 ))
+		done
+
+		# If no bootable images found, exit with error.
+		if [ ${VM_NUM_BOOTABLE_IMAGES} -lt 1 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} No bootable images found!\n"
+			return 2
+		fi
+
+		# If only one bootable image found, use it.
+		if [ ${VM_NUM_BOOTABLE_IMAGES} -eq 1 ]
+		then
+			echo -e "\n${YELL}INFO:${NRML} Only one bootable images found.\n"
+			VM_BOOT_IMAGE=${VM_BOOTABLE_IMAGE}
+			pause_prompt 8
+		fi
+
+		# If more than one bootable images, prompt user to choose the image to boot.
+		while [ "${VM_BOOT_IMAGE}" = "" ]
+		do
+			DIALOG_PROMPT="Select image ID to boot:"
+			dialog --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_BOOTABLE_IMAGES_LIST} 2> ${DIALOG_OUT_FILE}
+			VM_BOOT_IMAGE_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ "${VM_BOOT_IMAGE_TEMP}" = "" ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} No image selected! Try again.\n"
+				pause_prompt 8
+			else
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${NRML}${VM_BOOT_IMAGE_TEMP}${LCYN}' as the image ID to boot.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_BOOT_IMAGE=${VM_BOOT_IMAGE_TEMP}
+					break
+				fi
+			fi
+			sleep 2
+		done
+
+		# Get all the image parameters for the selected image.
+		VAR_VM_IMAGE_TYPE="VM_IMAGE_${VM_BOOT_IMAGE}_TYPE"
+		eval VM_IMAGE_TYPE="\$${VAR_VM_IMAGE_TYPE}"
+		VAR_VM_IMAGE_FILENAME="VM_IMAGE_${VM_BOOT_IMAGE}_FILENAME"
+		eval VM_IMAGE_FILENAME="\$${VAR_VM_IMAGE_FILENAME}"
+		VAR_VM_IMAGE_GRUB_ROOT_DEVICE="VM_IMAGE_${VM_BOOT_IMAGE}_GRUB_ROOT_DEVICE"
+		eval VM_IMAGE_GRUB_ROOT_DEVICE="\$${VAR_VM_IMAGE_GRUB_ROOT_DEVICE}"
+
+		VM_BOOT_START_CMD_OPTIONS="${VM_BOOT_START_CMD_OPTIONS} --boot=${VM_BOOT_IMAGE}"
+
+		# Determine if we need to set/reset the grub root device and directory.
+		if [ "${VM_IMAGE_GRUB_ROOT_DEVICE}" = "null" ] || [ "${VM_IMAGE_GRUB_ROOT_DEVICE}" = "" ] || [ ${VM_GRUB_NEEDS_RESET} = true ]
+		then
+			VM_GRUB_NEEDS_SET=true
+			VM_GRUB_NEEDS_RESET=false
+		else
+			VM_GRUB_NEEDS_SET=false
+		fi
+
+		# If using the grub boot loader method, and if not already set, get the grub root device and directory.
+		if [ "${VM_BOOT_LOADER}" = "grub" ] && [ ${VM_GRUB_NEEDS_SET} = true ]
+		then
+			# Make an initial grub device.map file so we can test the grub configuration.
+			case "${VM_IMAGE_TYPE}" in
+				"virtio-blk")
+					VM_GRUB_DEVICE_MAP="(hd0) ${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}"
+					;;
+				"ahci-hd")
+					VM_GRUB_DEVICE_MAP="(hd0) ${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}"
+					;;
+				"ahci-cd")
+					VM_GRUB_DEVICE_MAP="(cd0) ${VM_RESOURCES_PATH}/${VM_IMAGE_FILENAME}"
+					;;
+			esac
+			echo "${VM_GRUB_DEVICE_MAP}" > ${VM_FS_MOUNTPOINT}/device.map
+
+			# Get the grub configuration interactively, then store the results.
+			get_vm_grub_config "${VM_GRUB_DEVICE_MAP}"
+
+			if [ "${VM_GRUB_ROOT_DEVICE}" = "" ]
+			then
+				${UCL_CMD} remove -f ${REPO_VMS_CONF_PATH} -o ${REPO_VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_root_device 2> /dev/null
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				${UCL_CMD} set -f ${REPO_VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_root_device "${VM_GRUB_ROOT_DEVICE}"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+
+			if [ "${VM_GRUB_DIRECTORY}" = "" ]
+			then
+				${UCL_CMD} remove -f ${REPO_VMS_CONF_PATH} -o ${REPO_VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_directory 2> /dev/null
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				${UCL_CMD} set -f ${REPO_VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_directory "${VM_GRUB_DIRECTORY}"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+
+			if [ "${VM_GRUB_CONF_FILENAME}" = "" ]
+			then
+				${UCL_CMD} remove -f ${REPO_VMS_CONF_PATH} -o ${REPO_VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_cfg 2> /dev/null
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				${UCL_CMD} set -f ${REPO_VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.grub_cfg "${VM_GRUB_CONF_FILENAME}"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+
+			if [ "${VM_GRUB_GET_METHOD}" = "expert" ]
+			then
+				${UCL_CMD} set -f ${REPO_VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.use_expert_grub "true"
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				${UCL_CMD} remove -f ${REPO_VMS_CONF_PATH} -o ${REPO_VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_BOOT_IMAGE}.use_expert_grub 2> /dev/null
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong preparing the grub boot config!\n"
+				undo_create_vm_template
+				return 2
+			fi
+
+			if [ ${VM_GET_GRUB_LOADED} = true ]
+			then
+				VM_BOOT_START_CMD_OPTIONS="${VM_BOOT_START_CMD_OPTIONS} --skip-bootloader"
+			fi
+		fi
+	fi
+
+	# Debug info.
+	if [ "${DEBUG}" = "true" ]
+	then
+		echo -e "\nDEBUG info:\n"
+		echo -e "VMS_CONF_PATH=${REPO_VMS_CONF_PATH} ${FDO_VMS_START_PATH} ${VM_NAME} ${VM_BOOT_START_CMD_OPTIONS}"
+		echo -e "\n"
+		question_yes "Proceed?"
+	fi
+
+	VMS_CONF_PATH="${REPO_VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" ${VM_BOOT_START_CMD_OPTIONS}
+	RETURN_CODE=${?}
+	return ${RETURN_CODE}
+
+}
+
 create_vm_image_handler ()
 {
 	VM_IMAGES_FINISHED=false
 	while [ ${VM_IMAGES_FINISHED} = false ]
 	do
+		VM_IMAGE_HANDLER_ACTION=""
 		ERROR_COUNT=0
-		while true
+		while [ "${VM_IMAGE_HANDLER_ACTION}" = "" ]
 		do
 			echo -e "\n${YELL}! You may now prepare the ${VM_TYPE} VM '${NRML}${VM_NAME}${YELL}'!${NRML}\n"
 			echo -e "${LCYN}Choose from the following options:${NRML}\n"
+			echo -e "${LCYN}  status  - Show status of VMs.${NRML}"
 			echo -e "${LCYN}  start   - Start (boot) the VM.${NRML}"
 			echo -e "${LCYN}  stop    - Stop (shutdown) the VM.${NRML}"
 			echo -e "${LCYN}  restart - Restart the VM (stop / start).${NRML}"
+			if [ "${VM_BOOT_LOADER}" = "grub" ]
+			then
+				echo -e "${LCYN}  grub    - Set / reset grub config for an image.${NRML}"
+			fi
 			echo -e "${LCYN}  insert  - Attach an additional ISO image (CD/DVD/USB).${NRML}"
 			echo -e "${LCYN}  eject   - Eject an ISO image (CD/DVD/USB).${NRML}"
 			echo -e "${LCYN}  attach  - Attach an additional disk image.${NRML}"
 			echo -e "${LCYN}  detach  - Detach an additional disk image.${NRML}"
-			echo -e "${LCYN}  list    - List additional images.${NRML}"
+			echo -e "${LCYN}  list    - List images.${NRML}"
 			echo -e "${LCYN}  finish  - When ${VM_TYPE} configuration is finished.${NRML}"
 			echo -e "${LCYN}  abort   - Abort the create ${VM_TYPE} operation.${NRML}\n"
-			readee -p "${LCYN}Choose action (restart|insert|eject|attach|detach|list|finish|abort): ${NRML}" ANSWER
-			if [ "${ANSWER}" = "start" ] \
-			|| [ "${ANSWER}" = "stop" ] \
-			|| [ "${ANSWER}" = "restart" ] \
-			|| [ "${ANSWER}" = "insert" ] \
-			|| [ "${ANSWER}" = "eject" ] \
-			|| [ "${ANSWER}" = "attach" ] \
-			|| [ "${ANSWER}" = "detach" ] \
-			|| [ "${ANSWER}" = "list" ] \
-			|| [ "${ANSWER}" = "finish" ] \
-			|| [ "${ANSWER}" = "abort" ]
+			readee -p "${LCYN}Choose action: ${NRML}" VM_IMAGE_HANDLER_ACTION
+			if [ "${VM_IMAGE_HANDLER_ACTION}" = "status" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "start" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "stop" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "restart" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "grub" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "insert" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "eject" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "attach" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "detach" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "list" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "finish" ] \
+			|| [ "${VM_IMAGE_HANDLER_ACTION}" = "abort" ]
 			then
 				break
 			fi
@@ -10854,7 +11465,7 @@ create_vm_image_handler ()
 		done
 
 
-		if [ "${ANSWER}" = "abort" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "abort" ]
 		then
 			question_yes_no "\nAre you sure you want to abort? All changes will be lost."
 			if [ "${ANSWER}" = "yes" ]
@@ -10864,7 +11475,7 @@ create_vm_image_handler ()
 		fi
 
 
-		if [ "${ANSWER}" = "finish" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "finish" ]
 		then
 			question_yes_no "\nAre you sure you are finished preparing the ${VM_TYPE} VM?\nThe next step is to shutdown and save the ${VM_TYPE} for use."
 			if [ "${ANSWER}" = "yes" ]
@@ -10874,14 +11485,23 @@ create_vm_image_handler ()
 		fi
 
 
-		if [ "${ANSWER}" = "start" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "status" ]
 		then
-			# Start the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+			# Status of all VMs.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_LIST_PATH} --type=all
+
+			pause_prompt 16
 		fi
 
 
-		if [ "${ANSWER}" = "stop" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "start" ]
+		then
+			# Start the VM.
+			create_vm_boot
+		fi
+
+
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "stop" ]
 		then
 			echo -e "\n${YELL}Please try to shutdown the VM gracefully first, if possible.${NRML}\n"
 			question_yes "Proceed?"
@@ -10891,7 +11511,7 @@ create_vm_image_handler ()
 		fi
 
 
-		if [ "${ANSWER}" = "restart" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "restart" ]
 		then
 			echo -e "\n${YELL}Please try to shutdown the VM gracefully first, if possible.${NRML}\n"
 			question_yes "Proceed?"
@@ -10903,76 +11523,190 @@ create_vm_image_handler ()
 			sleep 4
 
 			# Start the VM.
-			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+			create_vm_boot
 		fi
 
 
-		if [ "${ANSWER}" = "list" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "grub" ] && [ "${VM_BOOT_LOADER}" = "grub" ]
 		then
+			echo -e "\n${YELL}Please try to shutdown the VM gracefully first, if possible.${NRML}\n"
+			question_yes "Proceed?"
 
+			# Stop the VM.
+			VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
+
+			# Pause for 4 seconds, to allow I/O to settle.
+			sleep 4
+
+			# Set "grub needs reset" flag and start the VM.
+			VM_GRUB_NEEDS_RESET=true
+			create_vm_boot
+		fi
+
+
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "list" ]
+		then
 			# Retrieve existing image types.
 			# ASSUME: 'null' is empty slot.
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
-			IMAGE_2_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize`
+			VM_IMAGE_0_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.type`
+			VM_IMAGE_0_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.filename`
+			VM_IMAGE_0_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.sector_size`
+			VM_IMAGE_0_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.0.bootable`
+			VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			VM_IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			VM_IMAGE_1_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.sector_size`
+			VM_IMAGE_1_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.bootable`
+			VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			VM_IMAGE_2_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.sector_size`
+			VM_IMAGE_2_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.bootable`
+			VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+			VM_IMAGE_3_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.filename`
+			VM_IMAGE_3_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.sector_size`
+			VM_IMAGE_3_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.bootable`
+			VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
+			VM_IMAGE_4_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.filename`
+			VM_IMAGE_4_SECTOR_SIZE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.sector_size`
+			VM_IMAGE_4_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.bootable`
+
+			if [ "${VM_IMAGE_0_BOOTABLE}" = true ]
+			then
+				VM_CAN_0_BOOT="yes"
+			else
+				VM_CAN_0_BOOT="no"
+			fi
+			if [ "${VM_IMAGE_1_BOOTABLE}" = true ]
+			then
+				VM_CAN_1_BOOT="yes"
+			else
+				VM_CAN_1_BOOT="no"
+			fi
+			if [ "${VM_IMAGE_2_BOOTABLE}" = true ]
+			then
+				VM_CAN_2_BOOT="yes"
+			else
+				VM_CAN_2_BOOT="no"
+			fi
+			if [ "${VM_IMAGE_3_BOOTABLE}" = true ]
+			then
+				VM_CAN_3_BOOT="yes"
+			else
+				VM_CAN_3_BOOT="no"
+			fi
+			if [ "${VM_IMAGE_4_BOOTABLE}" = true ]
+			then
+				VM_CAN_4_BOOT="yes"
+			else
+				VM_CAN_4_BOOT="no"
+			fi
 
 			echo -e ""
 			echo -e "${LGRN}Images:${NRML}"
 			echo -e ""
 			echo -e "${GREY}==============================================================================${NRML}"
-			echo -e "${NRML}Slot Type  Sector-size Filename                                               ${NRML}"
+			echo -e "${NRML}Slot Type  Sector-size Boot Filename                                          ${NRML}"
 			echo -e "${GREY}==============================================================================${NRML}"
 
-			case "${IMAGE_1_TYPE}" in
+			case "${VM_IMAGE_0_TYPE}" in
 				ahci-cd)
-					printf "%-5s%-6s%-12s%-55s\n" "1" "ISO" "N/A" "${IMAGE_1_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "0" "ISO" "N/A" "${VM_CAN_0_BOOT}" "${VM_IMAGE_0_FILENAME}"
 					;;
 				ahci-hd)
-					printf "%-5s%-6s%-12s%-55s\n" "1" "Disk" "${IMAGE_1_SECTOR_SIZE}" "${IMAGE_1_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "0" "Disk" "${VM_IMAGE_0_SECTOR_SIZE}" "${VM_CAN_0_BOOT}" "${VM_IMAGE_0_FILENAME}"
 					;;
 				virtio-blk)
-					printf "%-5s%-6s%-12s%-55s\n" "1" "Disk" "${IMAGE_1_SECTOR_SIZE}" "${IMAGE_1_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "0" "Disk" "${VM_IMAGE_0_SECTOR_SIZE}" "${VM_CAN_0_BOOT}" "${VM_IMAGE_0_FILENAME}"
 					;;
 				null)
-					printf "%-5s%-6s%-12s%-55s\n" "1" "Empty" "" ""
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "0" "Empty" "" ""
 					;;
 			esac
 
 			echo -e "${GREY}------------------------------------------------------------------------------${NRML}"
 
-			case "${IMAGE_2_TYPE}" in
+			case "${VM_IMAGE_1_TYPE}" in
 				ahci-cd)
-					printf "%-5s%-6s%-12s%-55s\n" "2" "ISO" "N/A" "${IMAGE_2_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "1" "ISO" "N/A" "${VM_CAN_1_BOOT}" "${VM_IMAGE_1_FILENAME}"
 					;;
 				ahci-hd)
-					printf "%-5s%-6s%-12s%-55s\n" "2" "Disk" "${IMAGE_2_SECTOR_SIZE}" "${IMAGE_2_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "1" "Disk" "${VM_IMAGE_1_SECTOR_SIZE}" "${VM_CAN_1_BOOT}" "${VM_IMAGE_1_FILENAME}"
 					;;
 				virtio-blk)
-					printf "%-5s%-6s%-12s%-55s\n" "2" "Disk" "${IMAGE_2_SECTOR_SIZE}" "${IMAGE_2_FILENAME}"
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "1" "Disk" "${VM_IMAGE_1_SECTOR_SIZE}" "${VM_CAN_1_BOOT}" "${VM_IMAGE_1_FILENAME}"
 					;;
 				null)
-					printf "%-5s%-6s%-12s%-55s\n" "2" "Empty" "" ""
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "1" "Empty" "" ""
+					;;
+			esac
+
+			echo -e "${GREY}------------------------------------------------------------------------------${NRML}"
+
+			case "${VM_IMAGE_2_TYPE}" in
+				ahci-cd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "2" "ISO" "N/A" "${VM_CAN_2_BOOT}" "${VM_IMAGE_2_FILENAME}"
+					;;
+				ahci-hd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "2" "Disk" "${VM_IMAGE_2_SECTOR_SIZE}" "${VM_CAN_2_BOOT}" "${VM_IMAGE_2_FILENAME}"
+					;;
+				virtio-blk)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "2" "Disk" "${VM_IMAGE_2_SECTOR_SIZE}" "${VM_CAN_2_BOOT}" "${VM_IMAGE_2_FILENAME}"
+					;;
+				null)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "2" "Empty" "" ""
+					;;
+			esac
+
+			echo -e "${GREY}------------------------------------------------------------------------------${NRML}"
+
+			case "${VM_IMAGE_3_TYPE}" in
+				ahci-cd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "3" "ISO" "N/A" "${VM_CAN_3_BOOT}" "${VM_IMAGE_3_FILENAME}"
+					;;
+				ahci-hd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "3" "Disk" "${VM_IMAGE_3_SECTOR_SIZE}" "${VM_CAN_3_BOOT}" "${VM_IMAGE_3_FILENAME}"
+					;;
+				virtio-blk)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "3" "Disk" "${VM_IMAGE_3_SECTOR_SIZE}" "${VM_CAN_3_BOOT}" "${VM_IMAGE_3_FILENAME}"
+					;;
+				null)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "3" "Empty" "" ""
+					;;
+			esac
+
+			echo -e "${GREY}------------------------------------------------------------------------------${NRML}"
+
+			case "${VM_IMAGE_4_TYPE}" in
+				ahci-cd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "4" "ISO" "N/A" "${VM_CAN_4_BOOT}" "${VM_IMAGE_4_FILENAME}"
+					;;
+				ahci-hd)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "4" "Disk" "${VM_IMAGE_4_SECTOR_SIZE}" "${VM_CAN_4_BOOT}" "${VM_IMAGE_4_FILENAME}"
+					;;
+				virtio-blk)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "4" "Disk" "${VM_IMAGE_4_SECTOR_SIZE}" "${VM_CAN_4_BOOT}" "${VM_IMAGE_4_FILENAME}"
+					;;
+				null)
+					printf "%-5s%-6s%-12s%-5s%-50s\n" "4" "Empty" "" ""
 					;;
 			esac
 
 			echo -e "${GREY}------------------------------------------------------------------------------${NRML}\n"
 
 			pause_prompt 16
-
 		fi
 
 
-		if [ "${ANSWER}" = "attach" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "attach" ]
 		then
 			# Retrieve existing image types (assume 'null' is empty slot).
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+			VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
 
 			# Check that we have an available slot.
-			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
+			if [ "${VM_IMAGE_1_TYPE}" != "null" ] && [ "${VM_IMAGE_2_TYPE}" != "null" ] \
+			&& [ "${VM_IMAGE_3_TYPE}" != "null" ] && [ "${VM_IMAGE_4_TYPE}" != "null" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} There are no available slots.\n       Consider detaching a disk image or ejecting an ISO image.\n"
 				continue
@@ -10982,28 +11716,28 @@ create_vm_image_handler ()
 			question_yes_no "\nDoes the disk image already exist? (Answer '${NRML}no${LCYN}' to create new disk)."
 			if [ "${ANSWER}" = "yes" ]
 			then
-				ATTACH_EXISTING_IMAGE=true
+				VM_ATTACH_EXISTING_IMAGE=true
 
 				# Ask for next disk image file to attach.
-				ATTACH_IMAGE_FILE=""
-				while [ "${ATTACH_IMAGE_FILE}" = "" ]
+				VM_ATTACH_IMAGE_FILE=""
+				while [ "${VM_ATTACH_IMAGE_FILE}" = "" ]
 				do
 					DIALOG_PROMPT="Select disk image file:"
 					dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 16 72 2> ${DIALOG_OUT_FILE}
-					ATTACH_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
-					if [ "${ATTACH_IMAGE_FILE_TEMP}" != "" ]
+					VM_ATTACH_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
+					if [ "${VM_ATTACH_IMAGE_FILE_TEMP}" != "" ]
 					then
-						file "${ATTACH_IMAGE_FILE_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+						file "${VM_ATTACH_IMAGE_FILE_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
 						if [ ${?} -ne 0 ]
 						then
 							echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid disk image!\n"
 							pause_prompt 8
 						fi
 						echo -e "\n"
-						question_yes_no "\nYou have selected '${NRML}${ATTACH_IMAGE_FILE_TEMP}${LCYN}' as the next disk image to attach.\nIs this correct?"
+						question_yes_no "\nYou have selected '${NRML}${VM_ATTACH_IMAGE_FILE_TEMP}${LCYN}' as the next disk image to attach.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
-							ATTACH_IMAGE_FILE="${ATTACH_IMAGE_FILE_TEMP}"
+							VM_ATTACH_IMAGE_FILE="${VM_ATTACH_IMAGE_FILE_TEMP}"
 							break
 						fi
 					else
@@ -11019,46 +11753,46 @@ create_vm_image_handler ()
 					sleep 2
 				done
 			else
-				ATTACH_EXISTING_IMAGE=false
+				VM_ATTACH_EXISTING_IMAGE=false
 
 				# Ask for size of new disk image.
-				ATTACH_IMAGE_SIZE_GB=0
-				while [ ${ATTACH_IMAGE_SIZE_GB} -eq 0 ]
+				VM_ATTACH_IMAGE_SIZE_GB=0
+				while [ ${VM_ATTACH_IMAGE_SIZE_GB} -eq 0 ]
 				do
 					echo -e ""
-					readee -p "${LCYN}Enter the size in GB of the new disk image: ${NRML}" ATTACH_IMAGE_SIZE_GB_TEMP
+					readee -p "${LCYN}Enter the size in GB of the new disk image: ${NRML}" VM_ATTACH_IMAGE_SIZE_GB_TEMP
 					# Check that the VM disk size contains only numbers.
-					test_valid_integer "${ATTACH_IMAGE_SIZE_GB_TEMP}" ${VM_MIN_IMAGE_SIZE_GB} ${VM_MAX_IMAGE_SIZE_GB}
+					test_valid_integer "${VM_ATTACH_IMAGE_SIZE_GB_TEMP}" ${VM_MIN_IMAGE_SIZE_GB} ${VM_MAX_IMAGE_SIZE_GB}
 					if [ "${VALID_INTEGER}" = "yes" ]
 					then
-						question_yes_no "\nYou have entered '${NRML}${ATTACH_IMAGE_SIZE_GB_TEMP}${LCYN}' GB as the disk image size.\nIs this correct?"
+						question_yes_no "\nYou have entered '${NRML}${VM_ATTACH_IMAGE_SIZE_GB_TEMP}${LCYN}' GB as the disk image size.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
-							ATTACH_IMAGE_SIZE_GB=${ATTACH_IMAGE_SIZE_GB_TEMP}
+							VM_ATTACH_IMAGE_SIZE_GB=${VM_ATTACH_IMAGE_SIZE_GB_TEMP}
 						fi
 					else
-						echo -e "\n${LRED}ERROR:${NRML} The disk image size can not be '${ORNG}${ATTACH_IMAGE_SIZE_GB_TEMP}${NRML}'."
+						echo -e "\n${LRED}ERROR:${NRML} The disk image size can not be '${ORNG}${VM_ATTACH_IMAGE_SIZE_GB_TEMP}${NRML}'."
 						echo -e "       It must contain only numbers of value between ${VM_MIN_IMAGE_SIZE_GB} and ${VM_MAX_IMAGE_SIZE_GB}.\n"
 					fi
 				done
 			fi
 
-			if [ "${ATTACH_IMAGE_FILE}" != "" ] || [ ${ATTACH_EXISTING_IMAGE} = false ]
+			if [ "${VM_ATTACH_IMAGE_FILE}" != "" ] || [ ${VM_ATTACH_EXISTING_IMAGE} = false ]
 			then
 				# Prompt for the virtual HDDs' sector size.
-				IMAGE_SECTOR_SIZE=""
-				while [ "${IMAGE_SECTOR_SIZE}" = "" ]
+				VM_IMAGE_SECTOR_SIZE=""
+				while [ "${VM_IMAGE_SECTOR_SIZE}" = "" ]
 				do
 					echo -e "\n${LCYN}What is the sector size (bytes) of this virtual disk image?${NRML}"
-					readee -p "${LCYN}(default|4096|512): ${NRML}" IMAGE_SECTOR_SIZE_TEMP
+					readee -p "${LCYN}(default|4096|512): ${NRML}" VM_IMAGE_SECTOR_SIZE_TEMP
 					# Check input validation.
-					if [ "${IMAGE_SECTOR_SIZE_TEMP}" = "default" ] || [ "${IMAGE_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${IMAGE_SECTOR_SIZE_TEMP}" = "512" ]
+					if [ "${VM_IMAGE_SECTOR_SIZE_TEMP}" = "default" ] || [ "${VM_IMAGE_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${VM_IMAGE_SECTOR_SIZE_TEMP}" = "512" ]
 					then
-						if [ "${IMAGE_SECTOR_SIZE_TEMP}" = "default" ]
+						if [ "${VM_IMAGE_SECTOR_SIZE_TEMP}" = "default" ]
 						then
-							IMAGE_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
+							VM_IMAGE_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
 						else
-							IMAGE_SECTOR_SIZE="${IMAGE_SECTOR_SIZE_TEMP}"
+							VM_IMAGE_SECTOR_SIZE="${VM_IMAGE_SECTOR_SIZE_TEMP}"
 						fi
 					fi
 				done
@@ -11082,42 +11816,51 @@ create_vm_image_handler ()
 				done
 
 				# Ask for image filename.
-				IMAGE_NAME=""
-				while [ "${IMAGE_NAME}" = "" ]
+				VM_IMAGE_NAME=""
+				while [ "${VM_IMAGE_NAME}" = "" ]
 				do
 					echo -e ""
-					readee -p "${LCYN}Enter the name of the disk image: ${NRML}" IMAGE_NAME_TEMP
+					readee -p "${LCYN}Enter the name of the disk image: ${NRML}" VM_IMAGE_NAME_TEMP
 
 					# Check that the disk image name is not already in use.
-					zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME_TEMP} > /dev/null 2>&1
+					zfs list -H ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME_TEMP} > /dev/null 2>&1
 					if [ ${?} -eq 0 ]
 					then
-						echo -e "\n${LRED}ERROR:${NRML} The disk image name '${ORNG}${IMAGE_NAME_TEMP}${NRML}'\n       is already in use.\n"
+						echo -e "\n${LRED}ERROR:${NRML} The disk image name '${ORNG}${VM_IMAGE_NAME_TEMP}${NRML}'\n       is already in use.\n"
 						continue
 					fi
 
 					# Check that the disk image name contains only valid characters.
-					test_valid_vm_name "${IMAGE_NAME_TEMP}"
+					test_valid_vm_name "${VM_IMAGE_NAME_TEMP}"
 					if [ "${VALID_VM_NAME}" = "yes" ]
 					then
-						question_yes_no "\nYou have entered:\n'${NRML}${IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
+						question_yes_no "\nYou have entered:\n'${NRML}${VM_IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
-							IMAGE_NAME=${IMAGE_NAME_TEMP}
+							VM_IMAGE_NAME=${VM_IMAGE_NAME_TEMP}
 						fi
 					else
 						echo -e "\n${LRED}ERROR:${NRML} The disk image name is not valid."
 						echo -e "       It must only contain letters, numbers and underscores."
 						echo -e "       It must not begin or end with an underscore."
-						echo -e "       It must be between 3 and 30 characters in length.\n"
+						echo -e "       It must be between 3 and 24 characters in length.\n"
 					fi
 				done
 
-				# Image filename is concatenation of its filesystem/directory <IMAGE_NAME> and file name <IMAGE_NAME>.img.
-				IMAGE_FILENAME="${IMAGE_NAME}/${IMAGE_NAME}.img"
+				# Ask if this image is bootable.
+				question_yes_no "\nIs this image bootable?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_IMAGE_BOOTABLE=true
+				else
+					VM_IMAGE_BOOTABLE=false
+				fi
+
+				# Image filename is concatenation of its filesystem/directory <VM_IMAGE_NAME> and file name <VM_IMAGE_NAME>.img.
+				VM_IMAGE_FILENAME="${VM_IMAGE_NAME}/${VM_IMAGE_NAME}.img"
 
 				echo -e "\n${YELL}Creating additional disk image filesystem...${NRML}\n"
-				zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} 2> /dev/null
+				zfs create ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} 2> /dev/null
 				if [ ${?} -ne 0 ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Failed to create the additional disk image filesystem!\n"
@@ -11125,26 +11868,26 @@ create_vm_image_handler ()
 					continue
 				fi
 
-				if [ ${ATTACH_EXISTING_IMAGE} = true ]
+				if [ ${VM_ATTACH_EXISTING_IMAGE} = true ]
 				then
 					# Copy next disk image to VM directory.
 					echo -e "\n${YELL}Copying additional disk image to its filesystem...${NRML}\n"
-					cp "${ATTACH_IMAGE_FILE}" "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					cp "${VM_ATTACH_IMAGE_FILE}" "${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}" > /dev/null 2>&1
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the disk image to its filesystem!\n"
-						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
 						# Skip to top of this while loop, we don't want to do anything else.
 						continue
 					fi
 				else
 					# Create new disk image.
 					echo -e "\n${YELL}Creating additional disk image in its filesystem...${NRML}\n"
-					truncate -s "${ATTACH_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					truncate -s "${VM_ATTACH_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}" > /dev/null 2>&1
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${ORNG}WARNING:${NRML} There was a problem creating the disk image in its filesystem!\n"
-						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+						zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
 						# Skip to top of this while loop, we don't want to do anything else.
 						continue
 					fi
@@ -11152,21 +11895,45 @@ create_vm_image_handler ()
 
 				# Add the disk image to the vms.conf file.
 				# Prefer to use first empty slot.
-				if [ "${IMAGE_1_TYPE}" = "null" ]
+				if [ "${VM_IMAGE_1_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"${VM_DISK_DRIVER}\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename "${VM_IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.1.sectorsize "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.1.sector_size "${VM_IMAGE_SECTOR_SIZE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				elif [ "${IMAGE_2_TYPE}" = "null" ]
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.1.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_2_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"${VM_DISK_DRIVER}\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename "${VM_IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.2.sectorsize "${IMAGE_SECTOR_SIZE}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.2.sector_size "${VM_IMAGE_SECTOR_SIZE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.2.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_3_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.3 "{ type = \"${VM_DISK_DRIVER}\"; }"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.3.filename "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.3.sector_size "${VM_IMAGE_SECTOR_SIZE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.3.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_4_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.4 "{ type = \"${VM_DISK_DRIVER}\"; }"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.4.filename "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .${VM_TYPE}s.${VM_INDEX}.images.4.sector_size "${VM_IMAGE_SECTOR_SIZE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.4.bootable "${VM_IMAGE_BOOTABLE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
@@ -11195,60 +11962,73 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+					create_vm_boot
 				fi
 			fi
 		fi
 
 
-		if [ "${ANSWER}" = "detach" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "detach" ]
 		then
-			IMAGE_ITEMS=""
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			VM_IMAGE_ITEMS=""
+			VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			VM_IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+			VM_IMAGE_3_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.filename`
+			VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
+			VM_IMAGE_4_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.filename`
 
 			CURRENT_IFS="${IFS}"
 			IFS="	"
 
-			if [ "${IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${IMAGE_1_TYPE}" = "virtio-blk" ]
+			if [ "${VM_IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_1_TYPE}" = "virtio-blk" ]
 			then
-				IMAGE_ITEMS="${IMAGE_ITEMS}	1	${IMAGE_1_FILENAME}"
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	1	${VM_IMAGE_1_FILENAME}"
 			fi
-			if [ "${IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${IMAGE_2_TYPE}" = "virtio-blk" ]
+			if [ "${VM_IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_2_TYPE}" = "virtio-blk" ]
 			then
-				IMAGE_ITEMS="${IMAGE_ITEMS}	2	${IMAGE_2_FILENAME}"
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	2	${VM_IMAGE_2_FILENAME}"
 			fi
-			if [ "${IMAGE_ITEMS}" = "" ]
+			if [ "${VM_IMAGE_3_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_3_TYPE}" = "virtio-blk" ]
+			then
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	3	${VM_IMAGE_3_FILENAME}"
+			fi
+			if [ "${VM_IMAGE_4_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_4_TYPE}" = "virtio-blk" ]
+			then
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	4	${VM_IMAGE_4_FILENAME}"
+			fi
+			if [ "${VM_IMAGE_ITEMS}" = "" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} There are no additional disk images to detach!\n"
+				IFS="${CURRENT_IFS}"
 				continue
 			fi
 
-			IMAGE_INDEX=-1
-			while [ ${IMAGE_INDEX} -lt 0 ]
+			VM_IMAGE_INDEX=-1
+			while [ ${VM_IMAGE_INDEX} -lt 0 ]
 			do
 				DIALOG_PROMPT="Select the disk image to detach:"
-				dialog --menu "${DIALOG_PROMPT}" 24 72 16 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
-				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
-				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
-				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
-				if [ "${IMAGE_FILENAME_TEMP}" != "" ]
+				dialog --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				VM_IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
+				VAR_VM_IMAGE_FILENAME_TEMP="VM_IMAGE_${VM_IMAGE_INDEX_TEMP}_FILENAME"
+				eval VM_IMAGE_FILENAME_TEMP="\$${VAR_VM_IMAGE_FILENAME_TEMP}"
+				if [ "${VM_IMAGE_FILENAME_TEMP}" != "" ]
 				then
-					file "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+					file "${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid disk image!\n"
 						pause_prompt 8
 					fi
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the disk image to detach.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${VM_IMAGE_FILENAME_TEMP}${LCYN}' \nas the disk image to detach.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
-						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
-						IMAGE_NAME=`echo ${IMAGE_FILENAME} | cut -d/ -f1`
+						VM_IMAGE_INDEX="${VM_IMAGE_INDEX_TEMP}"
+						VM_IMAGE_FILENAME="${VM_IMAGE_FILENAME_TEMP}"
+						VM_IMAGE_NAME=`echo ${VM_IMAGE_FILENAME} | cut -d/ -f1`
 						break
 					fi
 				else
@@ -11266,7 +12046,7 @@ create_vm_image_handler ()
 
 			IFS="${CURRENT_IFS}"
 
-			if [ ${IMAGE_INDEX} -ge 0 ]
+			if [ ${VM_IMAGE_INDEX} -ge 0 ]
 			then
 				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
 				question_yes "Proceed?"
@@ -11279,39 +12059,39 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Ask for archive file name.
-					ARCHIVE_IMAGE_NAME=""
-					while [ "${ARCHIVE_IMAGE_NAME}" = "" ]
+					VM_ARCHIVE_IMAGE_NAME=""
+					while [ "${VM_ARCHIVE_IMAGE_NAME}" = "" ]
 					do
 						echo -e ""
-						readee -p "${LCYN}Enter the name for the archived disk image: ${NRML}" ARCHIVE_IMAGE_NAME_TEMP
+						readee -p "${LCYN}Enter the name for the archived disk image: ${NRML}" VM_ARCHIVE_IMAGE_NAME_TEMP
 
 						# Check that the disk image name is not already in use.
-						if [ -e "${VM_RESOURCES_PATH}/${ARCHIVE_IMAGE_NAME_TEMP}.img" ]
+						if [ -e "${VM_RESOURCES_PATH}/${VM_ARCHIVE_IMAGE_NAME_TEMP}.img" ]
 						then
-							echo -e "\n${LRED}ERROR:${NRML} A file already exists in the resources directory with the name:\n       ${ORNG}${ARCHIVE_IMAGE_NAME_TEMP}.img${NRML}.\n"
+							echo -e "\n${LRED}ERROR:${NRML} A file already exists in the resources directory with the name:\n       ${ORNG}${VM_ARCHIVE_IMAGE_NAME_TEMP}.img${NRML}.\n"
 							continue
 						fi
 
 						# Check that the disk image name contains only valid characters.
-						test_valid_vm_name "${ARCHIVE_IMAGE_NAME_TEMP}"
+						test_valid_vm_name "${VM_ARCHIVE_IMAGE_NAME_TEMP}"
 						if [ "${VALID_VM_NAME}" = "yes" ]
 						then
-							question_yes_no "\nYou have entered:\n'${NRML}${ARCHIVE_IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
+							question_yes_no "\nYou have entered:\n'${NRML}${VM_ARCHIVE_IMAGE_NAME_TEMP}${LCYN}'\nas the name of this disk image.\nIs this correct?"
 							if [ "${ANSWER}" = "yes" ]
 							then
-								ARCHIVE_IMAGE_NAME=${ARCHIVE_IMAGE_NAME_TEMP}
+								VM_ARCHIVE_IMAGE_NAME=${VM_ARCHIVE_IMAGE_NAME_TEMP}
 							fi
 						else
 							echo -e "\n${LRED}ERROR:${NRML} The archive disk image name is not valid."
 							echo -e "       It must only contain letters, numbers and underscores."
 							echo -e "       It must not begin or end with an underscore."
-							echo -e "       It must be between 3 and 30 characters in length.\n"
+							echo -e "       It must be between 3 and 24 characters in length.\n"
 						fi
 					done
 
 					# Copy the detached disk image to the archive image name in the resources directory.
 					echo -e "\n${YELL}Copying detached disk image as archive to the resources directory...${NRML}\n"
-					cp "${VM_FS_MOUNTPOINT}/${IMAGE_FILENAME}" "${VM_RESOURCES_PATH}/${ARCHIVE_IMAGE_NAME}.img" > /dev/null 2>&1
+					cp "${VM_FS_MOUNTPOINT}/${VM_IMAGE_FILENAME}" "${VM_RESOURCES_PATH}/${VM_ARCHIVE_IMAGE_NAME}.img" > /dev/null 2>&1
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${LRED}ERROR:${NRML} Failed to archive the additional disk image to the resources directory!\n"
@@ -11321,7 +12101,7 @@ create_vm_image_handler ()
 				fi
 
 				echo -e "\n${YELL}Destroying disk image filesystem...${NRML}\n"
-				zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+				zfs destroy -f ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
 				if [ ${?} -ne 0 ]
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Failed to destroy the additional disk image filesystem!\n"
@@ -11330,7 +12110,7 @@ create_vm_image_handler ()
 				fi
 
 				# Remove the disk image in the vms.conf file.
-				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
+				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_IMAGE_INDEX} 2> /dev/null
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 				# Pause for 4 seconds, to allow I/O to settle.
@@ -11341,7 +12121,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+					create_vm_boot
 				fi
 
 			fi
@@ -11349,36 +12129,39 @@ create_vm_image_handler ()
 		fi
 
 
-		if [ "${ANSWER}" = "insert" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "insert" ]
 		then
 			# Retrieve existing image types (assume 'null' is empty slot).
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+			VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
 
 			# Check that we have an available slot.
-			if [ "${IMAGE_1_TYPE}" != "null" ] &&  [ "${IMAGE_2_TYPE}" != "null" ]
+			if [ "${VM_IMAGE_1_TYPE}" != "null" ] &&  [ "${VM_IMAGE_2_TYPE}" != "null" ] \
+			&& [ "${VM_IMAGE_3_TYPE}" != "null" ] &&  [ "${VM_IMAGE_4_TYPE}" != "null" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} There are no available slots.\n       Consider detaching a disk image or ejecting an ISO image.\n"
 				continue
 			fi
 
 			# Ask for next ISO image file to insert.
-			INSERT_IMAGE_FILE=""
-			while [ "${INSERT_IMAGE_FILE}" = "" ]
+			VM_INSERT_IMAGE_FILE=""
+			while [ "${VM_INSERT_IMAGE_FILE}" = "" ]
 			do
 				DIALOG_PROMPT="Select ISO image file:"
 				dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 16 72 2> ${DIALOG_OUT_FILE}
-				INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
-				if [ "${INSERT_IMAGE_FILE_TEMP}" != "" ]
+				VM_INSERT_IMAGE_FILE_TEMP=`cat ${DIALOG_OUT_FILE}`
+				if [ "${VM_INSERT_IMAGE_FILE_TEMP}" != "" ]
 				then
-					file "${INSERT_IMAGE_FILE_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
+					file "${VM_INSERT_IMAGE_FILE_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -eq 0 ]
 					then
 						echo -e "\n"
-						question_yes_no "\nYou have selected '${NRML}${INSERT_IMAGE_FILE_TEMP}${LCYN}' as the next ISO image to insert.\nIs this correct?"
+						question_yes_no "\nYou have selected '${NRML}${VM_INSERT_IMAGE_FILE_TEMP}${LCYN}' as the next ISO image to insert.\nIs this correct?"
 						if [ "${ANSWER}" = "yes" ]
 						then
-							INSERT_IMAGE_FILE="${INSERT_IMAGE_FILE_TEMP}"
+							VM_INSERT_IMAGE_FILE="${VM_INSERT_IMAGE_FILE_TEMP}"
 							break
 						fi
 					else
@@ -11398,14 +12181,14 @@ create_vm_image_handler ()
 				sleep 2
 			done
 
-			if [ "${INSERT_IMAGE_FILE}" != "" ]
+			if [ "${VM_INSERT_IMAGE_FILE}" != "" ]
 			then
 				# Copy next ISO image to VM resources directory.
-				IMAGE_FILENAME=`basename "${INSERT_IMAGE_FILE}"`
-				if [ "${INSERT_IMAGE_FILE}" != "${VM_RESOURCES_PATH}/${IMAGE_FILENAME}" ]
+				VM_IMAGE_FILENAME=`basename "${VM_INSERT_IMAGE_FILE}"`
+				if [ "${VM_INSERT_IMAGE_FILE}" != "${VM_RESOURCES_PATH}/${VM_IMAGE_FILENAME}" ]
 				then
 					echo -e "\n${YELL}Copying ISO image to the resources directory...${NRML}\n"
-					cp "${INSERT_IMAGE_FILE}" "${VM_RESOURCES_PATH}/${IMAGE_FILENAME}" > /dev/null 2>&1
+					cp "${VM_INSERT_IMAGE_FILE}" "${VM_RESOURCES_PATH}/${VM_IMAGE_FILENAME}" > /dev/null 2>&1
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the ISO image\n         to the resources filesystem!\n"
@@ -11414,27 +12197,72 @@ create_vm_image_handler ()
 					fi
 				fi
 
+				# Ask if this image is bootable.
+				question_yes_no "\nIs this image bootable?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_IMAGE_BOOTABLE=true
+				else
+					VM_IMAGE_BOOTABLE=false
+				fi
+
 				# Add the ISO image as an ahci-cd device in the vms.conf file.
 				# Prefer to use first empty slot, otherwise last ahci-cd slot.
-				if [ "${IMAGE_1_TYPE}" = "null" ]
+				if [ "${VM_IMAGE_1_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${VM_IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				elif [ "${IMAGE_2_TYPE}" = "null" ]
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.1.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_2_TYPE}" = "null" ]
 				then
 					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.2 "{ type = \"ahci-cd\"; }"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${VM_IMAGE_FILENAME}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				elif [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
-				then
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.2.bootable "${VM_IMAGE_BOOTABLE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				elif [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
+				elif [ "${VM_IMAGE_3_TYPE}" = "null" ]
 				then
-					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${IMAGE_FILENAME}"
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.3 "{ type = \"ahci-cd\"; }"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.3.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.3.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_4_TYPE}" = "null" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .${VM_TYPE}s.${VM_INDEX}.images.4 "{ type = \"ahci-cd\"; }"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.4.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.4.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_4_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.4.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.4.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_3_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.3.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.3.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_2_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.2.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.2.bootable "${VM_IMAGE_BOOTABLE}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				elif [ "${VM_IMAGE_1_TYPE}" = "ahci-cd" ]
+				then
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .${VM_TYPE}s.${VM_INDEX}.images.1.filename  "${VM_IMAGE_FILENAME}"
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .${VM_TYPE}s.${VM_INDEX}.images.1.bootable "${VM_IMAGE_BOOTABLE}"
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} No available image slots left.\n"
@@ -11463,59 +12291,72 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+					create_vm_boot
 				fi
 			fi
 		fi
 
 
-		if [ "${ANSWER}" = "eject" ]
+		if [ "${VM_IMAGE_HANDLER_ACTION}" = "eject" ]
 		then
-			IMAGE_ITEMS=""
-			IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-			IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-			IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-			IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			VM_IMAGE_ITEMS=""
+			VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+			VM_IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+			VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+			VM_IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+			VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+			VM_IMAGE_3_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.filename`
+			VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
+			VM_IMAGE_4_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.filename`
 
 			CURRENT_IFS="${IFS}"
 			IFS="	"
 
-			if [ "${IMAGE_1_TYPE}" = "ahci-cd" ]
+			if [ "${VM_IMAGE_1_TYPE}" = "ahci-cd" ]
 			then
-				IMAGE_ITEMS="${IMAGE_ITEMS}	1	${IMAGE_1_FILENAME}"
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	1	${VM_IMAGE_1_FILENAME}"
 			fi
-			if [ "${IMAGE_2_TYPE}" = "ahci-cd" ]
+			if [ "${VM_IMAGE_2_TYPE}" = "ahci-cd" ]
 			then
-				IMAGE_ITEMS="${IMAGE_ITEMS}	2	${IMAGE_2_FILENAME}"
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	2	${VM_IMAGE_2_FILENAME}"
 			fi
-			if [ "${IMAGE_ITEMS}" = "" ]
+			if [ "${VM_IMAGE_3_TYPE}" = "ahci-cd" ]
+			then
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	3	${VM_IMAGE_3_FILENAME}"
+			fi
+			if [ "${VM_IMAGE_4_TYPE}" = "ahci-cd" ]
+			then
+				VM_IMAGE_ITEMS="${VM_IMAGE_ITEMS}	4	${VM_IMAGE_4_FILENAME}"
+			fi
+			if [ "${VM_IMAGE_ITEMS}" = "" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} There are no ISO images to eject!\n"
+				IFS="${CURRENT_IFS}"
 				continue
 			fi
 
-			IMAGE_INDEX=-1
-			while [ ${IMAGE_INDEX} -lt 0 ]
+			VM_IMAGE_INDEX=-1
+			while [ ${VM_IMAGE_INDEX} -lt 0 ]
 			do
 				DIALOG_PROMPT="Select the ISO image to eject:"
-				dialog --menu "DIALOG_PROMPT" 24 72 16 ${IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
-				IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
-				VAR_IMAGE_FILENAME_TEMP="IMAGE_${IMAGE_INDEX_TEMP}_FILENAME"
-				eval IMAGE_FILENAME_TEMP="\$${VAR_IMAGE_FILENAME_TEMP}"
-				if [ "${IMAGE_FILENAME_TEMP}" != "" ]
+				dialog --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_IMAGE_ITEMS} 2> ${DIALOG_OUT_FILE}
+				VM_IMAGE_INDEX_TEMP=`cat ${DIALOG_OUT_FILE}`
+				VAR_VM_IMAGE_FILENAME_TEMP="VM_IMAGE_${VM_IMAGE_INDEX_TEMP}_FILENAME"
+				eval VM_IMAGE_FILENAME_TEMP="\$${VAR_VM_IMAGE_FILENAME_TEMP}"
+				if [ "${VM_IMAGE_FILENAME_TEMP}" != "" ]
 				then
-					file "${VM_RESOURCES_PATH}/${IMAGE_FILENAME_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
+					file "${VM_RESOURCES_PATH}/${VM_IMAGE_FILENAME_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid ISO image!\n"
 						pause_prompt 8
 					fi
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${IMAGE_FILENAME_TEMP}${LCYN}' \nas the ISO image to eject.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${VM_IMAGE_FILENAME_TEMP}${LCYN}' \nas the ISO image to eject.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						IMAGE_INDEX="${IMAGE_INDEX_TEMP}"
-						IMAGE_FILENAME="${IMAGE_FILENAME_TEMP}"
+						VM_IMAGE_INDEX="${VM_IMAGE_INDEX_TEMP}"
+						VM_IMAGE_FILENAME="${VM_IMAGE_FILENAME_TEMP}"
 						break
 					fi
 				else
@@ -11533,7 +12374,7 @@ create_vm_image_handler ()
 
 			IFS="${CURRENT_IFS}"
 
-			if [ ${IMAGE_INDEX} -ge 0 ]
+			if [ ${VM_IMAGE_INDEX} -ge 0 ]
 			then
 				echo -e "${YELL}\nPlease try to shutdown the VM gracefully first, if possible.${NRML}\n"
 				question_yes "Proceed?"
@@ -11542,7 +12383,7 @@ create_vm_image_handler ()
 				VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
 				# Remove the disk image in the vms.conf file.
-				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${IMAGE_INDEX}
+				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .${VM_TYPE}s.${VM_INDEX}.images.${VM_IMAGE_INDEX} 2> /dev/null
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 				# Pause for 4 seconds, to allow I/O to settle.
@@ -11553,7 +12394,7 @@ create_vm_image_handler ()
 				if [ "${ANSWER}" = "yes" ]
 				then
 					# Start the VM.
-					VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+					create_vm_boot
 				fi
 
 			fi
@@ -11571,6 +12412,7 @@ create_vm_template ()
 	VM_NAME="${1}"
 	VM_TYPE="template"
 	VM_TYPE_DIRNAME="${VM_TEMPLATES_DIRNAME}"
+	VM_GRUB_NEEDS_RESET=false
 	CREATE_VM_TEMPLATE_MODIFIED=false
 	CREATE_VM_TEMPLATE_FILESYSTEMS_CREATED=false
 	CREATE_VM_TEMPLATE_REPO_MODIFIED=false
@@ -11590,7 +12432,7 @@ create_vm_template ()
 		echo -e "\n${LRED}ERROR:${NRML} The template name can not be '${ORNG}${VM_NAME}${NRML}'."
 		echo -e "       It must only contain letters, numbers and underscores."
 		echo -e "       It must not begin or end with an underscore."
-		echo -e "       It must be between 3 and 30 characters in length."
+		echo -e "       It must be between 3 and 24 characters in length."
 		echo -e "       Aborting.\n"
 		return 1
 	fi
@@ -11655,8 +12497,8 @@ create_vm_template ()
 	VM_INDEX=0
 	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}` != "null" ]
 	do
-		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}.name`
-		if [ "${VM_NAME}" = "${TEST_TEMPLATE_NAME}" ]
+		VM_TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_INDEX}.name`
+		if [ "${VM_NAME}" = "${VM_TEST_TEMPLATE_NAME}" ]
 		then
 			echo -e "\n${LRED}ERROR:${NRML} The template '${ORNG}${VM_NAME}${NRML}' already exists.\n"
 			echo -e "       To delete it, use the command:"
@@ -11702,24 +12544,25 @@ create_vm_template ()
 	done
 
 	# Get the VM description.
-	VM_DESCRIPTION="null"
-	while [ "${VM_DESCRIPTION}" = "null" ]
+	VM_TEMPLATE_DESCRIPTION="null"
+	while [ "${VM_TEMPLATE_DESCRIPTION}" = "null" ]
 	do
-		echo -e ""
-		readee -p "${LCYN}Enter the description for the template VM: ${NRML}" VM_DESCRIPTION_TEMP
-		# Check that the VM description contains only valid characters.
-		test_valid_alpha_numeric_string "${VM_DESCRIPTION_TEMP}" 0 150
-		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_DESCRIPTION_TEMP}" != "null" ]
+		echo -e "\n${LCYN}Enter the description for the template VM: ${NRML}"
+		readee VM_TEMPLATE_DESCRIPTION_TEMP
+		# Check that the VM description only contains letters, numbers, brackets, commas, periods, spaces, underscores and hyphens between 3 and 50 characters.
+		IS_SYNTAX_OK=`echo "${VM_TEMPLATE_DESCRIPTION_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\-][a-zA-Z0-9\,\.\_\(\)\ \-]+[a-zA-Z0-9\,\.\_\(\)\-]//" | wc -L`
+		IS_LENGTH_OK=`echo "${VM_TEMPLATE_DESCRIPTION_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_TEMPLATE_DESCRIPTION_TEMP}" = "" ]
 		then
-			question_yes_no "\nYou have entered:\n'${NRML}${VM_DESCRIPTION_TEMP}${LCYN}'\nas the description of this template VM.\nIs this correct?"
+			echo -e "\n${LRED}ERROR:${NRML} The description can not be '${ORNG}${VM_TEMPLATE_DESCRIPTION_TEMP}${NRML}'."
+			echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+			echo -e "       brackets, commas, periods, spaces, underscores and hyphens.\n"
+		else
+			question_yes_no "\nYou have entered:\n'${NRML}${VM_TEMPLATE_DESCRIPTION_TEMP}${LCYN}'\nas the description of this template VM.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				VM_DESCRIPTION=${VM_DESCRIPTION_TEMP}
+				VM_TEMPLATE_DESCRIPTION=${VM_TEMPLATE_DESCRIPTION_TEMP}
 			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The VM description is not valid."
-			echo -e "       It must contain only letters, numbers and spaces of length between 0 and 150."
-			echo -e "       It must not be 'null'.\n"
 		fi
 	done
 
@@ -11778,25 +12621,6 @@ create_vm_template ()
 		fi
 	done
 
-	# Prompt for the VM_BOOT_LOADER (default|bhyveload|grub|UEFI|UEFI_CSM).
-	VM_BOOT_LOADER=""
-	while [ "${VM_BOOT_LOADER}" = "" ]
-	do
-		echo -e "\n${LCYN}Which bhyve boot loader would you like to use?${NRML}"
-		readee -p "${LCYN}(default|bhyveload|grub|UEFI|UEFI_CSM): ${NRML}" VM_BOOT_LOADER_TEMP
-		# Check input validation.
-		if [ "${VM_BOOT_LOADER_TEMP}" = "default" ] || [ "${VM_BOOT_LOADER_TEMP}" = "bhyveload" ] || [ "${VM_BOOT_LOADER_TEMP}" = "grub" ] ||
-		   [ "${VM_BOOT_LOADER_TEMP}" = "UEFI" ] || [ "${VM_BOOT_LOADER_TEMP}" = "UEFI_CSM" ]
-		then
-			if [ "${VM_BOOT_LOADER_TEMP}" = "default" ]
-			then
-				VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
-			else
-				VM_BOOT_LOADER="${VM_BOOT_LOADER_TEMP}"
-			fi
-		fi
-	done
-
 	# Prompt for the virtual disk driver.
 	VM_DISK_DRIVER=""
 	while [ "${VM_DISK_DRIVER}" = "" ]
@@ -11816,37 +12640,56 @@ create_vm_template ()
 	done
 
 	# Prompt for the virtual OS disk sector size.
-	OS_DISK_SECTOR_SIZE=""
-	while [ "${OS_DISK_SECTOR_SIZE}" = "" ]
+	VM_OS_DISK_SECTOR_SIZE=""
+	while [ "${VM_OS_DISK_SECTOR_SIZE}" = "" ]
 	do
 		echo -e "\n${LCYN}What is the sector size (bytes) of the virtual OS disk image?${NRML}"
-		readee -p "${LCYN}(default|4096|512): ${NRML}" OS_DISK_SECTOR_SIZE_TEMP
+		readee -p "${LCYN}(default|4096|512): ${NRML}" VM_OS_DISK_SECTOR_SIZE_TEMP
 		# Check input validation.
-		if [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "default" ] || [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "512" ]
+		if [ "${VM_OS_DISK_SECTOR_SIZE_TEMP}" = "default" ] || [ "${VM_OS_DISK_SECTOR_SIZE_TEMP}" = "4096" ] || [ "${VM_OS_DISK_SECTOR_SIZE_TEMP}" = "512" ]
 		then
-			if [ "${OS_DISK_SECTOR_SIZE_TEMP}" = "default" ]
+			if [ "${VM_OS_DISK_SECTOR_SIZE_TEMP}" = "default" ]
 			then
-				OS_DISK_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
+				VM_OS_DISK_SECTOR_SIZE="${VM_DEFAULT_SECTOR_SIZE}"
 			else
-				OS_DISK_SECTOR_SIZE="${OS_DISK_SECTOR_SIZE_TEMP}"
+				VM_OS_DISK_SECTOR_SIZE="${VM_OS_DISK_SECTOR_SIZE_TEMP}"
+			fi
+		fi
+	done
+
+	# Prompt for the VM_BOOT_LOADER (default|bhyveload|grub|UEFI).
+	VM_BOOT_LOADER=""
+	while [ "${VM_BOOT_LOADER}" = "" ]
+	do
+		echo -e "\n${LCYN}Which boot loader method would you like to use?${NRML}"
+		readee -p "${LCYN}(default|bhyveload|grub|UEFI): ${NRML}" VM_BOOT_LOADER_TEMP
+		# Check input validation.
+		if [ "${VM_BOOT_LOADER_TEMP}" = "default" ] || [ "${VM_BOOT_LOADER_TEMP}" = "bhyveload" ] ||
+		   [ "${VM_BOOT_LOADER_TEMP}" = "grub" ] || [ "${VM_BOOT_LOADER_TEMP}" = "UEFI" ]
+		then
+			if [ "${VM_BOOT_LOADER_TEMP}" = "default" ]
+			then
+				VM_BOOT_LOADER="${VM_DEFAULT_BOOT_LOADER}"
+			else
+				VM_BOOT_LOADER="${VM_BOOT_LOADER_TEMP}"
 			fi
 		fi
 	done
 
 	# Prompt for the method; install or copy from existing VM image.
-	INSTALL_OR_COPY_IMAGE=""
-	while [ "${INSTALL_OR_COPY_IMAGE}" = "" ]
+	VM_INSTALL_OR_COPY_IMAGE=""
+	while [ "${VM_INSTALL_OR_COPY_IMAGE}" = "" ]
 	do
 		echo -e "\n${LCYN}Do you want to install an OS or copy from an existing image?${NRML}"
-		readee -p "${LCYN}(install|copy): ${NRML}" INSTALL_OR_COPY_IMAGE_TEMP
+		readee -p "${LCYN}(install|copy): ${NRML}" VM_INSTALL_OR_COPY_IMAGE_TEMP
 		# Check input validation.
-		if [ "${INSTALL_OR_COPY_IMAGE_TEMP}" = "install" ] || [ "${INSTALL_OR_COPY_IMAGE_TEMP}" = "copy" ]
+		if [ "${VM_INSTALL_OR_COPY_IMAGE_TEMP}" = "install" ] || [ "${VM_INSTALL_OR_COPY_IMAGE_TEMP}" = "copy" ]
 		then
-			INSTALL_OR_COPY_IMAGE="${INSTALL_OR_COPY_IMAGE_TEMP}"
+			VM_INSTALL_OR_COPY_IMAGE="${VM_INSTALL_OR_COPY_IMAGE_TEMP}"
 		fi
 	done
 
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "install" ]
 	then
 		# Get the VMs' disk size in GigaBytes.
 		VM_IMAGE_SIZE_GB=0
@@ -11870,24 +12713,24 @@ create_vm_template ()
 		done
 
 		# Get the installer ISO path.
-		OS_INSTALLER_ISO=""
-		while [ "${OS_INSTALLER_ISO}" = "" ]
+		VM_OS_INSTALLER_ISO=""
+		while [ "${VM_OS_INSTALLER_ISO}" = "" ]
 		do
 			# Ask for installer ISO file.
 			DIALOG_PROMPT="Select OS installer ISO:"
 			dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 16 72 2> ${DIALOG_OUT_FILE}
-			OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
-			if [ -e "${OS_INSTALLER_ISO_TEMP}" ]
+			VM_OS_INSTALLER_ISO_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -e "${VM_OS_INSTALLER_ISO_TEMP}" ]
 			then
-				file "${OS_INSTALLER_ISO_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
+				file "${VM_OS_INSTALLER_ISO_TEMP}" | grep -E "${ISO_FILE_PATTERN}" > /dev/null
 				if [ ${?} -eq 0 ]
 				then
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${OS_INSTALLER_ISO_TEMP}${LCYN}' as the OS installer ISO.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${VM_OS_INSTALLER_ISO_TEMP}${LCYN}' as the OS installer ISO.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						OS_INSTALLER_ISO="${OS_INSTALLER_ISO_TEMP}"
-						VM_OS_INSTALL_ISO_FILE=`basename "${OS_INSTALLER_ISO}"`
+						VM_OS_INSTALLER_ISO="${VM_OS_INSTALLER_ISO_TEMP}"
+						VM_OS_INSTALL_ISO_FILE=`basename "${VM_OS_INSTALLER_ISO}"`
 						break
 					fi
 				else
@@ -11908,33 +12751,33 @@ create_vm_template ()
 		done
 	fi
 
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
+	if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "copy" ]
 	then
 		# Get the existing VM OS image file path.
-		EXISTING_IMAGE_PATH=""
-		while [ "${EXISTING_IMAGE_PATH}" = "" ]
+		VM_EXISTING_IMAGE_PATH=""
+		while [ "${VM_EXISTING_IMAGE_PATH}" = "" ]
 		do
 			# Ask for existing disk image path.
 			DIALOG_PROMPT="Select existing disk image (raw):"
 			dialog --title "${DIALOG_PROMPT}" --fselect "${VM_RESOURCES_PATH}/" 16 72 2> ${DIALOG_OUT_FILE}
-			EXISTING_IMAGE_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
-			if [ -e "${EXISTING_IMAGE_PATH_TEMP}" ]
+			VM_EXISTING_IMAGE_PATH_TEMP=`cat ${DIALOG_OUT_FILE}`
+			if [ -e "${VM_EXISTING_IMAGE_PATH_TEMP}" ]
 			then
-				get_file_size_in_gigabytes "${EXISTING_IMAGE_PATH_TEMP}"
+				get_file_size_in_gigabytes "${VM_EXISTING_IMAGE_PATH_TEMP}"
 				VM_IMAGE_SIZE_GB=${FILE_SIZE_IN_GB}
 				if [ ${VM_IMAGE_SIZE_GB} -gt 0 ]
 				then
-					file "${EXISTING_IMAGE_PATH_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
+					file "${VM_EXISTING_IMAGE_PATH_TEMP}" | grep "DOS/MBR boot sector" > /dev/null
 					if [ ${?} -ne 0 ]
 					then
 						echo -e "\n\n${ORNG}WARNING:${NRML} File selected does not appear to be a valid OS disk image!\n"
 						pause_prompt 8
 					fi
 					echo -e "\n"
-					question_yes_no "\nYou have selected '${NRML}${EXISTING_IMAGE_PATH_TEMP}${LCYN}' as the existing image file.\nIs this correct?"
+					question_yes_no "\nYou have selected '${NRML}${VM_EXISTING_IMAGE_PATH_TEMP}${LCYN}' as the existing image file.\nIs this correct?"
 					if [ "${ANSWER}" = "yes" ]
 					then
-						EXISTING_IMAGE_PATH="${EXISTING_IMAGE_PATH_TEMP}"
+						VM_EXISTING_IMAGE_PATH="${VM_EXISTING_IMAGE_PATH_TEMP}"
 						break
 					fi
 				else
@@ -11955,38 +12798,6 @@ create_vm_template ()
 		done
 	fi
 
-	# Get IP to use for VNC.
-	VM_VNC_HOST_IP=""
-	NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
-	if [ ${NUM_HOST_IP} -lt 2 ]
-	then
-		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
-	else
-		while [ "${VM_VNC_HOST_IP}" = "" ]
-		do
-			DIALOG_PROMPT="Select IP address for VNC access:"
-			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
-			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
-			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
-				break
-			fi
-			sleep 2
-		done
-	fi
-
-	# Get next available VNC port.
-	get_next_vnc_port_num
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
-		return 2
-	fi
-	VM_VNC_PORT=${VNC_PORT_NUM}
-
 	# Get next available tap interface id.
 	VM_TAP_ID=-1
 	VM_TAP_ID_TEMP=0
@@ -11994,7 +12805,7 @@ create_vm_template ()
 	do
 		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		conf_get /etc/rc.conf string ".network.cloned_interfaces"
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
 		echo "${CONF_GET_VALUE}" | grep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
@@ -12005,49 +12816,106 @@ create_vm_template ()
 		fi
 	done
 
-	# Get VNC screen size (resolution) to use for the VM.
-	VM_VNC_SCREEN_SIZE=""
-	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
-	do
-		DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
-		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
-		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
-		echo -e "\n"
-		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
-			break
-		fi
-		sleep 2
-	done
-
-	# Get the VMs' VNC password.
-	VM_VNC_PASSWORD="null"
-	while [ "${VM_VNC_PASSWORD}" = "null" ]
-	do
-		echo -e ""
-		readee -p "${LCYN}Enter the password for the VMs' VNC session: ${NRML}" VM_VNC_PASSWORD_TEMP
-		# Check that the VMs' VNC password contains only valid characters.
-		test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
-		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
-		then
-			question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this template VM.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
-			echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
-			echo -e "       It must not be 'null'.\n"
-		fi
-	done
-
-	VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
-	VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
 	VM_TAP_IFACE="tap${VM_TAP_ID}"
 	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	# Get whether to add a USB tablet device (improves VNC mouse pointer, supported by Windows 8 and above).
+	question_yes_no "\nWould you like to attach a USB tablet device (can improve VNC)?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		VM_TABLET_ENABLED=true
+	else
+		VM_TABLET_ENABLED=false
+	fi
+
+	# If boot loader method is UEFI, then we should use VNC to connect to the graphical UEFI framebuffer.
+	if [ "${VM_BOOT_LOADER}" = "UEFI" ] 
+	then
+		VM_VNC_ENABLED=true
+
+		# Get IP to use for VNC.
+		VM_VNC_HOST_IP=""
+		VM_NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
+		if [ ${VM_NUM_HOST_IP} -lt 2 ]
+		then
+			VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
+		else
+			while [ "${VM_VNC_HOST_IP}" = "" ]
+			do
+				DIALOG_PROMPT="Select IP address for VNC access:"
+				dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+				VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+					break
+				fi
+				sleep 2
+			done
+		fi
+
+		# Get next available VNC port.
+		get_next_vnc_port_num
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
+			return 2
+		fi
+		VM_VNC_PORT=${VNC_PORT_NUM}
+
+		# Get VNC screen size (resolution) to use for the VM.
+		VM_VNC_SCREEN_SIZE=""
+		while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
+		do
+			DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+			VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		# Get the VMs' VNC password.
+		VM_VNC_PASSWORD="null"
+		while [ "${VM_VNC_PASSWORD}" = "null" ]
+		do
+			echo -e ""
+			readee -p "${LCYN}Enter the password for the VMs' VNC session: ${NRML}" VM_VNC_PASSWORD_TEMP
+			# Check that the VMs' VNC password contains only valid characters.
+			test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
+			if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
+			then
+				question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this template VM.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
+				echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
+				echo -e "       It must not be 'null'.\n"
+			fi
+		done
+
+		VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
+		VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
+		VM_START_CMD_OPTIONS="--wait"
+	else
+		VM_VNC_ENABLED=false
+		VM_VNC_HOST_IP=""
+		VM_VNC_PORT=""
+		VM_VNC_SCREEN_WIDTH=""
+		VM_VNC_SCREEN_HEIGHT=""
+		VM_VNC_PASSWORD=""
+		VM_START_CMD_OPTIONS=""
+	fi
 
 	# DEBUG info.
 	if [ ${DEBUG} = true ]
@@ -12061,13 +12929,16 @@ create_vm_template ()
 		echo -e "VM_NUM_CORES=${VM_NUM_CORES}"
 		echo -e "VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB}"
 		echo -e "VM_IMAGE_SIZE_GB=${VM_IMAGE_SIZE_GB}"
-		echo -e "OS_DISK_SECTOR_SIZE=${OS_DISK_SECTOR_SIZE}"
+		echo -e "VM_OS_DISK_SECTOR_SIZE=${VM_OS_DISK_SECTOR_SIZE}"
 		echo -e "VM_BRIDGE_IFACE_IP=${VM_BRIDGE_IFACE_IP}"
+		echo -e "VM_TABLET_ENABLED=${VM_TABLET_ENABLED}"
+		echo -e "VM_VNC_ENABLED=${VM_VNC_ENABLED}"
 		echo -e "VM_VNC_HOST_IP=${VM_VNC_HOST_IP}"
 		echo -e "VM_VNC_PORT=${VM_VNC_PORT}"
 		echo -e "VM_VNC_SCREEN_WIDTH=${VM_VNC_SCREEN_WIDTH}"
 		echo -e "VM_VNC_SCREEN_HEIGHT=${VM_VNC_SCREEN_HEIGHT}"
 		echo -e "VM_VNC_PASSWORD=${VM_VNC_PASSWORD}"
+		echo -e "\n"
 	fi
 
 	CREATE_VM_TEMPLATE_MODIFIED=true
@@ -12111,9 +12982,9 @@ create_vm_template ()
 	fi
 
 	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint.
-	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
+	VM_EXPECTED_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
 	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
-	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
+	if [ "${VM_FS_MOUNTPOINT}" != "${VM_EXPECTED_FS_MOUNTPOINT}" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
 	fi
@@ -12147,7 +13018,7 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .templates.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.description "${VM_DESCRIPTION}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.description "${VM_TEMPLATE_DESCRIPTION}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.path "${VM_FS_MOUNTPOINT}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -12157,7 +13028,7 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .templates.${VM_INDEX}.vnc_enabled true
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .templates.${VM_INDEX}.vnc_enabled "${VM_VNC_ENABLED}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -12169,85 +13040,110 @@ create_vm_template ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .templates.${VM_INDEX}.tablet_enabled "${VM_TABLET_ENABLED}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .templates.${VM_INDEX}.images "[ { type = \"${VM_DISK_DRIVER}\"; } ]"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.images.0.filename  "os_disk.img"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.images.0.filename "os_disk.img"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .templates.${VM_INDEX}.images.0.sectorsize  "${OS_DISK_SECTOR_SIZE}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .templates.${VM_INDEX}.images.0.sector_size "${VM_OS_DISK_SECTOR_SIZE}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .templates.${VM_INDEX}.images.0.bootable true
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the host configs!\n"
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst preparing the host configs(1)!\n"
 		undo_create_vm_template
 		return 2
 	fi
 
 	# Prepare OS disk images.
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "install" ]
 	then
 		# Create the new VMs' disk image.
 		truncate -s "${VM_IMAGE_SIZE_GB}G" "${VM_FS_MOUNTPOINT}/os_disk.img"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		if [ "${OS_INSTALLER_ISO}" != "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" ]
+		if [ "${VM_OS_INSTALLER_ISO}" != "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" ]
 		then
-			cp "${OS_INSTALLER_ISO}" "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" > /dev/null 2>&1
-			if [ ${?} -ne 0 ]
-			then
-				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-				echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the OS installer ISO\n         to the resources filesystem!\n"
-			fi
+			cp "${VM_OS_INSTALLER_ISO}" "${VM_RESOURCES_PATH}/${VM_OS_INSTALL_ISO_FILE}" > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong preparing the VM OS installation images!\n"
+			undo_create_vm_template
+			return 2
 		fi
 
 		# Add the installer ISO image as an ahci-cd device in the vms.conf file.
 		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .templates.${VM_INDEX}.images.1 "{ type = \"ahci-cd\"; }"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.images.1.filename  "${VM_OS_INSTALL_ISO_FILE}"
+		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .templates.${VM_INDEX}.images.1.filename "${VM_OS_INSTALL_ISO_FILE}"
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
+		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .templates.${VM_INDEX}.images.1.bootable true
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
-	then
-		# Copy the existing template VM OS image to the template VM filesystem.
-		echo -e "\n${YELL}Copying existing VM OS image to the template VM filesystem...${NRML}\n"
-		cp "${EXISTING_IMAGE_PATH}" "${VM_FS_MOUNTPOINT}/os_disk.img"
-		if [ ${?} -ne 0 ]
+		if [ ${ERROR_COUNT} -ne 0 ]
 		then
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the existing VM OS image\n         to the template VM filesystem!\n"
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong preparing the host configs(2)!\n"
+			undo_create_vm_template
+			return 2
 		fi
 	fi
 
-	if [ ${ERROR_COUNT} -ne 0 ]
+	if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "copy" ]
 	then
-		echo -e "\n${LRED}ERROR:${NRML} Something went wrong during disk/ISO image preparation!\n"
-		undo_create_vm_template
-		return 2
+		# Copy the existing template VM OS image to the template VM filesystem.
+		echo -e "\n${YELL}Copying existing VM OS image to the template VM filesystem...${NRML}\n"
+		cp "${VM_EXISTING_IMAGE_PATH}" "${VM_FS_MOUNTPOINT}/os_disk.img"
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${ORNG}WARNING:${NRML} There was a problem copying the existing VM OS image"
+   			echo -e "         to the template VM filesystem!\n"
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong copying the VM OS image!\n"
+			undo_create_vm_template
+			return 2
+		fi
 	fi
 
 	# Start template VM for the first time.
 	echo -e "\n${YELL}Starting template VM '${NRML}${VM_NAME}${YELL}' for the first time...${NRML}\n"
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+	pause_prompt 16 
+	create_vm_boot
+	RETURN_CODE=${?}
 
-	# Inform user that next step is to login via VNC to the template and perform the installation / configuration.
-	echo -e "\n${YELL}The template VM should now be running.${NRML}"
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "install" ]
+	if [ ${RETURN_CODE} -eq 0 ]
 	then
-		echo -e "${YELL}The OS installer ISO should also be attached and ready to boot ${NRML}"
-		echo -e "${YELL}into the installation environment.${NRML}"
-		echo -e "${YELL}You should now connect via VNC and install the VM OS, ${NRML}"
-		echo -e "${YELL}then reboot it when finished.${NRML}\n"
+		echo -e "\n${YELL}The template VM should now be running.\n${NRML}"
+	else
+		echo -e "\n${ORNG}It appears the template VM did not start successfully!\n${NRML}"
 	fi
-	if [ "${INSTALL_OR_COPY_IMAGE}" = "copy" ]
+
+	# If boot loader method is UEFI, then inform user how to connect to the graphical UEFI framebuffer.
+	if [ "${VM_BOOT_LOADER}" = "UEFI" ] 
 	then
-		echo -e "${YELL}The OS disk image should be copied and ready to boot. ${NRML}"
-		echo -e "${YELL}You should now connect via VNC and configure the VM OS, ${NRML}"
-		echo -e "${YELL}then reboot it when finished.${NRML}\n"
+		# Inform user that next step is to login via VNC to the template and perform the installation / configuration.
+		if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "install" ]
+		then
+			echo -e "${YELL}The OS installer ISO should also be attached and ready to boot ${NRML}"
+			echo -e "${YELL}into the installation environment.${NRML}"
+			echo -e "${YELL}You should now connect via VNC and install the VM OS, ${NRML}"
+			echo -e "${YELL}then reboot it when finished.${NRML}\n"
+		fi
+		if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "copy" ]
+		then
+			echo -e "${YELL}The OS disk image should be copied and ready to boot. ${NRML}"
+			echo -e "${YELL}You should now connect via VNC and configure the VM OS, ${NRML}"
+			echo -e "${YELL}then reboot it when finished.${NRML}\n"
+		fi
+		echo -e "${YELL}Connect to the template VM using a VNC viewer ${NRML}"
+		echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
+		echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
+		echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
 	fi
-	echo -e "${YELL}Connect to the template VM using a VNC viewer ${NRML}"
-	echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
-	echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
-	echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
 
 	pause_prompt 16
 
@@ -12266,6 +13162,23 @@ create_vm_template ()
 
 	# Stop the template VM.
 	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
+
+	# If installing, ask if the installer image should be removed from the template before it is finalised.
+	if [ "${VM_INSTALL_OR_COPY_IMAGE}" = "install" ]
+	then
+		# Check if the installer image is still attached.
+		VM_IMAGE_1_FILENAME_TEST=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .templates.${VM_INDEX}.images.1.filename`
+		if [ "${VM_IMAGE_1_FILENAME_TEST}" = "${VM_OS_INSTALL_ISO_FILE}" ]
+		then
+			question_yes_no "\nWould you like to remove the installer disk image before finalising the template?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				# Remove the installer disk image in the vms.conf file.
+				${UCL_CMD} remove -f configs/${HOST_NAME}/${VMS_CONF_PATH} -o configs/${HOST_NAME}/${VMS_CONF_PATH} .templates.${VM_INDEX}.images.1 2> /dev/null
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+		fi
+	fi
 
 	# Snapshot the template VM for use by 'create-vm-instance'.
 	zfs snapshot -r ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}@latest
@@ -12332,6 +13245,7 @@ create_vm_instance ()
 	VM_NAME="${2}"
 	VM_TYPE="instance"
 	VM_TYPE_DIRNAME="${VM_INSTANCES_DIRNAME}"
+	VM_GRUB_NEEDS_RESET=false
 	CREATE_VM_INSTANCE_MODIFIED=false
 	CREATE_VM_INSTANCE_FILESYSTEMS_CREATED=false
 	CREATE_VM_INSTANCE_REPO_MODIFIED=false
@@ -12351,7 +13265,7 @@ create_vm_instance ()
 		echo -e "\n${LRED}ERROR:${NRML} The instance name can not be '${ORNG}${VM_NAME}${NRML}'."
 		echo -e "       It must only contain letters, numbers and underscores."
 		echo -e "       It must not begin or end with an underscore."
-		echo -e "       It must be between 3 and 30 characters in length."
+		echo -e "       It must be between 3 and 24 characters in length."
 		echo -e "       Aborting.\n"
 		return 1
 	fi
@@ -12417,8 +13331,8 @@ create_vm_instance ()
 	VM_TEMPLATE_INDEX=0
 	while [ `${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}` != "null" ]
 	do
-		TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}.name`
-		if [ "${VM_TEMPLATE_NAME}" = "${TEST_TEMPLATE_NAME}" ]
+		VM_TEST_TEMPLATE_NAME=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}.name`
+		if [ "${VM_TEMPLATE_NAME}" = "${VM_TEST_TEMPLATE_NAME}" ]
 		then
 			VM_TEMPLATE_EXISTS=true
 			# We don't want to iterate VM_TEMPLATE_INDEX anymore.
@@ -12506,25 +13420,34 @@ create_vm_instance ()
 		break
 	done
 
+	# Get the boot loader method from the VMs config file.
+	VM_BOOT_LOADER=`${UCL_CMD} get -f ${VMS_CONF_PATH} -q .templates.${VM_TEMPLATE_INDEX}.boot_loader`
+	if [ ${?} -ne 0 ] || [ "${VM_BOOT_LOADER}" = "null" ] || [ "${VM_BOOT_LOADER}" = "" ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Failed to get the VMs boot loader method from the VMs config file!\n       Aborting.\n"
+		return 2
+	fi
+
 	# Get the VM description.
 	VM_DESCRIPTION="null"
 	while [ "${VM_DESCRIPTION}" = "null" ]
 	do
-		echo -e ""
-		readee -p "${LCYN}Enter the description for the VM instance: ${NRML}" VM_DESCRIPTION_TEMP
-		# Check that the VM description contains only valid characters.
-		test_valid_alpha_numeric_string "${VM_DESCRIPTION_TEMP}" 0 150
-		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_DESCRIPTION_TEMP}" != "null" ]
+		echo -e "\n${LCYN}Enter the description for the VM instance: ${NRML}"
+		readee VM_DESCRIPTION_TEMP
+		# Check that the VM description only contains letters, numbers, brackets, commas, periods, spaces, underscores and hyphens between 3 and 50 characters.
+		IS_SYNTAX_OK=`echo "${VM_DESCRIPTION_TEMP}" | sed -r "s/^[a-zA-Z0-9\_\(\)\-][a-zA-Z0-9\,\.\_\(\)\ \-]+[a-zA-Z0-9\,\.\_\(\)\-]//" | wc -L`
+		IS_LENGTH_OK=`echo "${VM_DESCRIPTION_TEMP}" | sed -r "s/^(.{3,50})//" | wc -L`
+		if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${VM_DESCRIPTION_TEMP}" = "" ]
 		then
+			echo -e "\n${LRED}ERROR:${NRML} The description can not be '${ORNG}${VM_DESCRIPTION_TEMP}${NRML}'."
+			echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+			echo -e "       brackets, commas, periods, spaces, underscores and hyphens.\n"
+		else
 			question_yes_no "\nYou have entered:\n'${NRML}${VM_DESCRIPTION_TEMP}${LCYN}'\nas the description of this VM instance.\nIs this correct?"
 			if [ "${ANSWER}" = "yes" ]
 			then
 				VM_DESCRIPTION=${VM_DESCRIPTION_TEMP}
 			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The VM description is not valid."
-			echo -e "       It must contain only letters, numbers and spaces of length between 0 and 150."
-			echo -e "       It must not be 'null'.\n"
 		fi
 	done
 	
@@ -12570,38 +13493,6 @@ create_vm_instance ()
 		fi
 	done
 
-	# Get IP to use for VNC.
-	VM_VNC_HOST_IP=""
-	NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
-	if [ ${NUM_HOST_IP} -lt 2 ]
-	then
-		VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
-	else
-		while [ "${VM_VNC_HOST_IP}" = "" ]
-		do
-			DIALOG_PROMPT="Select IP address for VNC access:"
-			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
-			VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
-			echo -e "\n"
-			question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
-				break
-			fi
-			sleep 2
-		done
-	fi
-
-	# Get next available VNC port.
-	get_next_vnc_port_num
-	if [ ${?} -ne 0 ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
-		return 2
-	fi
-	VM_VNC_PORT=${VNC_PORT_NUM}
-
 	# Get next available tap interface id.
 	VM_TAP_ID=-1
 	VM_TAP_ID_TEMP=0
@@ -12609,7 +13500,7 @@ create_vm_instance ()
 	do
 		ifconfig "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT1=${?}
-		conf_get /etc/rc.conf string ".network.cloned_interfaces"
+		conf_get configs/${HOST_NAME}/etc/rc.conf string ".network.cloned_interfaces"
 		echo "${CONF_GET_VALUE}" | grep -w "tap${VM_TAP_ID_TEMP}" > /dev/null 2>&1
 		RESULT2=${?}
 		if [ ${RESULT1} -eq 0 ] || [ ${RESULT2} -eq 0 ]
@@ -12620,49 +13511,106 @@ create_vm_instance ()
 		fi
 	done
 
-	# Get VNC screen size (resolution) to use for the VM.
-	VM_VNC_SCREEN_SIZE=""
-	while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
-	do
-		DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
-		dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
-		VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
-		echo -e "\n"
-		question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
-		if [ "${ANSWER}" = "yes" ]
-		then
-			VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
-			break
-		fi
-		sleep 2
-	done
-
-	# Get the VMs' VNC password.
-	VM_VNC_PASSWORD="null"
-	while [ "${VM_VNC_PASSWORD}" = "null" ]
-	do
-		echo -e ""
-		readee -p "${LCYN}Enter the password for the VMs' VNC session: ${NRML}" VM_VNC_PASSWORD_TEMP
-		# Check that the VMs' VNC password contains only valid characters.
-		test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
-		if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
-		then
-			question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this instance VM.\nIs this correct?"
-			if [ "${ANSWER}" = "yes" ]
-			then
-				VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
-			fi
-		else
-			echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
-			echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
-			echo -e "       It must not be 'null'.\n"
-		fi
-	done
-
-	VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
-	VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
 	VM_TAP_IFACE="tap${VM_TAP_ID}"
 	VM_BRIDGE_IFACE="bridge${VM_BRIDGE_ID}"
+
+	# Get whether to add a USB tablet device (improves VNC mouse pointer, supported by Windows 8 and above).
+	question_yes_no "\nWould you like to attach a USB tablet device (can improve VNC)?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		VM_TABLET_ENABLED=true
+	else
+		VM_TABLET_ENABLED=false
+	fi
+
+	# If boot loader method is UEFI, then we should use VNC to connect to the graphical UEFI framebuffer.
+	if [ "${VM_BOOT_LOADER}" = "UEFI" ] 
+	then
+		VM_VNC_ENABLED=true
+
+		# Get IP to use for VNC.
+		VM_VNC_HOST_IP=""
+		VM_NUM_HOST_IP=`echo "${VM_BRIDGE_IFACE_IP_ADDRESSES}" | wc -w`
+		if [ ${VM_NUM_HOST_IP} -lt 2 ]
+		then
+			VM_VNC_HOST_IP=${VM_BRIDGE_IFACE_IP_ADDRESSES}
+		else
+			while [ "${VM_VNC_HOST_IP}" = "" ]
+			do
+				DIALOG_PROMPT="Select IP address for VNC access:"
+				dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VM_BRIDGE_IFACE_IP_ADDRESSES} 2> ${DIALOG_OUT_FILE}
+				VM_VNC_HOST_IP_TEMP=`cat ${DIALOG_OUT_FILE}`
+				echo -e "\n"
+				question_yes_no "\nYou have selected '${NRML}${VM_VNC_HOST_IP_TEMP}${LCYN}' to use for the VNC session.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_VNC_HOST_IP="${VM_VNC_HOST_IP_TEMP}"
+					break
+				fi
+				sleep 2
+			done
+		fi
+
+		# Get next available VNC port.
+		get_next_vnc_port_num
+		if [ ${?} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Failed to get the next available VNC port number!\n       Aborting."
+			return 2
+		fi
+		VM_VNC_PORT=${VNC_PORT_NUM}
+
+		# Get VNC screen size (resolution) to use for the VM.
+		VM_VNC_SCREEN_SIZE=""
+		while [ "${VM_VNC_SCREEN_SIZE}" = "" ]
+		do
+			DIALOG_PROMPT="Select VNC screen size (if unsure, use 1024x768):"
+			dialog --no-items --no-cancel --menu "${DIALOG_PROMPT}" 24 72 16 ${VNC_SCREEN_SIZES} 2> ${DIALOG_OUT_FILE}
+			VM_VNC_SCREEN_SIZE_TEMP=`cat ${DIALOG_OUT_FILE}`
+			echo -e "\n"
+			question_yes_no "\nYou have selected '${NRML}${VM_VNC_SCREEN_SIZE_TEMP}${LCYN}' as the VMs' VNC screen size.\nIs this correct?"
+			if [ "${ANSWER}" = "yes" ]
+			then
+				VM_VNC_SCREEN_SIZE="${VM_VNC_SCREEN_SIZE_TEMP}"
+				break
+			fi
+			sleep 2
+		done
+
+		# Get the VMs' VNC password.
+		VM_VNC_PASSWORD="null"
+		while [ "${VM_VNC_PASSWORD}" = "null" ]
+		do
+			echo -e "\n${LCYN}Enter the password for the VMs' VNC session (leave empty for none): ${NRML}"
+			readee VM_VNC_PASSWORD_TEMP
+			# Check that the VMs' VNC password contains only valid characters.
+			test_valid_alpha_numeric_string "${VM_VNC_PASSWORD_TEMP}" 3 20
+			if [ "${VALID_ALPHA_NUMERIC_STRING}" = "yes" ] && [ "${VM_VNC_PASSWORD_TEMP}" != "null" ]
+			then
+				question_yes_no "\nYou have entered:\n'${NRML}${VM_VNC_PASSWORD_TEMP}${LCYN}'\nas the VNC password of this instance VM.\nIs this correct?"
+				if [ "${ANSWER}" = "yes" ]
+				then
+					VM_VNC_PASSWORD=${VM_VNC_PASSWORD_TEMP}
+				fi
+			else
+				echo -e "\n${LRED}ERROR:${NRML} The VMs' VNC password is not valid."
+				echo -e "       It must contain only letters, numbers and spaces of length between 3 and 20."
+				echo -e "       It must not be 'null'.\n"
+			fi
+		done
+
+		VM_VNC_SCREEN_WIDTH=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f1`
+		VM_VNC_SCREEN_HEIGHT=`echo "${VM_VNC_SCREEN_SIZE}" | cut -dx -f2`
+		VM_START_CMD_OPTIONS="--wait"
+	else
+		VM_VNC_ENABLED=false
+		VM_VNC_HOST_IP=""
+		VM_VNC_PORT=""
+		VM_VNC_SCREEN_WIDTH=""
+		VM_VNC_SCREEN_HEIGHT=""
+		VM_VNC_PASSWORD=""
+		VM_START_CMD_OPTIONS=""
+	fi
 
 	# DEBUG info.
 	if [ ${DEBUG} = true ]
@@ -12678,11 +13626,15 @@ create_vm_instance ()
 		echo -e "VM_NUM_CORES=${VM_NUM_CORES}"
 		echo -e "VM_MEM_SIZE_MB=${VM_MEM_SIZE_MB}"
 		echo -e "VM_BRIDGE_IFACE_IP=${VM_BRIDGE_IFACE_IP}"
+		echo -e "VM_BOOT_LOADER=${VM_BOOT_LOADER}"
+		echo -e "VM_TABLET_ENABLED=${VM_TABLET_ENABLED}"
+		echo -e "VM_VNC_ENABLED=${VM_VNC_ENABLED}"
 		echo -e "VM_VNC_HOST_IP=${VM_VNC_HOST_IP}"
 		echo -e "VM_VNC_PORT=${VM_VNC_PORT}"
 		echo -e "VM_VNC_SCREEN_WIDTH=${VM_VNC_SCREEN_WIDTH}"
 		echo -e "VM_VNC_SCREEN_HEIGHT=${VM_VNC_SCREEN_HEIGHT}"
 		echo -e "VM_VNC_PASSWORD=${VM_VNC_PASSWORD}"
+		echo -e "\n"
 	fi
 
 	# Make sure the template VM is shutdown first.
@@ -12724,9 +13676,9 @@ create_vm_instance ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Get the ZFS filesystem mountpoint, and see if it has the expected mountpoint.
-	EXPECTED_VM_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
+	VM_EXPECTED_FS_MOUNTPOINT="${VMS_ROOT_PATH}/${VM_TYPE_DIRNAME}/${VM_NAME}"
 	VM_FS_MOUNTPOINT=`echo ${VM_FS_MOUNTPOINT_STRING} | awk '{print $3}'`
-	if [ "${VM_FS_MOUNTPOINT}" != "${EXPECTED_VM_FS_MOUNTPOINT}" ]
+	if [ "${VM_FS_MOUNTPOINT}" != "${VM_EXPECTED_FS_MOUNTPOINT}" ]
 	then
 		echo -e "\n${ORNG}WARNING:${NRML} The VM filesystem has an unexpected mountpoint!\n"
 	fi
@@ -12769,6 +13721,8 @@ create_vm_instance ()
 	# Add VM configuration to 'vms.conf'.
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t object .instances.${VM_INDEX} "{ name = \"${VM_NAME}\"; }"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .instances.${VM_INDEX}.template_name "${VM_TEMPLATE_NAME}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .instances.${VM_INDEX}.cores "${VM_NUM_CORES}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t number .instances.${VM_INDEX}.memory_size "${VM_MEM_SIZE_MB}"
@@ -12783,7 +13737,7 @@ create_vm_instance ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .instances.${VM_INDEX}.boot_loader "${VM_BOOT_LOADER}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .instances.${VM_INDEX}.vnc_enabled true
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .instances.${VM_INDEX}.vnc_enabled "${VM_VNC_ENABLED}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .instances.${VM_INDEX}.vnc_ipv4_address "${VM_VNC_HOST_IP}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
@@ -12795,17 +13749,27 @@ create_vm_instance ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t string .instances.${VM_INDEX}.vnc_password "${VM_VNC_PASSWORD}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-	EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${EXISTING_IMAGES_UCL}"
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .instances.${VM_INDEX}.tablet_enabled "${VM_TABLET_ENABLED}"
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
+	VM_EXISTING_IMAGES_UCL=`${UCL_CMD} get -u -f configs/${HOST_NAME}${VMS_CONF_PATH} .templates.${VM_TEMPLATE_INDEX}.images`
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t array .instances.${VM_INDEX}.images "${VM_EXISTING_IMAGES_UCL}"
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
-	IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
-	IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
-	IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+
+	VM_IMAGE_1_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.type`
+	VM_IMAGE_1_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.filename`
+	VM_IMAGE_1_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.1.bootable`
+	VM_IMAGE_2_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.type`
+	VM_IMAGE_2_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.filename`
+	VM_IMAGE_2_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.2.bootable`
+	VM_IMAGE_3_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.type`
+	VM_IMAGE_3_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.filename`
+	VM_IMAGE_3_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.3.bootable`
+	VM_IMAGE_4_TYPE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.type`
+	VM_IMAGE_4_FILENAME=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.filename`
+	VM_IMAGE_4_BOOTABLE=`${UCL_CMD} get -f configs/${HOST_NAME}${VMS_CONF_PATH} -q .${VM_TYPE}s.${VM_INDEX}.images.4.bootable`
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
@@ -12814,19 +13778,35 @@ create_vm_instance ()
 		return 2
 	fi
 
-	if [ "${IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${IMAGE_1_TYPE}" = "virtio-blk" ]
+	if [ "${VM_IMAGE_1_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_1_TYPE}" = "virtio-blk" ]
 	then
-		IMAGE_NAME=`echo ${IMAGE_1_FILENAME} | cut -d/ -f1`
-		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
-		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		VM_IMAGE_NAME=`echo ${VM_IMAGE_1_FILENAME} | cut -d/ -f1`
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${VM_IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	if [ "${IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${IMAGE_2_TYPE}" = "virtio-blk" ]
+	if [ "${VM_IMAGE_2_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_2_TYPE}" = "virtio-blk" ]
 	then
-		IMAGE_NAME=`echo ${IMAGE_2_FILENAME} | cut -d/ -f1`
-		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${IMAGE_NAME}@latest \
-		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${IMAGE_NAME} > /dev/null 2>&1
+		VM_IMAGE_NAME=`echo ${VM_IMAGE_2_FILENAME} | cut -d/ -f1`
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${VM_IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ "${VM_IMAGE_3_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_3_TYPE}" = "virtio-blk" ]
+	then
+		VM_IMAGE_NAME=`echo ${VM_IMAGE_3_FILENAME} | cut -d/ -f1`
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${VM_IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+	fi
+
+	if [ "${VM_IMAGE_4_TYPE}" = "ahci-hd" ] || [ "${VM_IMAGE_4_TYPE}" = "virtio-blk" ]
+	then
+		VM_IMAGE_NAME=`echo ${VM_IMAGE_4_FILENAME} | cut -d/ -f1`
+		zfs clone ${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TEMPLATES_DIRNAME}/${VM_TEMPLATE_NAME}/${VM_IMAGE_NAME}@latest \
+		${VMS_POOL_NAME}/${VMS_ROOT_FS}/${VM_TYPE_DIRNAME}/${VM_NAME}/${VM_IMAGE_NAME} > /dev/null 2>&1
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
@@ -12838,17 +13818,23 @@ create_vm_instance ()
 	fi
 
 	# Start instance VM for the first time.
-	echo -e "\n${YELL}Starting instance VM '${ORNG}${VM_NAME}${NRML}' for the first time...${NRML}\n"
-	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_START_PATH} "${VM_NAME}" --wait
+	echo -e "\n${YELL}Starting instance VM '${NRML}${VM_NAME}${YELL}' for the first time...${NRML}\n"
+	pause_prompt 16 
+	create_vm_boot
 
-	# Inform user that next step is to login via VNC to the instance VM and perform configuration.
-	echo -e "\n${YELL}The instance VM should now be running and ready to boot.${NRML}"
-	echo -e "${YELL}You should now connect via VNC and configure the VM,${NRML}"
-	echo -e "${YELL}then reboot it when finished.${NRML}\n"
-	echo -e "${YELL}Connect to the instance VM using a VNC viewer ${NRML}"
-	echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
-	echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
-	echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
+	echo -e "\n${YELL}The instance VM should now be running.\n${NRML}"
+
+	# If boot loader method is UEFI, then inform user how to connect to the graphical UEFI framebuffer.
+	if [ "${VM_BOOT_LOADER}" = "UEFI" ] 
+	then
+		# Inform user that next step is to login via VNC to the instance VM and perform configuration.
+		echo -e "${YELL}You should now connect via VNC and configure the VM,${NRML}"
+		echo -e "${YELL}then reboot it when finished.${NRML}\n"
+		echo -e "${YELL}Connect to the instance VM using a VNC viewer ${NRML}"
+		echo -e "${YELL}(e.g. TigerVNC or SSVNC) using the following:${NRML}\n"
+		echo -e "${LGRN}VNC URI:      ${VM_VNC_HOST_IP}:${VM_VNC_PORT}${NRML}"
+		echo -e "${LGRN}VNC Password: ${VM_VNC_PASSWORD}${NRML}\n"
+	fi
 
 	pause_prompt 16
 
@@ -12868,12 +13854,15 @@ create_vm_instance ()
 	# Stop the instance VM.
 	VMS_CONF_PATH="configs/${HOST_NAME}/${VMS_CONF_PATH}" ${FDO_VMS_STOP_PATH} "${VM_NAME}" --force
 
-	# Ask whether to disable VNC for production use.
-	question_yes_no "Would you like to disable VNC on this VM for production use?"
-	if [ "${ANSWER}" = "yes" ]
+	# If enabled, ask whether to disable VNC for production use.
+	if [ ${VM_VNC_ENABLED} = true ]
 	then
-		${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .instances.${VM_INDEX}.vnc_enabled false
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		question_yes_no "Would you like to disable VNC on this VM for production use?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			${UCL_CMD} set -f configs/${HOST_NAME}${VMS_CONF_PATH} -t boolean .instances.${VM_INDEX}.vnc_enabled false
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
 	fi
 
 	# Snapshot the instance VM for later maintenance.
@@ -13619,5 +14608,3 @@ case "${SUB_CMD}" in
 		;;
 
 esac
-
-################################################################################

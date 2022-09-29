@@ -5,7 +5,6 @@ fdo-server TODO list:
 TODO
 ----
 
-- ``create-vm-template``: add support for bhyve-grub and bhyveload.
 
 DONE
 ----
@@ -91,3 +90,6 @@ DONE
 - Make all dialog prompts use a DIALOG_PROMPT variable.
 - Make all uses of ifconfig parsing more robust (e.g. grep -v " netmask 0xffffffff" and use spaces in greps).
 - Make hotdesk subsystem store users in UCL config file, possibly along with their hashed passwords.
+- ``create-vm-template``: add support for bhyve-grub and bhyveload.
+- ``create-vm-template|instance``: add sanity test for subsystem initialisation.
+- ``create-vm-template``: fix boolean bootable flag after attach image.

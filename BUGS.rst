@@ -8,6 +8,8 @@ BUGS
 *Currently there are known bugs.*
 
 - ``fdo-dns_cache-add-hostname``: hostname validation test won't allow simple hostnames (with no tld), e.g. "blah".
+- ``fdo-server create-jail``: error message 'egrep: repetition-operator operand invalid' after "Now we need to check if there are any unsaved changes to this hosts registered config files...".
+
 
 
 FIXED
@@ -32,3 +34,4 @@ FIXED
 - ``create-vm-template|instance`` during eject iso image, it should not say 'as the ISO image to detach' (eject).
 - ``create-vm-template|instance`` should be able to cancel and eject iso image. Same with insert, attach, detach.
 - ``patch-host``: doesn't seem to update FreeBSD version info.
+- ``fdo-server create-vm-instance``: 'template_name' is not being set.
