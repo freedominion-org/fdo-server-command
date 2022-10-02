@@ -3547,7 +3547,7 @@ dns_cache_add_hostname ()
 	for DNS_CACHE_JAIL_NAME in `ls -1 /jls | cut -d/ -f1 | egrep -v "template"`
 	do
 		NAMED_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${NAMED_CONF_PATH}"
-		ZONE_CONF_PATH="/usr/local/etc/namedb/master/${DNS_CACHE_ADD_HOSTNAME}.db"
+		ZONE_CONF_PATH="/usr/local/etc/namedb/primary/${DNS_CACHE_ADD_HOSTNAME}.db"
 		ZONE_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${ZONE_CONF_PATH}"
 
 		# ...and if a bind server exists...
@@ -3571,10 +3571,10 @@ dns_cache_add_hostname ()
 				# Since it does not already exist, let's add a zone for our new hostname record:
 
 				# - Add zone entry in named.conf
-				echo "zone \"${DNS_CACHE_ADD_HOSTNAME}\" { type master; file \"${ZONE_CONF_PATH}\"; };" >> "${NAMED_REPO_CONF_PATH}"
+				echo "zone \"${DNS_CACHE_ADD_HOSTNAME}\" { type primary; file \"${ZONE_CONF_PATH}\"; };" >> "${NAMED_REPO_CONF_PATH}"
 				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
 
-				# - Create the master zone file
+				# - Create the primary zone file
 				DATE=`date "+%Y%m%d"`
 				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
 				echo "" > ${ZONE_REPO_CONF_PATH}
@@ -3631,7 +3631,7 @@ dns_cache_remove_hostname ()
 	for DNS_CACHE_JAIL_NAME in `ls -1 /jls | cut -d/ -f1 | egrep -v "template"`
 	do
 		NAMED_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${NAMED_CONF_PATH}"
-		ZONE_CONF_PATH="/usr/local/etc/namedb/master/${DNS_CACHE_ADD_HOSTNAME}.db"
+		ZONE_CONF_PATH="/usr/local/etc/namedb/primary/${DNS_CACHE_ADD_HOSTNAME}.db"
 		ZONE_REPO_CONF_PATH="configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}${ZONE_CONF_PATH}"
 
 		# ...and if a bind server exists...
@@ -3658,7 +3658,7 @@ dns_cache_remove_hostname ()
 				sed -i "" "/^zone \"${DNS_CACHE_REMOVE_HOSTNAME}\"/d" "${NAMED_REPO_CONF_PATH}"
 				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
 
-				# - Remove the master zone file
+				# - Remove the primary zone file
 				rm /jls/${DNS_CACHE_JAIL_NAME}${ZONE_CONF_PATH} > /dev/null 2>&1
 				DNS_CACHE_ERROR_COUNT=$(( ${DNS_CACHE_ERROR_COUNT} + ${?} ))
 
@@ -9229,7 +9229,7 @@ undo_create_jail ()
 				dns_cache)
 					for RECIPE_DNS_HOSTNAME in ${RECIPE_DNS_HOSTNAMES}
 					do
-						rm /jls/${DNS_CACHE_JAIL_NAME}/usr/local/etc/namedb/master/${RECIPE_DNS_HOSTNAME}.db
+						rm /jls/${DNS_CACHE_JAIL_NAME}/usr/local/etc/namedb/primary/${RECIPE_DNS_HOSTNAME}.db
 						ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 					done
 					reload_jail_service ${DNS_CACHE_JAIL_NAME} named --allow-restart
