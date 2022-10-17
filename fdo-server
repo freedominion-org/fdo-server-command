@@ -3554,7 +3554,7 @@ dns_cache_add_hostname ()
 		if [ -f "${NAMED_REPO_CONF_PATH}" ]
 		then
 			# ...determine if it's a caching server
-			cat "${NAMED_REPO_CONF_PATH}" | egrep "^( )*forwarders {" > /dev/null 2>&1
+			cat "${NAMED_REPO_CONF_PATH}" | egrep $'^[ \t]*forwarders[ \t]*{' > /dev/null 2>&1
 			if [ ${?} -eq 0 ]
 			then
 
@@ -3638,7 +3638,7 @@ dns_cache_remove_hostname ()
 		if [ -f "${NAMED_REPO_CONF_PATH}" ]
 		then
 			# ...determine if it's a caching server
-			cat "${NAMED_REPO_CONF_PATH}" | egrep "^( )*forwarders {" > /dev/null 2>&1
+			cat "${NAMED_REPO_CONF_PATH}" | egrep $'^[ \t]*forwarders[ \t]*{' > /dev/null 2>&1
 			if [ ${?} -eq 0 ]
 			then
 
@@ -9338,7 +9338,7 @@ create_jail ()
 	fi
 
 	# Check that the jail_name has not already been used.
-	cat /etc/jail.conf | egrep "^${JAIL_NAME} {" > /dev/null
+	cat /etc/jail.conf | egrep "^${JAIL_NAME} \{" > /dev/null
 	if [ ${?} -eq 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} The jail_name '${ORNG}${JAIL_NAME}${NRML}' is already in use.\n       Aborting.\n"
@@ -9890,6 +9890,42 @@ create_recipe_jail ()
 			for RECIPE_DNS_HOSTNAME in ${RECIPE_DNS_HOSTNAMES}
 			do
 				dns_cache_add_hostname ${RECIPE_DNS_HOSTNAME} ${JAIL_IP}
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			done
+			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .undo.dns_cache-hostnames "${RECIPE_DNS_HOSTNAMES}"
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst adding dns cache hostname overrides!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+
+			AFFECTED_JAIL_RECIPES="${AFFECTED_JAIL_RECIPES} dns_cache"
+
+			# Install dns_cache jail configs.
+			install_file_tree configs/${DNS_CACHE_JAIL_NAME}@${HOST_NAME}/ /jls/${DNS_CACHE_JAIL_NAME}/
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			# Reload the dns_cache recipe jail named (bind9) service.
+			reload_jail_service ${DNS_CACHE_JAIL_NAME} named --allow-restart
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst activating the dns cache hostname overrides!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+		fi
+
+		# Add dns cache overrides in the dns_cache recipe jail to help on the LAN (if specified by RECIPE_REQUIRES_HTTP_GATEWAY_DNS_HOSTNAME=yes).
+		if [ "${RECIPE_REQUIRES_HTTP_GATEWAY_DNS_HOSTNAME}" = "yes" ]
+		then
+			for RECIPE_DNS_HOSTNAME in ${RECIPE_DNS_HOSTNAMES}
+			do
+				dns_cache_add_hostname ${RECIPE_DNS_HOSTNAME} ${HTTP_GATEWAY_JAIL_IP}
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			done
 			${UCL_CMD} set -f configs/${JAIL_NAME}@${HOST_NAME}${RECIPE_CONF_PATH} -t string .undo.dns_cache-hostnames "${RECIPE_DNS_HOSTNAMES}"
