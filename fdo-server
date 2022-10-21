@@ -54,7 +54,7 @@ FDO_SERVER_SKELETON_REPO=${FDO_SERVER_SKELETON_REPO:-"https://github.com/freedom
 REPO_URI=`cat "${FDO_CONFIG_ROOT}/fdo-server-repo.conf" 2> /dev/null`
 FETCH_LATEST_SELF_URL=${FETCH_LATEST_SELF_URL:-"http://freedominion.org/"}
 FREEBSD_RELEASE_DOWNLOAD_ROOT="http://freedominion.org/freebsd-releases"
-ESSENTIAL_PACKAGES="sysutils/apcupsd ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
+ESSENTIAL_PACKAGES="sysutils/apcupsd shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode git security/nmap net/py-speedtest-cli net/rsync"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils/tree devel/uclcmd archivers/unrar archivers/unzip"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} vim sysutils/zfs-stats-lite archivers/zip"
@@ -76,7 +76,7 @@ LATEST_VMS_SUBSYS_COMPAT=1
 LATEST_PARTIMAG_SUBSYS_COMPAT=1
 
 
-ESSENTIAL_JAIL_PACKAGES="ftp/axel shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
+ESSENTIAL_JAIL_PACKAGES="shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
 ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} ports-mgmt/portmaster net/rsync sysutils/tree devel/uclcmd archivers/unrar"
 ESSENTIAL_JAIL_PACKAGES="${ESSENTIAL_JAIL_PACKAGES} archivers/unzip archivers/zip vim"
 JAILS_CONF_PATH=${JAILS_CONF_PATH:-"${FDO_CONFIG_ROOT}/jails.conf"}
