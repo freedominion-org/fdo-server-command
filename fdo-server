@@ -57,7 +57,7 @@ FREEBSD_RELEASE_DOWNLOAD_ROOT="http://freedominion.org/freebsd-releases"
 ESSENTIAL_PACKAGES="sysutils/apcupsd shells/bash shells/bash-completion ports-mgmt/bsdadminscripts2 sysutils/cpdup ftp/curl"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/dmidecode git security/nmap net/py-speedtest-cli net/rsync"
 ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} sysutils/stress sysutils/tmux sysutils/tree devel/uclcmd archivers/unrar archivers/unzip"
-ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} vim sysutils/zfs-stats-lite archivers/zip"
+ESSENTIAL_PACKAGES="${ESSENTIAL_PACKAGES} vim sysutils/zfs-stats-lite archivers/zip converters/base64"
 PKG_REPO_CONF_FILE="fdo-pkg.conf"
 PKG_REPO_CERT_FILE="fdo-pkg.cert"
 FDO_CERTS_DIR=${FDO_CERTS_DIR:-"/usr/local/etc/ssl/fdo-certs"}
@@ -6085,7 +6085,7 @@ init_mpd_server ()
 			if [ ${IS_SYNTAX_OK} -ne 0 ] || [ ${IS_LENGTH_OK} -ne 0 ] || [ "${MPD_SERVER_PCM_NAME_TEMP}" = "" ]
 			then
 				echo -e "\n${LRED}ERROR:${NRML} The username can not be '${ORNG}${MPD_SERVER_PCM_NAME_TEMP}${NRML}'."
-				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers"
+				echo -e "       It must be between 3 and 50 characters and only contain letters, numbers,"
 				echo -e "       brackets, commas, periods, spaces, underscores and hyphens.\n"
 			else
 				question_yes_no "\nYou have entered '${NRML}${MPD_SERVER_PCM_NAME_TEMP}${LCYN}' as the name.\nIs this correct?"
@@ -9671,18 +9671,21 @@ create_recipe_jail ()
 
 	# Do any preparation needed before cooking (e.g. display useful information, ask questions).
 	# This should not involve any persistent changes to the system or any other jails.
-	prep_recipe
+	is_function "prep_recipe"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n\n${YELL}Preparing '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
 
-	if [ "${PREP_SUCCESS}" = "yes" ]
-	then
-		echo -e "\n${LGRN}Recipe prep successful.${NRML}\n"
-	elif [ "${PREP_SUCCESS}" = "no" ]
-	then
-		echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
-		return 1
-	else
-		# We should never get here.
-		echo -e "\n${ORNG}WARNING:${NRML} The recipe prep did not return a valid PREP_SUCCESS value!\n"
+		prep_recipe
+
+		if [ "${PREP_SUCCESS}" = "yes" ]
+		then
+			echo -e "\n${LGRN}Recipe prep successful.${NRML}\n"
+		elif [ "${PREP_SUCCESS}" = "no" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Jail recipe prep was unsuccessful!\n       Aborting.\n"
+			return 1
+		fi
 	fi
 
 	# Check if SIDES_POOL_NAME is used for this recipe.
@@ -10151,6 +10154,25 @@ create_recipe_jail ()
 		echo -e "\n${ORNG}WARNING:${NRML} The recipe did not return a valid RECIPE_SUCCESS value!"
 		echo -e "         Consider undoing the jail creation by running the command:${NRML}"
 		echo -e "${LBLU}         ${SCRIPT_NAME} undo-create-jail ${JAIL_NAME}${NRML}\n"
+	fi
+
+	# If garnish_recipe exists, garnish the cooked recipe.
+	is_function "garnish_recipe"
+	if [ ${?} -eq 0 ]
+	then
+		echo -e "\n\n${YELL}Garnishing '${NRML}${JAIL_RECIPE_NAME}${YELL}' recipe for '${NRML}${JAIL_NAME}${YELL}'...${NRML}\n"
+
+		garnish_recipe
+
+		if [ "${GARNISH_SUCCESS}" = "yes" ]
+		then
+			echo -e "\n${LGRN}Recipe garnish successful.${NRML}\n"
+		elif [ "${GARNISH_SUCCESS}" = "no" ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Jail recipe garnish failed!\n"
+			undo_create_jail ${JAIL_NAME}
+			return 1
+		fi
 	fi
 
 	if [ "${RECIPE_SUCCESS}" = "devel" ]
