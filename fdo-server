@@ -9481,7 +9481,7 @@ create_jail ()
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Add jail to jail_list in repo the copy of '/etc/rc.conf'.
-	egrep "jail_list.*${JAIL_NAME}" configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
+	egrep "jail_list=.*[\" ]${JAIL_NAME}[\" ]"	configs/${HOST_NAME}/etc/rc.conf > /dev/null 2>&1
 	if [ ${?} -ne 0 ]
 	then
 		conf_get configs/${HOST_NAME}/etc/rc.conf string ".base-services.jail_list"
