@@ -8734,40 +8734,6 @@ init_jails ()
 	tzsetup -s -C /jls/template `cat /var/db/zoneinfo` > /dev/null 2>&1
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
-	then
-		# TODO: resolve why ppp can't reconnect on service restart.
-		#service ppp restart > /dev/null 2>&1
-		service ppp stop > /dev/null 2>&1
-		sleep 4
-		service ppp start > /dev/null 2>&1
-		sleep 4
-		service ppp start > /dev/null 2>&1
-	fi
-	if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
-	then
-		service pf onestatus > /dev/null 2>&1
-		if [ ${?} -eq 0 ]
-		then
-			service pf reload > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		else
-			service pf start > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-	fi
-	service sshd onestatus > /dev/null 2>&1
-	if [ ${?} -eq 0 ]
-	then
-		service sshd reload > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	else
-		service sshd start > /dev/null 2>&1
-		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-	fi
-	service jail start template > /dev/null 2>&1
-	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst configuring the template jail!\n"
@@ -8869,6 +8835,105 @@ init_jails ()
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
 		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst finalising the template jail packages!\n"
+		undo_init_jails
+		return 2
+	fi
+
+	echo -e "\n${YELL}A restart of network related services (firewall / sshd) is required.${NRML}\n"
+	question_yes_no "Would you like to restart network related services now?"
+	if [ "${ANSWER}" = "yes" ]
+	then
+		if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+		then
+			# TODO: resolve why ppp can't reconnect on service restart.
+			service ppp restart > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			#service ppp stop > /dev/null 2>&1
+			#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			#sleep 4
+			#service ppp start > /dev/null 2>&1
+			#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			#sleep 4
+			#service ppp start > /dev/null 2>&1
+			#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the ppp service!\n"
+			else
+				echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
+			fi
+		elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+		then
+			service pf onestatus > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				service pf reload > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			else
+				service pf start > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+			fi
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the pf service!\n"
+			else
+				echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+			fi
+		else
+			echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
+		fi
+		service sshd onestatus > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			service sshd reload > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		else
+			service sshd start > /dev/null 2>&1
+			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+		fi
+		service jail start template > /dev/null 2>&1
+		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+		if [ ${ERROR_COUNT} -ne 0 ]
+		then
+			echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the sshd service!\n"
+		else
+			echo -e "${YELL}INFO:${NRML} Successfully reloaded the sshd service!\n"
+		fi
+	else
+		MANUAL_COMMANDS_TEXT=""
+		if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+		then
+			MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service ppp restart${NRML}"
+		fi
+		if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+		then
+			service pf onestatus > /dev/null 2>&1
+			if [ ${?} -eq 0 ]
+			then
+				MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf reload${NRML}"
+			else
+				MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf start${NRML}"
+			fi
+		fi
+		service sshd onestatus > /dev/null 2>&1
+		if [ ${?} -eq 0 ]
+		then
+			MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service sshd reload${NRML}"
+		else
+			MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service sshd start${NRML}"
+		fi
+
+		echo -e "\n${YELL}To manually restart network related services, use the following commands:${NRML}"
+		echo -e "${MANUAL_COMMANDS_TEXT}"
+		pause_prompt 8
+	fi
+
+	if [ ${ERROR_COUNT} -ne 0 ]
+	then
+		echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting network related services!\n"
 		undo_init_jails
 		return 2
 	fi
@@ -9173,43 +9238,6 @@ undo_create_jail ()
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
 
-	if [ ${CREATE_RECIPE_JAIL_NAT_RELOAD} = true ]
-	then
-		if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
-		then
-			# TODO: resolve why ppp can't reconnect on service restart.
-			#service ppp restart > /dev/null 2>&1
-			service ppp stop > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			sleep 4
-			service ppp start > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			sleep 4
-			service ppp start > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-
-			if [ ${ERROR_COUNT} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the ppp service!\n"
-			else
-				echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
-			fi
-
-		elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
-		then
-			service pf reload > /dev/null 2>&1
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-			if [ ${ERROR_COUNT} -ne 0 ]
-			then
-				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the pf service!\n"
-			else
-				echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
-			fi
-		else
-			echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
-		fi
-	fi
-
 	# Install back affected jail configs.
 	for AFFECTED_JAIL_RECIPE in ${AFFECTED_JAIL_RECIPES}
 	do
@@ -9244,6 +9272,76 @@ undo_create_jail ()
 			esac
 		done
 	done
+
+	if [ ${CREATE_RECIPE_JAIL_NAT_RELOAD} = true ]
+	then
+		echo -e "\n${YELL}A restart of network related services (firewall) is required.${NRML}\n"
+		question_yes_no "Would you like to restart network related services now?"
+		if [ "${ANSWER}" = "yes" ]
+		then
+			if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+			then
+				# TODO: resolve why ppp can't reconnect on service restart.
+				service ppp restart > /dev/null 2>&1
+				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				#service ppp stop > /dev/null 2>&1
+				#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				#sleep 4
+				#service ppp start > /dev/null 2>&1
+				#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				#sleep 4
+				#service ppp start > /dev/null 2>&1
+				#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+
+				if [ ${ERROR_COUNT} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the ppp service!\n"
+				else
+					echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
+				fi
+			elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+			then
+				service pf onestatus > /dev/null 2>&1
+				if [ ${?} -eq 0 ]
+				then
+					service pf reload > /dev/null 2>&1
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				else
+					service pf start > /dev/null 2>&1
+					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+				fi
+
+				if [ ${ERROR_COUNT} -ne 0 ]
+				then
+					echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the pf service!\n"
+				else
+					echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+				fi
+			else
+				echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
+			fi
+		else
+			MANUAL_COMMANDS_TEXT=""
+			if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
+			then
+				MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service ppp restart${NRML}"
+			fi
+			if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+			then
+				service pf onestatus > /dev/null 2>&1
+				if [ ${?} -eq 0 ]
+				then
+					MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf reload${NRML}"
+				else
+					MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf start${NRML}"
+				fi
+			fi
+
+			echo -e "\n${YELL}To manually restart network related services, use the following commands:${NRML}"
+			echo -e "${MANUAL_COMMANDS_TEXT}"
+			pause_prompt 8
+		fi
+	fi
 
 	if [ ${ERROR_COUNT} -ne 0 ]
 	then
@@ -10054,30 +10152,30 @@ create_recipe_jail ()
 			return 2
 		fi
 
-		# Add port forwarding rules to the NAT router/firewall (if specified by RECIPE_REQUIRES_PORT_FORWARD=yes).
+		# Reload/restart NAT router/firewall (if specified by RECIPE_REQUIRES_PORT_FORWARD=yes).
 		if [ "${RECIPE_REQUIRES_PORT_FORWARD}" = "yes" ]
 		then
 			# Restart pf/ppp if user authorises.
-			echo -e ""
-			question_yes_no "Changes made by this recipe require restarting the NAT router service.\nWould you like to restart it now? [RECOMMENDED]"
+			echo -e "\n${YELL}A restart of network related services (firewall) is required.${NRML}\n"
+			question_yes_no "Would you like to restart network related services now?"
 			if [ "${ANSWER}" = "yes" ]
 			then
-				echo -e ""
 
 				CREATE_RECIPE_JAIL_NAT_RELOAD=true
 
 				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
 					# TODO: resolve why ppp can't reconnect on service restart.
-					#service ppp restart > /dev/null 2>&1
-					service ppp stop > /dev/null 2>&1
+					service ppp restart > /dev/null 2>&1
 					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					sleep 4
-					service ppp start > /dev/null 2>&1
-					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-					sleep 4
-					service ppp start > /dev/null 2>&1
-					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					#service ppp stop > /dev/null 2>&1
+					#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					#sleep 4
+					#service ppp start > /dev/null 2>&1
+					#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					#sleep 4
+					#service ppp start > /dev/null 2>&1
+					#ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 					if [ ${ERROR_COUNT} -ne 0 ]
 					then
@@ -10085,27 +10183,56 @@ create_recipe_jail ()
 					else
 						echo -e "${YELL}INFO:${NRML} Successfully reloaded the ppp service!\n"
 					fi
-
 				elif [ "${IS_PF_NAT_ENABLED}" = "YES" ]
 				then
-					service pf reload > /dev/null 2>&1
-					ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					service pf onestatus > /dev/null 2>&1
+					if [ ${?} -eq 0 ]
+					then
+						service pf reload > /dev/null 2>&1
+						ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					else
+						service pf start > /dev/null 2>&1
+						ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
+					fi
+
 					if [ ${ERROR_COUNT} -ne 0 ]
 					then
-						echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting the pf service!\n"
+						echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the pf service!\n"
 					else
 						echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
 					fi
 				else
 					echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
 				fi
-
-				if [ ${ERROR_COUNT} -ne 0 ]
+			else
+				MANUAL_COMMANDS_TEXT=""
+				if [ "${IS_PPP_NAT_ENABLED}" = "YES" ]
 				then
-					undo_create_jail ${JAIL_NAME}
-					return 2
+					MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service ppp restart${NRML}"
 				fi
+				if [ "${IS_PF_NAT_ENABLED}" = "YES" ]
+				then
+					service pf onestatus > /dev/null 2>&1
+					if [ ${?} -eq 0 ]
+					then
+						MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf reload${NRML}"
+					else
+						MANUAL_COMMANDS_TEXT="${MANUAL_COMMANDS_TEXT}${CARRIAGE_RETURN}${LBLU}service pf start${NRML}"
+					fi
+				fi
+
+				echo -e "\n${YELL}To manually restart network related services, use the following commands:${NRML}"
+				echo -e "${MANUAL_COMMANDS_TEXT}"
+				pause_prompt 8
 			fi
+
+			if [ ${ERROR_COUNT} -ne 0 ]
+			then
+				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst restarting network related services!\n"
+				undo_create_jail ${JAIL_NAME}
+				return 2
+			fi
+
 		fi
 
 		# Restart jail if required.
