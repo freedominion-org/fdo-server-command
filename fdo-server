@@ -3395,14 +3395,14 @@ pf_add_port_forward_rule ()
 		PF_ADD_RULE_TCP_PORTS_MACRO_DEF=""
 	else
 		PF_ADD_RULE_TCP_PORTS_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_tcp_ports = \"{ ${PF_ADD_RULE_TCP_PORTS} }\""
-		PF_ADD_RULE_TCP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto tcp from any to any port \$${PF_ADD_RULE_RULE_NAME}_tcp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
+		PF_ADD_RULE_TCP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto tcp from any to \$ext_if:0 port \$${PF_ADD_RULE_RULE_NAME}_tcp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
 	fi
 	if [ "${PF_ADD_RULE_UDP_PORTS}" = "none" ]
 	then
 		PF_ADD_RULE_UDP_PORTS_MACRO_DEF=""
 	else
 		PF_ADD_RULE_UDP_PORTS_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_udp_ports = \"{ ${PF_ADD_RULE_UDP_PORTS} }\""
-		PF_ADD_RULE_UDP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto udp from any to any port \$${PF_ADD_RULE_RULE_NAME}_udp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
+		PF_ADD_RULE_UDP_RULES_DEF="\\${CARRIAGE_RETURN}rdr on \$ext_if proto udp from any to \$ext_if:0 port \$${PF_ADD_RULE_RULE_NAME}_udp_ports -> \$${PF_ADD_RULE_RULE_NAME}_ip"
 	fi
 
 	# Add new port foward rule macros to pf config file.
