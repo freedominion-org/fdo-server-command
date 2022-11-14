@@ -5091,18 +5091,15 @@ init_host ()
 	mkdir -p ${FDO_CERTS_DIR}
 	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
-	# If not using DHCP, symlink resolv.conf.static to resolv.conf.
-	if [ "${IS_PRIMARY_IFACE_DHCP}" = "no" ] || [ "${USES_PPP}" = "yes" ]
+	# Copy resolv.conf.static to resolv.conf.
+	if [ -e "/etc/resolv.conf" ]
 	then
-		if [ -e "/etc/resolv.conf" ]
-		then
-			backup_file /etc/resolv.conf init-host
-			rm /etc/resolv.conf
-			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
-		fi
-		ln -s /etc/resolv.conf.static /etc/resolv.conf
+		backup_file /etc/resolv.conf init-host
+		rm /etc/resolv.conf
 		ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 	fi
+	cp /etc/resolv.conf.static /etc/resolv.conf
+	ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 
 	# Remove the .gitignore from the local repo configs directory (if it exists).
 	git rm configs/.gitignore > /dev/null 2>&1
