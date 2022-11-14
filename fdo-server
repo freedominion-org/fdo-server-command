@@ -4608,7 +4608,7 @@ init_host ()
 			if [ "${USES_PPP}" = "no" ]
 			then
 				# WAN IP interface is pure ethernet and uses DHCP.
-				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "DHCP"
+				conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${WAN_NET_IFACE}" "SYNCDHCP"
 				ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			fi
 		fi
@@ -4744,7 +4744,7 @@ init_host ()
 		else
 			## TODO: how to handle LAN_IFACE_IP when we're using DHCP?
 			LAN_IFACE_IP="127.0.0.1"
-			conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${LAN_NET_IFACE}" "DHCP"
+			conf_set configs/${HOST_NAME}/etc/rc.conf string ".network.ifconfig_${LAN_NET_IFACE}" "SYNCDHCP"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
 			${UCL_CMD} set -f configs/${HOST_NAME}${HOST_CONF_PATH} -t string .network.interface.lan.ipv4_assignment "dhcp"
 			ERROR_COUNT=$(( ${ERROR_COUNT} + ${?} ))
