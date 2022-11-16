@@ -5,6 +5,7 @@ fdo-server TODO list:
 TODO
 ----
 
+- ``file_server`` recipe needs looking at how to make better for multi-tenancy / multi-site. And the http_gateway-site.conf could be maybe be handled better, assuming user will change things after cooking.
 
 DONE
 ----
@@ -93,3 +94,4 @@ DONE
 - ``create-vm-template``: add support for bhyve-grub and bhyveload.
 - ``create-vm-template|instance``: add sanity test for subsystem initialisation.
 - ``create-vm-template``: fix boolean bootable flag after attach image.
+- ``jail-certs.list`` path (/jls/jailname/usr/local/etc/ssl/) needs reconsidering, since freebsd-update may not like it being there. Although it may be OK, since it's /usr/local/etc/ssl/certs/ that seems to be treated with respect. *EDIT* use /usr/local/etc/ssl/fdo-certs for all certs used by fdo-server.

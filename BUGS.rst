@@ -7,9 +7,9 @@ BUGS
 
 *Currently there are known bugs.*
 
-- ``fdo-dns_cache-add-hostname``: hostname validation test won't allow simple hostnames (with no tld), e.g. "blah".
-- ``fdo-server create-jail``: error message 'egrep: repetition-operator operand invalid' after "Now we need to check if there are any unsaved changes to this hosts registered config files...".
-
+- ``fdo-dns_cache-add|remove-hostname`` assumes that dns_cache jail is running. It should work even when dns_cache recipe jail is stopped.
+- ``fdo-file_server-edit`` assumes that the file_server recipe jail is running. It should work even when the jail is stopped".
+- ``fdo-dhcp-edit`` assumes that the dhcp_server recipe jail is running. It should work even when the jail is stopped".
 
 
 FIXED
@@ -31,7 +31,22 @@ FIXED
 - Permissions on install_file_tree for init-vnc-desktop sets arbitrary users home folder to root:wheel.
 - ``/etc/hosts`` missing IP address in front of host name.
 - ``uclcmd`` can't set string that start with number, e.g: 100GB_Scratch/100GB_Scratch.
-- ``create-vm-template|instance`` during eject iso image, it should not say 'as the ISO image to detach' (eject).
-- ``create-vm-template|instance`` should be able to cancel and eject iso image. Same with insert, attach, detach.
+- ``create-vm-template|instance``: during eject iso image, it should not say 'as the ISO image to detach' (eject).
+- ``create-vm-template|instance``: should be able to cancel and eject iso image. Same with insert, attach, detach.
 - ``patch-host``: doesn't seem to update FreeBSD version info.
 - ``fdo-server create-vm-instance``: 'template_name' is not being set.
+- ``fdo-dns_cache-add-hostname``: hostname validation test won't allow simple hostnames (with no tld), e.g. "blah".
+- ``fdo-server create-jail``: error message 'egrep: repetition-operator operand invalid' after "Now we need to check if there are any unsaved changes to this hosts registered config files...". May only happen on FreeBSD 13.1.
+- ``dns_cache`` recipe: fails trying to cp /etc/resolv.conf to empty folders in /jls/, check for /jls/jailname/etc/ dir first. If /jls/jailname/etc/resolv.conf does not exist, warn and ask if we want to cp it.
+- ``file_server`` recipe: apache22 vhost config needs the RequestHeader fix.
+- pf port forward rules for port 22 [ssh] (init-jails) and port 80/443 (http_gateway recipe) should be "any to $host_ip" instead of "any to any".
+- ``file_server`` recipe: httpd.conf needs "NameVirtualHost JAIL_IP:80" directive to support multiple VirtualHosts.
+- ``fdo-pf-add-port-forward-rule`` generates "fatal: not a git repository (or any of the parent directories): .git" after "Now we need to check ... unsaved changes ..." and before "Would you like to reload the pf ...".
+- ``ldap_provider`` recipe: change order of slapd.conf directives to allow sync from consumer to work.
+- ``fdo-server create-recipe-jail``: false WARNING about jail named 'ldap' in /etc/rc.conf when there is only 'ldap_consumer' in jail_list.
+- ``http_gateway`` recipe: set worker_processes correctly in 'nginx.conf'. It was always '1' because the substitution variable was not used.
+- ``init-jails`` and ``create-recipe-jail``: move restart of network services to the end, after everything else is done, and ask user first. Thus not breaking connection used to run the command. 
+- ``file_server`` recipe: do not consider ERROR if /dav directory already exists, maybe just set permissions and move on.
+- ``init-host``: replace DHCP with SYNCDHCP in /etc/rc.conf.
+- ``init-host``: replace '$ext_if' with '$ext_if:0' in nat rule, in order to limit LAN NAT traffic to the primary IP.
+- ``fdo-server init-host`` (on static IP primary_local) -> ``fdo-server init-jails`` -> ``fdo-server create-recipe-jail dns_cache``: /etc/resolv.conf should be same as /etc/resolv.conf.static, but it gets clobbered or remains the same as the original from before 'init-host'. Never found the actual cause, decided to disable resolvconf and simplify by always copying /etc/resolv.conf.static to /etc/resolv.conf.
