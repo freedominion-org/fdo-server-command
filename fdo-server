@@ -8876,7 +8876,7 @@ init_jails ()
 			then
 				echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the pf service!\n"
 			else
-				echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+				echo -e "\n${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
 			fi
 		else
 			echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
@@ -9312,7 +9312,7 @@ undo_create_jail ()
 				then
 					echo -e "\n${LRED}ERROR:${NRML} Something went wrong whilst reloading/starting the pf service!\n"
 				else
-					echo -e "${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
+					echo -e "\n${YELL}INFO:${NRML} Successfully reloaded the pf service!\n"
 				fi
 			else
 				echo -e "\n${ORNG}WARNING:${NRML} It seems there is no NAT router/firewall service enabled on this host!\n"
