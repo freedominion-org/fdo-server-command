@@ -3390,7 +3390,7 @@ pf_add_port_forward_rule ()
 
 	# Prepare macro and rule definitions as variables.
 	PF_ADD_RULE_IP_MACRO_DEF="\\${CARRIAGE_RETURN}${PF_ADD_RULE_RULE_NAME}_ip = \"${PF_ADD_RULE_LOCAL_IP}\""
-	if [ "${TCP_PORTS}" = "none" ]
+	if [ "${PF_ADD_RULE_TCP_PORTS}" = "none" ]
 	then
 		PF_ADD_RULE_TCP_PORTS_MACRO_DEF=""
 	else
@@ -3419,7 +3419,7 @@ pf_add_port_forward_rule ()
 	# Add new UDP port foward rules to pf config file.
 	if [ "${PF_ADD_RULE_UDP_PORTS}" != "none" ]
 	then
-		sed -i "" "s|\(^[#]* PORT FORWARD UDP RULES [#]*\)|\1\\${CARRIAGE_RETURN}${UDP_RULES_DEF}|" ${PF_REPO_CONF_PATH}
+		sed -i "" "s|\(^[#]* PORT FORWARD UDP RULES [#]*\)|\1\\${CARRIAGE_RETURN}${PF_ADD_RULE_UDP_RULES_DEF}|" ${PF_REPO_CONF_PATH}
 		PF_ADD_RULE_ERROR_COUNT=$(( ${PF_ADD_RULE_ERROR_COUNT} + ${?} ))
 	fi
 
